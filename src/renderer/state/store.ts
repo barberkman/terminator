@@ -127,20 +127,18 @@ export const useStore = create<StoreState>((set, get) => ({
       let panes = st.panes.slice()
       let focused = st.focused
       if (panes.length > count) {
+        // Shrinking: keep the focused pane first, then the rest.
         const focusId = panes[focused] || ''
         const others = panes.filter((_, i) => i !== focused)
         panes = [focusId, ...others].slice(0, count)
         focused = 0
       } else {
-        while (panes.length < count) {
-          const shown = new Set(panes.filter(Boolean))
-          const next = st.order.find(
-            (id) => !shown.has(id) && st.sessions[id]?.status !== 'closed',
-          )
-          panes.push(next ?? '')
-        }
+        // Growing: add empty panes — let the user choose what goes in them
+        // (don't auto-fill, which used to strand the focused pane empty).
+        while (panes.length < count) panes.push('')
       }
       if (!panes.length) panes = emptyPanes(count)
+      if (focused >= panes.length) focused = 0
       return { layout: name, panes, focused, editingId: null }
     })
   },
@@ -148,23 +146,30 @@ export const useStore = create<StoreState>((set, get) => ({
   openSession(id) {
     set((st) => {
       const panes = st.panes.length ? st.panes.slice() : ['']
-      const idx = panes.indexOf(id)
+      const existing = panes.indexOf(id)
       let focused = st.focused
-      if (idx >= 0) {
-        focused = idx
-      } else {
+      if (existing >= 0) {
+        // Already on screen — just focus its pane.
+        focused = existing
+      } else if (!panes[focused]) {
+        // Focused split is empty — open it here.
         panes[focused] = id
+      } else {
+        // Focused split is occupied: fill the next empty split if there is one
+        // (so a second session lands beside the first), else replace the focused.
+        const emptyIdx = panes.indexOf('')
+        if (emptyIdx >= 0) {
+          panes[emptyIdx] = id
+          focused = emptyIdx
+        } else {
+          panes[focused] = id
+        }
       }
       const cur = st.sessions[id]
       if (cur?.notified) window.terminator.clearNotified(id)
       const sessions =
         cur && cur.notified ? { ...st.sessions, [id]: { ...cur, notified: false } } : st.sessions
-      return {
-        panes,
-        focused,
-        sessions,
-        editingId: null,
-      }
+      return { panes, focused, sessions, editingId: null }
     })
   },
 

@@ -22,6 +22,9 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
   if (!id || !session) {
     return (
       <div
+        data-pane-index={index}
+        data-pane-focused={focused ? 1 : 0}
+        data-pane-session=""
         onMouseDownCapture={() => focusPane(index)}
         style={{
           display: 'flex',
@@ -69,6 +72,9 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
 
   return (
     <div
+      data-pane-index={index}
+      data-pane-focused={focused ? 1 : 0}
+      data-pane-session={session.name}
       onMouseDownCapture={() => focusPane(index)}
       style={{
         display: 'flex',

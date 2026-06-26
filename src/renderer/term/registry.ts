@@ -104,6 +104,27 @@ export function getOrCreate(id: string): Entry {
   term.open(host)
   term.onData((d) => window.terminator.writePty(id, d))
 
+  // Copy/paste: Ctrl/Cmd+C copies the selection (and otherwise passes ^C through
+  // as SIGINT); Ctrl/Cmd+V pastes. Returning false stops xterm from sending the key.
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type !== 'keydown' || !(e.ctrlKey || e.metaKey) || e.altKey) return true
+    const k = e.key.toLowerCase()
+    if (k === 'c') {
+      if (term.hasSelection()) {
+        window.terminator.clipboardWrite(term.getSelection())
+        term.clearSelection()
+        return false
+      }
+      return true // no selection → let ^C reach the shell (interrupt)
+    }
+    if (k === 'v') {
+      const text = window.terminator.clipboardRead()
+      if (text) term.paste(text)
+      return false
+    }
+    return true
+  })
+
   const entry: Entry = { term, fit, host }
   entries.set(id, entry)
   return entry

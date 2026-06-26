@@ -157,6 +157,10 @@ export interface TerminatorApi {
   // UI zoom (global font scaling)
   setZoom(factor: number): void
   getZoom(): number
+
+  // clipboard (terminal copy/paste)
+  clipboardWrite(text: string): void
+  clipboardRead(): string
 }
 
 /** `fontSize` value that corresponds to 100% zoom (the as-designed sizing). */

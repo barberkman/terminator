@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webFrame } from 'electron'
+import { clipboard, contextBridge, ipcRenderer, webFrame } from 'electron'
 import { Channels } from '../shared/channels'
 import type {
   CreateSessionInput,
@@ -45,6 +45,9 @@ const api: TerminatorApi = {
 
   setZoom: (factor: number) => webFrame.setZoomFactor(factor),
   getZoom: () => webFrame.getZoomFactor(),
+
+  clipboardWrite: (text: string) => clipboard.writeText(text),
+  clipboardRead: () => clipboard.readText(),
 }
 
 contextBridge.exposeInMainWorld('terminator', api)
