@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #1a1917; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: rgba(214,209,196,0.1); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(214,209,196,0.18); }
+  ::-webkit-scrollbar-track { background: transparent; }
+  @keyframes cc-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(217,119,87,0.5); } 50% { box-shadow: 0 0 0 5px rgba(217,119,87,0); } }
+  @keyframes cc-breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @keyframes cc-notif { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.55); opacity: 0.5; } }
+  @keyframes cc-toast { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  @keyframes cc-fade { from { opacity: 0; } to { opacity: 1; } }
+  .cc-row .cc-x { opacity: 0; transition: opacity .12s ease; }
+  .cc-row:hover .cc-x { opacity: 1; }
+</style>
+</helmet>
+<div style="display:flex; flex-direction:column; height:100vh; width:100%; overflow:hidden; background:#1a1917; color:#cbc6b8; font-family:'JetBrains Mono', ui-monospace, monospace; -webkit-font-smoothing:antialiased;">
+  <div style="display:flex; flex:1; min-height:0; width:100%;">
+
+  <!-- ============ SIDEBAR (the tabs) ============ -->
+  <div style="width:262px; flex:none; background:#201e1b; border-right:1px solid rgba(214,209,196,0.07); display:flex; flex-direction:column;">
+    <div style="padding:16px 14px 12px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:13px; padding:0 2px;">
+        <span style="font-size:11px; letter-spacing:1.5px; color:#807b6f; font-weight:600;">SESSIONS</span>
+        <span style="font-size:11px; color:#5e594f;">{{ totalCount }}</span>
+        <span style="flex:1;"></span>
+        <div style="position:relative; display:flex;">
+          <button onClick="{{ toggleLayoutMenu }}" title="{{ layoutLabel }}" style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:6px; border:1px solid rgba(214,209,196,0.1); background:transparent; color:#9a958a; cursor:pointer;" style-hover="background:rgba(214,209,196,0.08); color:#e8e4d9;">{{ layoutIcon }}</button>
+          <sc-if value="{{ layoutMenuOpen }}" hint-placeholder-val="{{ false }}">
+            <div onClick="{{ closeLayoutMenu }}" style="position:fixed; inset:0; z-index:30;"></div>
+            <div style="position:absolute; top:32px; left:0; z-index:31; width:188px; padding:5px; background:#211f1c; border:1px solid rgba(214,209,196,0.13); border-radius:10px; box-shadow:0 16px 40px rgba(0,0,0,0.55); animation:cc-fade 0.12s ease;">
+              <sc-for list="{{ layoutOptions }}" as="o" hint-placeholder-count="3">
+                <div onClick="{{ o.onClick }}" style="{{ o.style }}" style-hover="background:rgba(214,209,196,0.06);">
+                  <span style="display:flex; color:{{ o.iconColor }}; flex:none;">{{ o.icon }}</span>
+                  <span style="flex:1; font-size:12.5px;">{{ o.label }}</span>
+                  <sc-if value="{{ o.active }}" hint-placeholder-val="{{ false }}">
+                    <span style="display:flex; color:#d97757; flex:none;">{{ icons.check }}</span>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+      <button onClick="{{ openNew }}" style="width:100%; display:flex; align-items:center; gap:9px; padding:9px 12px; background:rgba(217,119,87,0.1); border:1px solid rgba(217,119,87,0.32); border-radius:8px; color:#e3ad96; font:inherit; font-size:12.5px; font-weight:500; cursor:pointer; text-align:left;" style-hover="background:rgba(217,119,87,0.16);">
+        <span style="display:flex; color:#d97757;">{{ icons.plus }}</span>
+        New session
+        <span style="margin-left:auto; font-size:11px; color:#6e6a60; font-weight:400;">⌘N</span>
+      </button>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; padding:4px 10px 16px;">
+      <sc-for list="{{ projects }}" as="proj" hint-placeholder-count="3">
+        <div onClick="{{ proj.onToggle }}" style="display:flex; align-items:center; gap:6px; padding:13px 4px 6px; cursor:pointer;">
+          <span style="{{ proj.chevronStyle }}">{{ icons.chevron }}</span>
+          <span style="font-size:10.5px; letter-spacing:0.6px; color:#6e6a60; font-weight:600;">{{ proj.name }}</span>
+          <span style="font-size:10px; color:#4d4940;">{{ proj.count }}</span>
+          <span style="flex:1; height:1px; background:rgba(214,209,196,0.05);"></span>
+        </div>
+        <sc-if value="{{ proj.expanded }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <sc-for list="{{ proj.sessions }}" as="it" hint-placeholder-count="2">
+            <div class="cc-row" style="{{ it.itemStyle }}" style-hover="{{ it.hoverStyle }}" onClick="{{ it.onClick }}">
+              <span style="{{ it.dotStyle }}"></span>
+              <div style="min-width:0; flex:1; display:flex; flex-direction:column; gap:2px;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <sc-if value="{{ it.kindVisible }}" hint-placeholder-val="{{ false }}">
+                    <span style="display:flex; color:#7d8597; flex:none;">{{ it.kindIcon }}</span>
+                  </sc-if>
+                  <span style="{{ it.nameStyle }}">{{ it.name }}</span>
+                  <sc-if value="{{ it.lockVisible }}" hint-placeholder-val="{{ false }}">
+                    <span style="display:flex; color:#807b6f; flex:none;">{{ it.lockIcon }}</span>
+                  </sc-if>
+                  <sc-if value="{{ it.notified }}" hint-placeholder-val="{{ false }}">
+                    <span style="width:6px; height:6px; border-radius:50%; background:#d97757; flex:none; margin-left:auto; animation:cc-notif 1.2s ease-in-out infinite;"></span>
+                  </sc-if>
+                </div>
+                <span style="{{ it.stateStyle }}">{{ it.stateText }}</span>
+              </div>
+              <sc-if value="{{ it.removable }}" hint-placeholder-val="{{ false }}">
+                <button class="cc-x" onClick="{{ it.onRemove }}" title="Remove session" style="display:flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:4px; border:none; background:transparent; color:#807b6f; cursor:pointer; padding:0; flex:none; align-self:center;" style-hover="background:rgba(214,209,196,0.14); color:#e8e4d9;">{{ icons.close }}</button>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- ============ MAIN ============ -->
+  <div style="flex:1; min-width:0; display:flex; flex-direction:column; background:#1a1917;">
+
+    <sc-if value="{{ hasActive }}" hint-placeholder-val="{{ true }}">
+      <div style="{{ panesWrapStyle }}">
+        <sc-for list="{{ panes }}" as="p" hint-placeholder-count="1">
+          <div style="{{ p.paneStyle }}" onClick="{{ p.onFocus }}">
+
+            <!-- session header -->
+            <div style="{{ p.headerStyle }}">
+              <span style="{{ p.headDotStyle }}"></span>
+              <div style="min-width:0; flex:1;">
+                <div style="display:flex; align-items:center; gap:9px; margin-bottom:3px;">
+                  <sc-if value="{{ p.editing }}" hint-placeholder-val="{{ false }}">
+                    <input value="{{ draftName }}" onInput="{{ onNameInput }}" onBlur="{{ onNameCommit }}" onKeyDown="{{ onNameKey }}" autoFocus="{{ true }}" style="background:rgba(214,209,196,0.06); border:1px solid rgba(217,119,87,0.45); border-radius:5px; color:#f0ece2; font:inherit; font-size:14.5px; font-weight:600; padding:2px 7px; outline:none; max-width:300px;" />
+                  </sc-if>
+                  <sc-if value="{{ p.notEditing }}" hint-placeholder-val="{{ true }}">
+                    <span onDblClick="{{ p.startEdit }}" title="Double-click to rename" style="{{ p.nameStyle }}" style-hover="border-bottom-color:rgba(214,209,196,0.25);">{{ p.name }}</span>
+                  </sc-if>
+                  <span style="{{ p.badgeStyle }}">
+                    <span style="{{ p.badgeDotStyle }}"></span>{{ p.statusLabel }}
+                  </span>
+                </div>
+                <div style="display:flex; align-items:center; gap:7px; font-size:11.5px; color:#807b6f; white-space:nowrap; overflow:hidden;">
+                  <span>{{ p.project }}</span>
+                  <span style="color:#4d4940;">/</span>
+                  <span>{{ p.branch }}</span>
+                  <span style="color:#4d4940;">·</span>
+                  <span style="{{ p.stateStyle }}">{{ p.stateText }}</span>
+                </div>
+              </div>
+              <sc-if value="{{ p.showMetrics }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; align-items:center; gap:18px; flex:none; padding-right:2px;">
+                  <div style="display:flex; flex-direction:column; gap:3px;">
+                    <span style="font-size:9px; letter-spacing:0.6px; color:#6e6a60; font-weight:700;">MODEL</span>
+                    <span style="display:flex; align-items:center; gap:6px; font-size:12px; color:#d6d1c4; white-space:nowrap;"><span style="{{ p.metrics.modelDot }}"></span>{{ p.metrics.model }}</span>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:3px;">
+                    <span style="font-size:9px; letter-spacing:0.6px; color:#6e6a60; font-weight:700;">EFFORT</span>
+                    <span style="{{ p.metrics.effortStyle }}">{{ p.metrics.effort }}</span>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:4px; width:108px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between;"><span style="font-size:9px; letter-spacing:0.6px; color:#6e6a60; font-weight:700;">CONTEXT</span><span style="font-size:9px; color:#807b6f;">{{ p.metrics.ctxPctText }}</span></div>
+                    <span style="font-size:12px; color:#d6d1c4; white-space:nowrap;">{{ p.metrics.ctxText }}</span>
+                    <div style="height:3px; border-radius:2px; background:rgba(214,209,196,0.1); overflow:hidden;"><div style="{{ p.metrics.ctxBar }}"></div></div>
+                  </div>
+                </div>
+                <div style="width:1px; height:34px; background:rgba(214,209,196,0.08); flex:none;"></div>
+              </sc-if>
+              <div style="display:flex; align-items:center; gap:4px; flex:none;">
+                <sc-if value="{{ p.showLock }}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{ p.onToggleMode }}" title="{{ p.lockTitle }}" style="{{ p.lockBtnStyle }}" style-hover="background:rgba(214,209,196,0.08);">{{ p.lockIcon }}</button>
+                </sc-if>
+                <button onClick="{{ p.onOpenGit }}" title="Open folder in git tool" style="display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:7px; border:1px solid rgba(214,209,196,0.09); background:transparent; color:#9a958a; cursor:pointer;" style-hover="background:rgba(214,209,196,0.08); color:#e8e4d9;">{{ icons.git }}</button>
+                <button onClick="{{ p.onClose }}" title="Close session" style="display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:7px; border:1px solid rgba(214,209,196,0.09); background:transparent; color:#9a958a; cursor:pointer;" style-hover="background:rgba(207,94,78,0.14); border-color:rgba(207,94,78,0.32); color:#e08070;">{{ icons.power }}</button>
+              </div>
+            </div>
+
+            <!-- terminal (plain) -->
+            <div ref="{{ p.termRef }}" onClick="{{ p.focusTerm }}" style="flex:1; min-height:0; overflow-y:auto; padding:16px 20px 18px; font-size:13px; line-height:1.6; background:#1a1917; cursor:text;">
+              <sc-for list="{{ p.lines }}" as="ln" hint-placeholder-count="5">
+                <div style="{{ ln.rowStyle }}">{{ ln.text }}</div>
+              </sc-for>
+
+              <sc-if value="{{ p.hasPrompt }}" hint-placeholder-val="{{ false }}">
+                <div style="margin:10px 0 4px; max-width:560px; border:1px solid rgba(217,119,87,0.4); border-radius:8px; padding:12px 14px;">
+                  <div style="color:#e8e4d9; margin-bottom:9px;">{{ p.prompt.question }}</div>
+                  <sc-for list="{{ p.prompt.options }}" as="opt" hint-placeholder-count="3">
+                    <div onClick="{{ opt.onClick }}" style="{{ opt.style }}">{{ opt.label }}</div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ p.isBusy }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; align-items:center; gap:8px; padding:6px 0 2px;">
+                  <span style="color:#d97757; animation:cc-breathe 1.1s ease-in-out infinite;">✻</span>
+                  <span style="color:#cbc6b8;">{{ p.busyText }}</span>
+                  <span style="color:#5e594f;">(esc to interrupt)</span>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ p.canType }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; align-items:center; gap:9px; padding-top:6px;">
+                  <span style="{{ p.glyphStyle }}">{{ p.promptGlyph }}</span>
+                  <input ref="{{ p.inputRef }}" onKeyDown="{{ p.onKey }}" placeholder="{{ p.inputPlaceholder }}" style="{{ p.inputStyle }}" />
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ noActive }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; color:#6e6a60;">
+        <span style="display:flex; opacity:0.5;">{{ icons.bigplus }}</span>
+        <div style="font-size:13px;">No session open</div>
+        <button onClick="{{ openNew }}" style="display:flex; align-items:center; gap:8px; padding:9px 16px; background:rgba(217,119,87,0.12); border:1px solid rgba(217,119,87,0.32); border-radius:8px; color:#e3ad96; font:inherit; font-size:12.5px; cursor:pointer;" style-hover="background:rgba(217,119,87,0.18);">Start a new session</button>
+      </div>
+    </sc-if>
+  </div>
+  </div>
+
+  <!-- ============ FOOTER (usage — always visible) ============ -->
+  <div style="display:flex; align-items:center; gap:14px; height:40px; flex:none; padding:0 16px; background:#1d1c19; border-top:1px solid rgba(214,209,196,0.07); font-size:11.5px; color:#807b6f;">
+    <div style="display:flex; align-items:center; gap:8px; flex:none;">
+      <span style="font-size:9.5px; letter-spacing:0.6px; color:#6e6a60; font-weight:700; flex:none;">THIS SESSION</span>
+      <span style="{{ footer.curDot }}"></span>
+      <span style="color:#cbc6b8; white-space:nowrap;">{{ footer.curPrimary }}</span>
+      <span style="color:#4d4940;">·</span>
+      <span style="white-space:nowrap;">{{ footer.curSecondary }}</span>
+    </div>
+    <span style="flex:1; min-width:16px;"></span>
+    <div style="display:flex; align-items:center; gap:9px; flex:none;">
+      <span style="font-size:9.5px; letter-spacing:0.6px; color:#6e6a60; font-weight:700; flex:none;">USAGE</span>
+      <span style="color:#807b6f; white-space:nowrap;">{{ footer.usageUsed }}</span>
+      <div style="width:96px; height:4px; border-radius:2px; background:rgba(214,209,196,0.1); overflow:hidden; flex:none;"><div style="{{ footer.usageBar }}"></div></div>
+      <span style="color:#e8e4d9; font-weight:600; white-space:nowrap;">{{ footer.usagePct }}</span>
+    </div>
+  </div>
+
+  <!-- ============ TOAST ============ -->
+  <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed; right:20px; bottom:20px; z-index:40; display:flex; align-items:center; gap:12px; padding:13px 15px; min-width:280px; background:#242220; border:1px solid {{ toast.border }}; border-left:3px solid {{ toast.accent }}; border-radius:10px; box-shadow:0 12px 32px rgba(0,0,0,0.5); animation:cc-toast 0.3s ease;">
+      <span style="{{ toast.dotStyle }}"></span>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:12.5px; color:#f0ece2; font-weight:500;">{{ toast.text }}</div>
+        <div style="font-size:11px; color:#807b6f; margin-top:2px;">{{ toast.sub }}</div>
+      </div>
+      <sc-if value="{{ toast.hasJump }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ toast.onJump }}" style="padding:6px 11px; background:rgba(217,119,87,0.16); border:1px solid rgba(217,119,87,0.38); border-radius:6px; color:#e3ad96; font:inherit; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap;" style-hover="background:rgba(217,119,87,0.26);">Open</button>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <!-- ============ CONFIRM DIALOG ============ -->
+  <sc-if value="{{ hasConfirm }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ cancelConfirm }}" style="position:fixed; inset:0; z-index:55; background:rgba(10,9,8,0.66); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; animation:cc-fade 0.18s ease;">
+      <div onClick="{{ stop }}" style="width:382px; max-width:92vw; background:#211f1c; border:1px solid rgba(214,209,196,0.11); border-radius:14px; box-shadow:0 24px 60px rgba(0,0,0,0.6); padding:22px 22px 18px;">
+        <div style="font-size:15px; font-weight:600; color:#f0ece2; margin-bottom:9px;">{{ confirm.title }}</div>
+        <div style="font-size:12.5px; line-height:1.6; color:#a8a397; margin-bottom:20px;">{{ confirm.body }}</div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button onClick="{{ cancelConfirm }}" style="padding:10px 18px; background:transparent; border:1px solid rgba(214,209,196,0.13); border-radius:9px; color:#b4afa3; font:inherit; font-size:12.5px; cursor:pointer;" style-hover="background:rgba(214,209,196,0.05);">Cancel</button>
+          <button onClick="{{ onConfirm }}" style="{{ confirm.confirmStyle }}" style-hover="{{ confirm.confirmHover }}">{{ confirm.confirmLabel }}</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============ NEW SESSION DIALOG ============ -->
+  <sc-if value="{{ showNew }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeNew }}" style="position:fixed; inset:0; z-index:50; background:rgba(10,9,8,0.66); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; animation:cc-fade 0.18s ease;">
+      <div onClick="{{ stop }}" style="width:480px; max-width:92vw; background:#211f1c; border:1px solid rgba(214,209,196,0.11); border-radius:14px; box-shadow:0 24px 60px rgba(0,0,0,0.6); overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:9px; padding:18px 20px 14px;">
+          <span style="display:flex; color:#d97757;">{{ icons.plus }}</span>
+          <span style="font-size:14px; font-weight:600; color:#f0ece2;">New session</span>
+          <button onClick="{{ closeNew }}" style="margin-left:auto; display:flex; width:26px; height:26px; align-items:center; justify-content:center; border-radius:6px; border:none; background:transparent; color:#807b6f; cursor:pointer;" style-hover="background:rgba(214,209,196,0.08); color:#e8e4d9;">{{ icons.close }}</button>
+        </div>
+
+        <div style="padding:0 20px 4px; display:flex; flex-direction:column; gap:18px;">
+          <div>
+            <div style="font-size:11px; letter-spacing:0.6px; color:#807b6f; font-weight:600; margin-bottom:8px;">PROJECT FOLDER</div>
+            <div style="display:flex; gap:8px; margin-bottom:9px;">
+              <input value="{{ form.folder }}" onInput="{{ onFormFolder }}" placeholder="~/code/my-project" style="flex:1; min-width:0; padding:10px 12px; background:#191815; border:1px solid rgba(214,209,196,0.1); border-radius:9px; color:#e8e4d9; font:inherit; font-size:12.5px; outline:none;" style-focus="border-color:rgba(217,119,87,0.5);" />
+              <button onClick="{{ browseFolder }}" style="display:flex; align-items:center; gap:7px; padding:0 14px; background:#191815; border:1px solid rgba(214,209,196,0.12); border-radius:9px; color:#cbc6b8; font:inherit; font-size:12px; font-weight:500; cursor:pointer; white-space:nowrap; flex:none;" style-hover="background:rgba(214,209,196,0.06); border-color:rgba(214,209,196,0.2);"><span style="display:flex; color:#807b6f;">{{ icons.folderSm }}</span>Browse…</button>
+            </div>
+            <input ref="{{ folderInputRef }}" type="file" onChange="{{ onFolderPicked }}" style="display:none;" />
+            <div style="font-size:10px; letter-spacing:0.4px; color:#6e6a60; font-weight:600; margin-bottom:6px;">RECENT</div>
+            <div style="display:flex; flex-direction:column; gap:3px; max-height:120px; overflow-y:auto;">
+              <sc-for list="{{ recentFolders }}" as="rf" hint-placeholder-count="3">
+                <div onClick="{{ rf.onClick }}" style="{{ rf.style }}" style-hover="{{ rf.hover }}">
+                  <span style="display:flex; color:#807b6f; flex:none;">{{ icons.folderSm }}</span>
+                  <span style="flex:1; min-width:0; font-size:12px; color:#cbc6b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ rf.path }}</span>
+                  <sc-if value="{{ rf.selected }}" hint-placeholder-val="{{ false }}">
+                    <span style="display:flex; color:#d97757; flex:none;">{{ icons.check }}</span>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size:11px; letter-spacing:0.6px; color:#807b6f; font-weight:600; margin-bottom:8px;">SESSION NAME</div>
+            <input value="{{ form.name }}" onInput="{{ onFormName }}" placeholder="{{ namePlaceholder }}" style="width:100%; padding:10px 12px; background:#191815; border:1px solid rgba(214,209,196,0.1); border-radius:9px; color:#e8e4d9; font:inherit; font-size:13px; outline:none;" style-focus="border-color:rgba(217,119,87,0.5);" />
+          </div>
+
+          <div>
+            <div style="font-size:11px; letter-spacing:0.6px; color:#807b6f; font-weight:600; margin-bottom:8px;">SESSION TYPE</div>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <sc-for list="{{ typeOptions }}" as="t" hint-placeholder-count="3">
+                <div onClick="{{ t.onClick }}" style="{{ t.style }}">
+                  <span style="display:flex; flex:none; color:{{ t.iconColor }};">{{ t.icon }}</span>
+                  <div style="flex:1; min-width:0;">
+                    <div style="font-size:12.5px; color:#e8e4d9;">{{ t.label }}</div>
+                    <div style="font-size:11px; color:#6e6a60; margin-top:1px;">{{ t.desc }}</div>
+                  </div>
+                  <sc-if value="{{ t.active }}" hint-placeholder-val="{{ false }}">
+                    <span style="display:flex; flex:none; color:#d97757;">{{ icons.check }}</span>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div onClick="{{ toggleWorktree }}" style="display:flex; align-items:center; gap:11px; cursor:pointer;">
+              <span style="{{ switchTrackStyle }}"><span style="{{ switchKnobStyle }}"></span></span>
+              <div style="flex:1;">
+                <div style="font-size:12.5px; color:#e8e4d9;">Create git worktree</div>
+                <div style="font-size:11px; color:#6e6a60; margin-top:1px;">Isolate this session on its own branch</div>
+              </div>
+            </div>
+            <sc-if value="{{ form.worktree }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:11px; display:flex; align-items:center; gap:9px; padding:9px 12px; background:#191815; border:1px solid rgba(214,209,196,0.1); border-radius:9px;">
+                <span style="font-size:12.5px; color:#807b6f;">branch</span>
+                <input value="{{ form.branch }}" onInput="{{ onFormBranch }}" placeholder="feature/my-work" style="flex:1; background:transparent; border:none; outline:none; color:#e3ad96; font:inherit; font-size:12.5px;" />
+              </div>
+            </sc-if>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px; justify-content:flex-end; padding:18px 20px 20px; margin-top:6px;">
+          <button onClick="{{ closeNew }}" style="padding:10px 18px; background:transparent; border:1px solid rgba(214,209,196,0.13); border-radius:9px; color:#b4afa3; font:inherit; font-size:12.5px; cursor:pointer;" style-hover="background:rgba(214,209,196,0.05);">Cancel</button>
+          <button onClick="{{ createSession }}" style="display:flex; align-items:center; gap:8px; padding:10px 20px; background:#d97757; border:none; border-radius:9px; color:#1a120c; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer;" style-hover="background:#e08a6c;">Create session</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;}}">
+class Component extends DCLogic {
+  _terms = {};
+  _inputs = {};
+  state = {
+    layout: 'single',
+    layoutMenuOpen: false,
+    panes: ['auth-refactor'],
+    focused: 0,
+    showNew: false,
+    editing: false,
+    draftName: '',
+    toast: null,
+    notifiedFired: false,
+    confirm: null,
+    customFolders: [],
+    collapsedGroups: {},
+    metrics: {
+      'auth-refactor':    { model:'Opus 4.5',   effort:'high',   ctx:38200, tokens:184000, cost:2.14 },
+      'api-tests':        { model:'Sonnet 4.5', effort:'medium', ctx:21400, tokens:96000,  cost:0.42 },
+      'docs-site':        { model:'Haiku 4.5',  effort:'low',    ctx:12100, tokens:45000,  cost:0.04 },
+      'payment-webhooks': { model:'Opus 4.5',   effort:'high',   ctx:50800, tokens:132000, cost:1.87 },
+      'reconcile-job':    { model:'Sonnet 4.5', effort:'medium', ctx:4200,  tokens:8000,   cost:0.03 },
+      'stripe-migration': { model:'Sonnet 4.5', effort:'medium', ctx:0,     tokens:210000, cost:0.98 },
+      'db-indexes':       { model:'Haiku 4.5',  effort:'low',    ctx:9300,  tokens:30000,  cost:0.02 },
+    },
+    form: { folder: '~/code/acme-web', name: '', kind: 'claude', worktree: false, branch: '' },
+    sessions: [
+      { id:'auth-refactor', name:'auth-refactor', project:'acme-web', branch:'feat/session-api', mode:'normal', status:'waiting', notified:false,
+        stateText:'waiting for input',
+        lines:[
+          {t:'✻ Welcome to Claude Code', c:'acc'}, {t:''},
+          {t:'  cwd: ~/code/acme-web', c:'dim'}, {t:''},
+          {t:'> Migrate the legacy token helper to the new verifySession() API'}, {t:''},
+          {t:'⏺ Read(src/auth/session.ts)', c:'acc'},
+          {t:'  ⎿  Read 142 lines', c:'dim'},
+          {t:'⏺ Read(src/auth/middleware.ts)', c:'acc'},
+          {t:'  ⎿  Read 88 lines', c:'dim'}, {t:''},
+          {t:'⏺ Found 3 call sites. I\u2019ll migrate them to verifySession() and'},
+          {t:'  make getUser() async \u2014 this touches 3 files.'}, {t:''},
+        ],
+        prompt:{ question:'Edit session.ts, middleware.ts and routes/login.ts?',
+          options:['1. Yes','2. Yes, and don\u2019t ask again this session','3. No, and tell Claude what to do differently'] } },
+
+      { id:'api-tests', name:'api-tests', project:'acme-web', branch:'feat/session-api', mode:'normal', status:'busy', notified:false,
+        stateText:'running tests', busyText:'Running tests\u2026',
+        lines:[
+          {t:'> Run the test suite and make sure nothing broke'}, {t:''},
+          {t:'⏺ Bash(npx vitest run)', c:'acc'},
+          {t:'  ⎿  test/auth.spec.ts', c:'dim'},
+          {t:'  ⎿  test/session.spec.ts', c:'dim'}, {t:''},
+          {t:'  ✓ auth      8 passed', c:'ok'},
+          {t:'  ✓ session   6 passed', c:'ok'}, {t:''},
+        ], prompt:null },
+
+      { id:'docs-site', name:'docs-site', project:'acme-web', branch:'main', mode:'readonly', status:'idle', notified:false,
+        stateText:'finished · 6m ago',
+        lines:[
+          {t:'> Regenerate the API reference and fix broken links'}, {t:''},
+          {t:'⏺ Regenerated the API reference from the latest types and', c:'acc'},
+          {t:'  fixed 4 broken cross-links.'}, {t:''},
+          {t:'  ✓ Build complete in 3.2s · 4 files updated', c:'ok'}, {t:''},
+        ], prompt:null },
+
+      { id:'payment-webhooks', name:'payment-webhooks', project:'payments-svc', branch:'fix/stripe-amount', mode:'normal', status:'error', notified:false,
+        stateText:'process exited (1)',
+        lines:[
+          {t:'> Replay yesterday\u2019s failed charge events'}, {t:''},
+          {t:'⏺ Bash(node scripts/replay.js --since=24h)', c:'acc'},
+          {t:'  ⎿  Error: command exited with code 1', c:'err'}, {t:''},
+          {t:'TypeError: Cannot read properties of undefined (reading \u2018amount\u2019)', c:'err'},
+          {t:'    at handleCharge (src/webhooks/stripe.ts:48:21)', c:'dim'},
+          {t:'    at processEvent (src/webhooks/stripe.ts:21:5)', c:'dim'}, {t:''},
+        ], prompt:null },
+
+      { id:'reconcile-job', name:'reconcile-job', project:'payments-svc', branch:'main', mode:'normal', status:'idle', notified:false,
+        stateText:'idle · ready',
+        lines:[ {t:'✻ Welcome to Claude Code', c:'acc'}, {t:''}, {t:'  cwd: ~/code/payments-svc', c:'dim'}, {t:''} ], prompt:null },
+
+      { id:'stripe-migration', name:'stripe-migration', project:'payments-svc', branch:'chore/sdk-v14', mode:'normal', status:'closed', notified:false,
+        stateText:'closed', lines:[ {t:'Session ended.', c:'dim'} ], prompt:null },
+
+      { id:'db-indexes', name:'db-indexes', project:'infra', branch:'perf/indexes', mode:'readonly', status:'busy', notified:false,
+        stateText:'analyzing schema', busyText:'Analyzing schema\u2026',
+        lines:[ {t:'> Suggest indexes for the slow reporting queries'}, {t:''}, {t:'⏺ Read(db/schema.sql)', c:'acc'}, {t:'  ⎿  Read 210 lines', c:'dim'}, {t:''} ], prompt:null },
+
+      { id:'dev-server', name:'dev-server', project:'acme-web', branch:'feat/session-api', kind:'shell', mode:'normal', status:'busy', notified:false,
+        stateText:'running · npm run dev', busyText:'dev server running',
+        lines:[
+          {t:'~/code/acme-web $ npm run dev', c:''}, {t:''},
+          {t:'> acme-web@1.0.0 dev', c:'dim'}, {t:'> vite', c:'dim'}, {t:''},
+          {t:'  VITE v5.2.0  ready in 412 ms', c:'ok'}, {t:''},
+          {t:'  ➜  Local:   http://localhost:5173/', c:''},
+          {t:'  ➜  Network: use --host to expose', c:'dim'}, {t:''},
+        ], prompt:null },
+
+      { id:'shell-infra', name:'shell', project:'infra', branch:'main', kind:'shell', mode:'normal', status:'idle', notified:false,
+        stateText:'idle · ~/code/infra',
+        lines:[
+          {t:'Last login: Thu Jun 26 09:14 on ttys004', c:'dim'}, {t:''},
+          {t:'~/code/infra $ git status', c:''},
+          {t:'On branch main', c:'dim'},
+          {t:'nothing to commit, working tree clean', c:'dim'}, {t:''},
+        ], prompt:null },
+    ],
+  };
+
+  COLORS = { busy:'#7a9bbf', waiting:'#d97757', idle:'#80a86f', error:'#cf5e4e', closed:'#6e6a60' };
+  LABELS = { busy:'Working', waiting:'Waiting', idle:'Idle', error:'Error', closed:'Closed' };
+  LINEC  = { '':'#cbc6b8', dim:'#807b6f', acc:'#d97757', ok:'#80a86f', err:'#cf5e4e' };
+  PLAN_LIMIT = 2000000;
+  LAYOUTS = { single:1, cols2:2, grid4:4 };
+
+  componentDidMount() { this._t = setTimeout(() => this.fireDemo(), 5200); }
+  componentWillUnmount() { clearTimeout(this._t); }
+  componentDidUpdate() { Object.values(this._terms).forEach(el => { if (el) el.scrollTop = el.scrollHeight; }); }
+
+  curId() { return this.state.panes[this.state.focused]; }
+  active() { return this.state.sessions.find(x => x.id === this.curId()); }
+
+  svg(children, w) {
+    return React.createElement('svg', { width:w||15, height:w||15, viewBox:'0 0 24 24', fill:'none',
+      stroke:'currentColor', strokeWidth:1.7, strokeLinecap:'round', strokeLinejoin:'round', style:{ display:'block' } }, children);
+  }
+  path(d, key) { return React.createElement('path', { d, key }); }
+  buildIcons() {
+    const P = (d, k) => this.path(d, k);
+    return {
+      plus: this.svg([P('M12 5v14','a'), P('M5 12h14','b')], 15),
+      bigplus: this.svg([P('M12 5v14','a'), P('M5 12h14','b')], 30),
+      close: this.svg([P('M6 6l12 12','a'), P('M18 6L6 18','b')], 13),
+      check: this.svg([P('M5 12l5 5L19 7','a')], 14),
+      lock: this.svg([ React.createElement('rect',{key:'r',x:5,y:11,width:14,height:9,rx:2}), P('M8 11V7a4 4 0 0 1 8 0v4','s') ], 13),
+      lockSidebar: this.svg([ React.createElement('rect',{key:'r',x:5,y:11,width:14,height:9,rx:2}), P('M8 11V7a4 4 0 0 1 8 0v4','s') ], 11),
+      unlock: this.svg([ React.createElement('rect',{key:'r',x:5,y:11,width:14,height:9,rx:2}), P('M8 11V7a4 4 0 0 1 7.5-1.3','s') ], 15),
+      lockHdr: this.svg([ React.createElement('rect',{key:'r',x:5,y:11,width:14,height:9,rx:2}), P('M8 11V7a4 4 0 0 1 8 0v4','s') ], 15),
+      git: this.svg([ React.createElement('circle',{key:'a',cx:6,cy:6,r:2.4}), React.createElement('circle',{key:'b',cx:6,cy:18,r:2.4}), React.createElement('circle',{key:'c',cx:18,cy:9,r:2.4}), P('M18 11.4a6 6 0 0 1-6 6H6','d'), P('M6 8.4v7.2','e') ], 15),
+      power: this.svg([ P('M12 4v8','a'), P('M7.5 7.5a7 7 0 1 0 9 0','b') ], 15),
+      folderSm: this.svg([ P('M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z','a') ], 14),
+      chevron: this.svg([ P('M6 9l6 6 6-6','a') ], 12),
+      columns: this.svg([ React.createElement('rect',{key:'r',x:4,y:5,width:16,height:14,rx:1.5}), P('M12 5v14','m') ], 15),
+      laySingle: this.svg([ React.createElement('rect',{key:'r',x:5,y:5,width:14,height:14,rx:1.5}) ], 15),
+      grid: this.svg([ React.createElement('rect',{key:'a',x:4,y:4,width:7,height:7,rx:1}), React.createElement('rect',{key:'b',x:13,y:4,width:7,height:7,rx:1}), React.createElement('rect',{key:'c',x:4,y:13,width:7,height:7,rx:1}), React.createElement('rect',{key:'d',x:13,y:13,width:7,height:7,rx:1}) ], 15),
+      terminal: this.svg([ P('M6 8l3.5 3.5L6 15','a'), P('M12.5 15H18','b') ], 13),
+      terminalSm: this.svg([ P('M6 8l3.5 3.5L6 15','a'), P('M12.5 15H18','b') ], 12),
+      sparkle: this.svg([ P('M12 4l1.7 5.1L19 11l-5.3 1.9L12 18l-1.7-5.1L5 11l5.3-1.9z','a') ], 12),
+    };
+  }
+
+  dotStyle(st, size) {
+    const s = size || 9;
+    let css = `width:${s}px;height:${s}px;border-radius:50%;flex:none;background:${this.COLORS[st]};`;
+    if (st === 'waiting') css += 'animation:cc-pulse 1.5s ease-in-out infinite;';
+    else if (st === 'busy') css += 'animation:cc-breathe 1.3s ease-in-out infinite;';
+    else if (st === 'closed') css += 'opacity:0.55;';
+    return css;
+  }
+
+  select(id) { this.setState(s => {
+    const existing = s.panes.indexOf(id);
+    let panes = s.panes.slice(), focused = s.focused;
+    if (existing >= 0) focused = existing; else panes[focused] = id;
+    return { panes, focused, editing:false,
+      sessions: s.sessions.map(x => x.id===id ? {...x, notified:false} : x),
+      toast: (s.toast && s.toast.id===id) ? null : s.toast }; }); }
+
+  setLayout(name) { this.setState(s => {
+    const count = this.LAYOUTS[name] || 1;
+    let panes = s.panes.slice();
+    let focused = s.focused;
+    if (panes.length > count) {
+      const focusId = panes[s.focused];
+      const others = panes.filter((_, i) => i !== s.focused);
+      panes = [focusId, ...others].slice(0, count);
+      focused = 0;
+    } else if (panes.length < count) {
+      const shown = new Set(panes);
+      while (panes.length < count) {
+        const next = s.sessions.find(x => x.status!=='closed' && !shown.has(x.id)) || s.sessions.find(x => !shown.has(x.id)) || s.sessions[0];
+        const addId = next ? next.id : (panes[0] || '');
+        panes.push(addId); shown.add(addId);
+      }
+    }
+    return { layout:name, panes, focused, editing:false, layoutMenuOpen:false }; }); }
+
+  toggleLayoutMenu() { this.setState(s => ({ layoutMenuOpen: !s.layoutMenuOpen })); }
+  closeLayoutMenu() { this.setState({ layoutMenuOpen:false }); }
+
+  focusPane(i) { if (i !== this.state.focused) this.setState({ focused:i, editing:false }); }
+
+  closeTab(id) { this.setState(s => {
+    const sessions = s.sessions.map(x => x.id===id ? {...x, status:'closed', stateText:'closed', prompt:null, notified:false, lines:[...x.lines, {t:''}, {t:'Session ended.', c:'dim'}]} : x);
+    return { sessions }; }); }
+
+  requestClose(id) { const x = this.state.sessions.find(s => s.id===id); if (!x) return; this.setState({ confirm:{ kind:'close', id, name:x.name } }); }
+  requestRemove(id, e) { if (e) e.stopPropagation(); const x = this.state.sessions.find(s => s.id===id); if (!x) return; this.setState({ confirm:{ kind:'remove', id, name:x.name } }); }
+  cancelConfirm() { this.setState({ confirm:null }); }
+  doConfirm() { const c = this.state.confirm; if (!c) return; this.setState({ confirm:null }); if (c.kind==='close') this.closeTab(c.id); else this.removeSession(c.id); }
+
+  removeSession(id, e) { if (e) e.stopPropagation(); this.setState(s => {
+    const sessions = s.sessions.filter(x => x.id !== id);
+    if (!sessions.length) return { sessions, panes:[], focused:0, editing:false, toast: (s.toast && s.toast.id===id) ? null : s.toast };
+    let panes = s.panes.map(pid => pid===id ? sessions[0].id : pid);
+    let focused = Math.min(s.focused, panes.length - 1);
+    return { sessions, panes, focused, editing:false, toast: (s.toast && s.toast.id===id) ? null : s.toast }; }); }
+
+  toggleMode(id) { this.setState(s => ({
+    sessions: s.sessions.map(x => x.id===id ? {...x, mode: x.mode==='normal'?'readonly':'normal'} : x) })); }
+
+  openInGit(id) { const a = this.state.sessions.find(x => x.id===id); if (!a) return;
+    this.setState({ toast: { plain:true, id:null, text:'Opening in git tool…', sub:'~/code/'+a.project, accent:'#7a9bbf', border:'rgba(122,155,191,0.3)', dotStyle:this.dotStyle('busy',8) } });
+    clearTimeout(this._gt); this._gt = setTimeout(() => this.setState(s => s.toast && s.toast.plain ? { toast:null } : {}), 2400); }
+
+  startEditName(id) { const a = this.state.sessions.find(x => x.id===id); if (!a) return; this.setState(s => {
+    const i = s.panes.indexOf(id);
+    return { focused: i>=0 ? i : s.focused, editing:true, draftName:a.name }; }); }
+  onNameInput(e) { this.setState({ draftName:e.target.value }); }
+  onNameKey(e) { if (e.key==='Enter') e.target.blur(); else if (e.key==='Escape') this.setState({ editing:false }); }
+  commitName() { this.setState(s => ({ editing:false,
+    sessions: s.sessions.map(x => x.id===s.panes[s.focused] ? {...x, name:(s.draftName.trim()||x.name)} : x) })); }
+
+  openNew() { this.setState({ showNew:true, form:{ folder:'~/code/acme-web', name:'', kind:'claude', worktree:false, branch:'' } }); }
+  closeNew() { this.setState({ showNew:false }); }
+  setForm(p) { this.setState(s => ({ form:{...s.form, ...p} })); }
+
+  toggleGroup(name) { this.setState(s => ({ collapsedGroups: { ...s.collapsedGroups, [name]: !s.collapsedGroups[name] } })); }
+
+  browseFolder() { if (this._folderInput) this._folderInput.click(); }
+  onFolderPicked(e) {
+    const files = e.target.files;
+    if (!files || !files.length) return;
+    const rel = files[0].webkitRelativePath || files[0].name;
+    const top = rel.split('/')[0] || files[0].name;
+    const path = top.startsWith('~') || top.startsWith('/') ? top : ('~/' + top);
+    this.setState(s => ({
+      customFolders: s.customFolders.includes(path) ? s.customFolders : [path, ...s.customFolders],
+      form: { ...s.form, folder: path, name: s.form.name || top },
+    }));
+    e.target.value = '';
+  }
+
+  createSession() {
+    const f = this.state.form;
+    const kind = f.kind || 'claude';
+    const isShell = kind === 'shell';
+    const mode = kind === 'claude-ro' ? 'readonly' : 'normal';
+    const proj = (f.folder.split('/').filter(Boolean).pop()) || 'project';
+    const id = 'sess-' + Date.now();
+    const name = f.name.trim() || (isShell ? 'shell' : 'session-' + (this.state.sessions.length + 1));
+    const branch = f.worktree ? (f.branch.trim()||'work') : 'main';
+    let sess;
+    if (isShell) {
+      sess = { id, name, project:proj, branch, kind:'shell', mode:'normal',
+        status:'idle', notified:false, stateText:'idle · '+f.folder,
+        lines:[ {t:'Last login: '+new Date().toDateString()+' on ttys006', c:'dim'}, {t:''}, {t:f.folder+' $ '} ], prompt:null };
+    } else {
+      sess = { id, name, project:proj, branch, kind:'claude', mode,
+        status:'idle', notified:false, stateText: f.worktree ? 'worktree created' : 'ready',
+        lines:[ {t:'✻ Welcome to Claude Code', c:'acc'}, {t:''}, {t:'  cwd: '+f.folder + (f.worktree ? '  (worktree '+branch+')' : ''), c:'dim'},
+          {t:'  mode: '+(mode==='readonly'?'read-only':'normal'), c:'dim'}, {t:''} ], prompt:null };
+    }
+    this.setState(s => { const panes = s.panes.length ? s.panes.slice() : ['']; panes[s.focused] = id;
+      return { sessions:[...s.sessions, sess], panes, showNew:false, editing:false,
+        metrics: isShell ? s.metrics : { ...s.metrics, [id]: { model:'Sonnet 4.5', effort:'medium', ctx:0, tokens:0, cost:0 } } }; });
+  }
+
+  answer(id, label) {
+    this.setState(s => ({ toast: (s.toast && s.toast.id===id) ? null : s.toast,
+      sessions: s.sessions.map(x => x.id===id ? {...x, status:'busy', stateText:'applying changes', busyText:'Editing files…', prompt:null,
+        lines:[...x.lines, {t:'⏺ '+label.replace(/^\d+\.\s*/,''), c:'acc'}, {t:''}]} : x) }));
+    setTimeout(() => this.setState(s => ({ sessions: s.sessions.map(x => x.id===id ? {...x, status:'idle', stateText:'finished · just now',
+      lines:[...x.lines, {t:'  ✓ Done. 3 files changed, 0 conflicts.', c:'ok'}, {t:''}]} : x) })), 1700);
+  }
+
+  focusTerm(id) { if (this._inputs[id]) this._inputs[id].focus(); }
+
+  onTermKey(e, id) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const v = e.target.value.trim(); if (!v) return; e.target.value = '';
+    const a = this.state.sessions.find(x => x.id===id); if (!a) return;
+    if ((a.kind||'claude')==='shell') {
+      const cwd = '~/code/'+a.project;
+      if (v.toLowerCase()==='clear') { this.setState(s => ({ sessions: s.sessions.map(x => x.id===id ? {...x, lines:[]} : x) })); return; }
+      const out = this.shellOut(v);
+      this.setState(s => ({ sessions: s.sessions.map(x => x.id===id ? {...x, lines:[...x.lines, {t:cwd+' $ '+v}, ...out]} : x) }));
+      return;
+    }
+    if (a.status==='waiting' && a.prompt) {
+      const m = { '1':0, '2':1, '3':2, 'y':0, 'yes':0, 'n':2, 'no':2 };
+      const i = m[v.toLowerCase()];
+      if (i != null && a.prompt.options[i]) { this.answer(a.id, a.prompt.options[i]); return; }
+    }
+    this.setState(s => ({ sessions: s.sessions.map(x => x.id===id ? {...x, status:'busy', stateText:'thinking', busyText:'Thinking…', prompt:null,
+      lines:[...x.lines, {t:'> '+v}, {t:''}]} : x) }));
+    setTimeout(() => this.setState(s => ({ sessions: s.sessions.map(x => x.id===id ? {...x, status:'idle', stateText:'finished · just now',
+      lines:[...x.lines, {t:'⏺ Done — tell me what\u2019s next.', c:'acc'}, {t:''}]} : x) })), 1500);
+  }
+
+  fireDemo() {
+    this.setState(s => {
+      if (s.notifiedFired) return {};
+      const onIt = s.panes.includes('api-tests');
+      const sessions = s.sessions.map(x => x.id==='api-tests' ? {...x, status:'waiting', notified: !onIt, stateText:'waiting for input',
+        lines:[...x.lines, {t:'  ✓ 142 passed · 0 failed · 1.8s', c:'ok'}, {t:''}],
+        prompt:{ question:'All tests pass. Commit these 12 files and push to ci/api-tests?', options:['1. Yes, commit & push','2. Commit only','3. No'] } } : x);
+      return { sessions, notifiedFired:true,
+        toast: onIt ? null : { id:'api-tests', text:'api-tests needs your input', sub:'acme-web / feat/session-api', accent:'#d97757', border:'rgba(217,119,87,0.32)', dotStyle:this.dotStyle('waiting',8) } };
+    });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const icons = this.buildIcons();
+    const C = this.COLORS;
+
+    const shownSet = new Set(s.panes);
+    const focusedId = s.panes[s.focused];
+    const order = []; const map = {};
+    s.sessions.forEach(x => { if (!map[x.project]) { map[x.project] = { name:x.project, count:0, sessions:[] }; order.push(map[x.project]); } map[x.project].count++; });
+    s.sessions.forEach(x => {
+      const isFocused = x.id === focusedId;
+      const shown = shownSet.has(x.id);
+      const sel = shown;
+      let itemStyle = 'display:flex; align-items:flex-start; gap:10px; padding:8px 11px; border-radius:8px; cursor:pointer;';
+      if (isFocused) itemStyle += 'background:#322f29; box-shadow:inset 2px 0 0 #d97757;';
+      else if (shown) itemStyle += 'background:#28251f;';
+      const vx = this.vis(x);
+      map[x.project].sessions.push({
+        id:x.id, name:x.name, onClick:() => this.select(x.id), onRemove:(e) => this.requestRemove(x.id, e), removable: x.status==='closed',
+        dotStyle: vx.dot(9) + 'margin-top:4px;',
+        itemStyle, hoverStyle: sel ? '' : 'background:rgba(214,209,196,0.04);',
+        stateText:x.stateText, lockVisible: x.mode==='readonly' && !vx.shell, lockIcon: icons.lockSidebar,
+        kindVisible: vx.shell, kindIcon: icons.terminalSm,
+        notified: !!x.notified && !sel && !vx.shell,
+        nameStyle: 'font-size:12.5px; font-weight:'+(sel?'600':'500')+'; color:'+(x.status==='closed'?'#807b6f':(sel?'#f4f0e6':'#cbc6b8'))+'; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'+(x.status==='closed'?'text-decoration:line-through;':''),
+        stateStyle: 'font-size:10.5px; color:'+vx.textColor+'; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;',
+      });
+    });
+
+    order.forEach(g => {
+      const collapsed = !!s.collapsedGroups[g.name];
+      g.expanded = !collapsed;
+      g.onToggle = () => this.toggleGroup(g.name);
+      g.chevronStyle = 'display:flex; flex:none; color:#6e6a60; transition:transform .15s; transform:rotate('+(collapsed?'-90deg':'0deg')+');';
+    });
+
+    const total = s.panes.length;
+    const panes = s.panes.map((pid, idx) => {
+      const a = s.sessions.find(x => x.id===pid);
+      if (!a) return null;
+      const isFocused = idx === s.focused;
+      const vi = this.vis(a);
+      const shell = vi.shell;
+      const sColor = vi.color;
+      const stStyle = 'color:'+vi.textColor+'; font-weight:500;';
+      const ro = a.mode==='readonly';
+      const md = s.metrics[a.id] || { model:'Sonnet 4.5', effort:'medium', ctx:0, tokens:0, cost:0 };
+      const cpct = Math.min(1, md.ctx / 200000);
+      const metrics = {
+        model: md.model,
+        modelDot: 'width:8px;height:8px;border-radius:50%;flex:none;background:'+this.modelColor(md.model.split(' ')[0])+';',
+        effort: md.effort,
+        effortStyle: 'font-size:12.5px; font-weight:500; text-transform:capitalize; color:'+(md.effort==='high'?'#d97757':md.effort==='medium'?'#8fafce':'#9a958a')+';',
+        ctxText: this.fmtTok(md.ctx)+' / 200K',
+        ctxPctText: Math.round(cpct*100)+'%',
+        ctxBar: 'height:100%; width:'+Math.round(cpct*100)+'%; background:'+(cpct>0.85?'#cf5e4e':'#8fafce')+'; border-radius:2px;',
+      };
+      const opts = (a.prompt ? a.prompt.options : []).map((label, i) => ({
+        label, onClick:() => this.answer(a.id, label),
+        style:'padding:3px 7px; border-radius:5px; cursor:pointer; color:'+(i===0?'#d97757':'#a8a397')+'; '+(i===0?'background:rgba(217,119,87,0.1);':''),
+      }));
+      const editing = isFocused && s.editing;
+      let headerStyle = 'display:flex; align-items:center; gap:14px; padding:13px 18px; border-bottom:1px solid rgba(214,209,196,0.07); background:#1d1c19;';
+      if (total > 1) headerStyle = 'border-top:2px solid '+(isFocused?'#d97757':'transparent')+';' + headerStyle;
+      return {
+        id:a.id, name:a.name, project:a.project, branch:a.branch, stateText:a.stateText,
+        paneStyle: 'flex:1 1 0; min-width:0; min-height:0; display:flex; flex-direction:column; background:#1a1917;',
+        headerStyle, onFocus: () => this.focusPane(idx),
+        editing, notEditing: !editing,
+        nameStyle: 'font-size:14.5px; font-weight:600; color:#f0ece2; cursor:text; border-bottom:1px dashed transparent; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;',
+        startEdit: () => this.startEditName(a.id),
+        statusLabel: vi.label, stateStyle: stStyle,
+        headDotStyle: vi.dot(11),
+        showMetrics: total === 1 && !shell, showLock: !shell, metrics,
+        onToggleMode: () => this.toggleMode(a.id), onOpenGit: () => this.openInGit(a.id), onClose: () => this.requestClose(a.id),
+        badgeStyle: 'display:inline-flex; align-items:center; gap:6px; padding:3px 9px 3px 8px; border-radius:20px; font-size:10.5px; font-weight:600; flex:none; background:'+this.hexA(sColor,0.13)+'; color:'+sColor+'; border:1px solid '+this.hexA(sColor,0.3)+';',
+        badgeDotStyle: vi.dot(6),
+        isBusy: a.status==='busy' && !shell, busyText: a.busyText || 'Working…',
+        canType: a.status!=='closed', promptGlyph: shell ? '$' : (a.status==='waiting' ? '❯' : '>'),
+        glyphStyle: 'color:'+(shell?'#8a93a3':'#d97757')+'; font-weight:600;',
+        inputStyle: 'flex:1; background:transparent; border:none; outline:none; color:#e8e4d9; font:inherit; font-size:13px; caret-color:'+(shell?'#8a93a3':'#d97757')+';',
+        hasPrompt: !!a.prompt, prompt: a.prompt ? { question:a.prompt.question, options:opts } : { question:'', options:[] },
+        lines: a.lines.map(l => ({ rowStyle:'white-space:pre-wrap; word-break:break-word; color:'+(this.LINEC[l.c||'']||this.LINEC['']) +';', text: (l.t==='' ? ' ' : l.t) })),
+        lockIcon: ro ? icons.lockHdr : icons.unlock,
+        lockTitle: ro ? 'Read-only — click for Normal' : 'Normal — click for Read-only',
+        lockBtnStyle: 'display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:7px; cursor:pointer; border:1px solid '+(ro?'rgba(217,119,87,0.4)':'rgba(214,209,196,0.09)')+'; background:'+(ro?'rgba(217,119,87,0.14)':'transparent')+'; color:'+(ro?'#e3ad96':'#9a958a')+';',
+        inputPlaceholder: shell ? 'run a command…' : (ro ? 'read-only — messages won\u2019t edit files' : (a.status==='waiting' ? 'type 1, 2 or 3 — or a new message…' : 'send a message…')),
+        termRef: (el) => { this._terms[a.id] = el; }, inputRef: (el) => { this._inputs[a.id] = el; },
+        focusTerm: () => this.focusTerm(a.id), onKey: (e) => this.onTermKey(e, a.id),
+      };
+    }).filter(Boolean);
+    const a = this.active();
+    const layoutDefs = [
+      { key:'single', label:'Single terminal', icon:icons.laySingle },
+      { key:'cols2',  label:'Two side by side', icon:icons.columns },
+      { key:'grid4',  label:'2×2 grid',        icon:icons.grid },
+    ];
+    const curLayout = layoutDefs.find(d => d.key === s.layout) || layoutDefs[0];
+    const layoutOptions = layoutDefs.map(d => ({
+      label:d.label, icon:d.icon, active: d.key===s.layout,
+      iconColor: d.key===s.layout ? '#d97757' : '#9a958a',
+      onClick: () => this.setLayout(d.key),
+      style: 'display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:7px; cursor:pointer; color:'+(d.key===s.layout?'#f0ece2':'#cbc6b8')+';',
+    }));
+    const panesWrapStyle = s.layout==='grid4'
+      ? 'flex:1; min-height:0; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:1px; background:rgba(214,209,196,0.09);'
+      : 'flex:1; min-height:0; display:flex; align-items:stretch; gap:1px; background:rgba(214,209,196,0.09);';
+
+    const toast = s.toast ? {...s.toast, hasJump: !s.toast.plain, onJump:() => this.select(s.toast.id) } : { hasJump:false };
+
+    const c = s.confirm;
+    let confirm = {};
+    if (c) {
+      const rm = c.kind==='remove';
+      confirm = {
+        title: rm ? 'Remove session?' : 'Close session?',
+        body: rm
+          ? '\u201c'+c.name+'\u201d will be permanently removed from the list. This can\u2019t be undone.'
+          : '\u201c'+c.name+'\u201d will stop running and be marked closed. It stays in the list so you can review its history.',
+        confirmLabel: rm ? 'Remove' : 'Close session',
+        confirmStyle: 'padding:10px 20px; border:none; border-radius:9px; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; color:'+(rm?'#fff':'#1a120c')+'; background:'+(rm?'#cf5e4e':'#d97757')+';',
+        confirmHover: rm ? 'background:#d96e5e;' : 'background:#e08a6c;',
+      };
+    }
+
+    const f = s.form;
+    const baseFolders = ['~/code/acme-web','~/code/payments-svc','~/code/infra','~/work/dashboard','~/code/cli-tools'];
+    const allFolders = [...s.customFolders, ...baseFolders.filter(p => !s.customFolders.includes(p))];
+    const recents = allFolders.map(p => ({
+      path:p, selected: f.folder===p, onClick:() => this.setForm({ folder:p }),
+      hover: f.folder===p ? '' : 'background:rgba(214,209,196,0.05);',
+      style:'display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:7px; cursor:pointer; background:'+(f.folder===p?'rgba(217,119,87,0.1)':'transparent')+'; border:1px solid '+(f.folder===p?'rgba(217,119,87,0.28)':'transparent')+';',
+    }));
+    const tkind = f.kind || 'claude';
+    const typeDefs = [
+      { key:'claude',    label:'Claude',             desc:'Reads & edits files in this folder', icon:icons.sparkle },
+      { key:'claude-ro', label:'Claude · Read-only', desc:'Reads & explains, never edits',       icon:icons.lock },
+      { key:'shell',     label:'Terminal',           desc:'Plain shell — no Claude',             icon:icons.terminal },
+    ];
+    const typeOptions = typeDefs.map(d => { const on = tkind===d.key; return {
+      label:d.label, desc:d.desc, icon:d.icon, active:on, onClick:()=>this.setForm({ kind:d.key }),
+      iconColor: on ? '#e3ad96' : '#807b6f',
+      style:'display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:9px; cursor:pointer; background:'+(on?'rgba(217,119,87,0.1)':'#191815')+'; border:1px solid '+(on?'rgba(217,119,87,0.4)':'rgba(214,209,196,0.1)')+';',
+    }; });
+
+    const DEF = { model:'Sonnet 4.5', effort:'medium', ctx:0, tokens:0, cost:0 };
+    let allTok = 0;
+    s.sessions.forEach(x => { allTok += (s.metrics[x.id] || DEF).tokens; });
+    const cm = a ? (s.metrics[a.id] || DEF) : null;
+    const curShell = a ? (a.kind||'claude')==='shell' : false;
+    const usedPct = Math.min(100, allTok / this.PLAN_LIMIT * 100);
+    const remain = Math.max(0, 100 - usedPct);
+    const footer = {
+      curPrimary: !a ? '—' : (curShell ? 'Terminal' : (cm ? cm.model : '—')),
+      curSecondary: !a ? '' : (curShell ? '~/code/'+a.project : (cm ? this.fmtTok(cm.tokens)+' tokens' : '0 tokens')),
+      curDot: 'width:8px;height:8px;border-radius:50%;flex:none;background:'+(curShell ? '#8a93a3' : (cm?this.modelColor(cm.model.split(' ')[0]):'#6e6a60'))+';',
+      usageUsed: this.fmtTok(allTok)+' / '+this.fmtTok(this.PLAN_LIMIT),
+      usagePct: Math.round(remain)+'% left',
+      usageBar: 'height:100%; width:'+usedPct.toFixed(0)+'%; background:'+(remain<15?'#cf5e4e':remain<35?'#d97757':'#7a9bbf')+'; border-radius:2px;',
+    };
+
+    return {
+      icons, totalCount: s.sessions.length, projects: order, footer,
+      hasActive: !!a, noActive: !a, panes, panesWrapStyle,
+      layoutMenuOpen: s.layoutMenuOpen, layoutLabel: curLayout.label, layoutIcon: curLayout.icon, layoutOptions,
+      layoutCaretStyle: 'display:flex; color:#807b6f; transition:transform .15s; transform:rotate('+(s.layoutMenuOpen?'180deg':'0deg')+');',
+      toggleLayoutMenu:()=>this.toggleLayoutMenu(), closeLayoutMenu:()=>this.closeLayoutMenu(),
+      draftName: s.draftName,
+      onNameInput:(e)=>this.onNameInput(e), onNameCommit:()=>this.commitName(), onNameKey:(e)=>this.onNameKey(e),
+      hasConfirm: !!s.confirm, confirm, onConfirm:()=>this.doConfirm(), cancelConfirm:()=>this.cancelConfirm(),
+      openNew:()=>this.openNew(), closeNew:()=>this.closeNew(), stop:(e)=>e.stopPropagation(),
+      showNew:s.showNew, hasToast: !!s.toast, toast,
+      form:f, namePlaceholder:'e.g. checkout-flow', typeOptions,
+      onFormName:(e)=>this.setForm({name:e.target.value}), onFormBranch:(e)=>this.setForm({branch:e.target.value}),
+      onFormFolder:(e)=>this.setForm({folder:e.target.value}), browseFolder:()=>this.browseFolder(), onFolderPicked:(e)=>this.onFolderPicked(e),
+      folderInputRef:(el)=>{ this._folderInput = el; if (el) { el.setAttribute('webkitdirectory',''); el.setAttribute('directory',''); el.setAttribute('mozdirectory',''); } },
+      toggleWorktree:()=>this.setForm({worktree:!f.worktree}), recentFolders:recents,
+      switchTrackStyle:'width:38px; height:22px; border-radius:11px; flex:none; padding:2px; display:flex; background:'+(f.worktree?'#d97757':'rgba(214,209,196,0.14)')+'; justify-content:'+(f.worktree?'flex-end':'flex-start')+';',
+      switchKnobStyle:'width:18px; height:18px; border-radius:50%; background:'+(f.worktree?'#1a120c':'#9a958a')+';',
+      createSession:()=>this.createSession(),
+    };
+  }
+
+  hexA(hex, a) {
+    const n = hex.replace('#',''); const r=parseInt(n.slice(0,2),16), g=parseInt(n.slice(2,4),16), b=parseInt(n.slice(4,6),16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  fmtTok(n) { if (n>=1e6) { const v=n/1e6; return (v%1===0?v:v.toFixed(1))+'M'; } if (n>=100000) return Math.round(n/1000)+'K'; if (n>=1000) { const v=n/1000; return (v%1===0?v:v.toFixed(1))+'K'; } return ''+n; }
+  modelColor(fam) { return fam==='Opus'?'#d97757':fam==='Sonnet'?'#7a9bbf':fam==='Haiku'?'#80a86f':'#807b6f'; }
+
+  // ---- terminal (plain shell) status: neutral, never attention-grabbing ----
+  shellState(a) { return ({ busy:'running', idle:'idle', error:'exited', closed:'exited' })[a.status] || 'idle'; }
+  vis(a) {
+    if ((a.kind||'claude') === 'shell') {
+      const st = this.shellState(a);
+      const color = st==='running' ? '#8a93a3' : '#6e6a60';
+      const label = st==='running' ? 'Running' : (st==='exited' ? 'Exited' : 'Idle');
+      const dot = (sz) => st==='exited'
+        ? 'width:'+sz+'px;height:'+sz+'px;border-radius:50%;flex:none;background:transparent;border:1.5px solid #6e6a60;box-sizing:border-box;'
+        : 'width:'+sz+'px;height:'+sz+'px;border-radius:50%;flex:none;background:'+color+';';
+      return { shell:true, color, label, dot, textColor:'#807b6f' };
+    }
+    return { shell:false, color:this.COLORS[a.status], label:this.LABELS[a.status],
+      dot:(sz)=>this.dotStyle(a.status, sz),
+      textColor: a.status==='waiting' ? '#d99a82' : (a.status==='error' ? '#c9786e' : '#807b6f') };
+  }
+  shellOut(v) {
+    const c = v.trim().toLowerCase();
+    if (c==='ls' || c==='ls -la') return [{t:'src  package.json  README.md  node_modules  .git', c:'dim'}];
+    if (c==='pwd') return [{t:'/Users/dev', c:'dim'}];
+    if (c.startsWith('git status')) return [{t:'On branch main', c:'dim'}, {t:'nothing to commit, working tree clean', c:'dim'}];
+    if (c.startsWith('echo ')) return [{t:v.slice(5)}];
+    return [];
+  }
+}
+</script>
+</body>
+</html>

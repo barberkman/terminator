@@ -1,0 +1,105 @@
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import type { BrowserWindow } from 'electron'
+import type { SessionMode } from '../shared/types'
+import { loadSettings } from './settings'
+import * as ptyMgr from './pty-manager'
+import {
+  getSession,
+  markStarted,
+  resetTerminal,
+  setRestarting,
+  setStatus,
+  updateSession,
+} from './state'
+import { buildSettingsFile } from './hooks-config'
+import { reportPort, reportToken } from './report-server'
+import { shellRunArgs, shquote } from './shell'
+
+export interface StartOpts {
+  cols?: number
+  rows?: number
+}
+
+/**
+ * Whether Claude already has a saved conversation for this session id in cwd's
+ * project. This is the ground truth for --resume vs --session-id (the in-memory
+ * flag can't know it for sessions restored across an app restart). Claude stores
+ * transcripts at ~/.claude/projects/<cwd-with-nonalnum-as-dash>/<id>.jsonl.
+ */
+function claudeHasConversation(sessionId: string, cwd: string): boolean {
+  const abs = ptyMgr.expandHome(cwd) || cwd
+  const encoded = abs.replace(/[^a-zA-Z0-9]/g, '-')
+  return existsSync(join(homedir(), '.claude', 'projects', encoded, `${sessionId}.jsonl`))
+}
+
+export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {}): void {
+  const s = getSession(id)
+  if (!s || s.alive) return
+  const settings = loadSettings()
+  const cwd = s.worktreePath || s.projectPath
+  const cols = opts.cols ?? 80
+  const rows = opts.rows ?? 24
+
+  if (s.kind === 'shell') {
+    ptyMgr.createPty(win, { id, file: settings.defaultShell, args: settings.shellArgs, cwd, cols, rows })
+    markStarted(id)
+    setStatus(id, 'idle', 'idle')
+    return
+  }
+
+  // Claude session: inject hooks + statusLine via a per-session --settings file,
+  // force --session-id so hook/statusLine payloads map back to this session, and
+  // run through the user's shell so the command resolves in their environment.
+  const mode = s.mode === 'readonly' ? settings.modes.readonly : settings.modes.normal
+  const settingsFile = buildSettingsFile(s)
+  const parts = [mode.command, ...mode.extraArgs.map(shquote)]
+  // --resume only works once a conversation exists. Before any prompt is sent the
+  // id is unclaimed, so it must be set with --session-id (resuming an empty id
+  // errors with "no conversation found", and re-claiming a used id also errors).
+  if (claudeHasConversation(s.id, cwd)) parts.push('--resume', s.id)
+  else parts.push('--session-id', s.id)
+  parts.push('--settings', shquote(settingsFile))
+  const command = parts.join(' ')
+
+  ptyMgr.createPty(win, {
+    id,
+    file: settings.defaultShell,
+    // Interactive shell so `.bashrc` aliases/functions (e.g. claude-readonly) resolve.
+    args: shellRunArgs(settings.defaultShell, command, true),
+    cwd,
+    cols,
+    rows,
+    env: {
+      // The reporter runs via our Electron binary in Node mode; Claude itself
+      // ignores this var. Port/token are also passed as reporter argv.
+      ELECTRON_RUN_AS_NODE: '1',
+      TERMINATOR_PORT: String(reportPort()),
+      TERMINATOR_TOKEN: reportToken(),
+      TERMINATOR_SESSION_ID: s.id,
+    },
+  })
+  markStarted(id)
+  setStatus(id, 'idle', 'ready')
+}
+
+/**
+ * Switch a Claude session between normal and read-only in one click, continuing
+ * the same conversation: kill the current pty and relaunch the other mode command
+ * with `--resume <same id>`. Re-uses the same terminal (cleared first).
+ */
+export function switchMode(win: BrowserWindow, id: string, newMode: SessionMode): void {
+  const s = getSession(id)
+  if (!s || s.kind !== 'claude' || s.mode === newMode) return
+  updateSession(id, { mode: newMode })
+  if (!s.alive) return // not running; the new mode applies when it next starts
+
+  const { cols, rows } = ptyMgr.lastSizeOf(id)
+  setRestarting(id, true)
+  setStatus(id, 'busy', `switching to ${newMode === 'readonly' ? 'read-only' : 'normal'}…`)
+  ptyMgr.killPtyThen(id, () => {
+    resetTerminal(id)
+    startSession(win, id, { cols, rows })
+  })
+}

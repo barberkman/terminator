@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #1a1917;
+  color: #cbc6b8;
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+input {
+  user-select: text;
+}
+
+/* Slim scrollbars to match the design */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(214, 209, 196, 0.1);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(214, 209, 196, 0.18);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Animations ported from the design */
+@keyframes cc-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 87, 0.5); }
+  50% { box-shadow: 0 0 0 5px rgba(217, 119, 87, 0); }
+}
+@keyframes cc-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@keyframes cc-notif {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.55); opacity: 0.5; }
+}
+@keyframes cc-toast {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes cc-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Reveal the row's remove (x) button on hover */
+.cc-row .cc-x {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.cc-row:hover .cc-x {
+  opacity: 1;
+}
+
+/* xterm fills its pane */
+.xterm,
+.xterm .xterm-viewport,
+.xterm .xterm-screen {
+  height: 100%;
+}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(214, 209, 196, 0.14);
+}
