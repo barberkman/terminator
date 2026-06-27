@@ -118,6 +118,9 @@ export function getOrCreate(id: string): Entry {
       return true // no selection → let ^C reach the shell (interrupt)
     }
     if (k === 'v') {
+      // preventDefault stops the browser's native paste into xterm's textarea;
+      // without it both that and the manual paste below fire (pasting twice).
+      e.preventDefault()
       const text = window.terminator.clipboardRead()
       if (text) term.paste(text)
       return false

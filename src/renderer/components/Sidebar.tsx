@@ -10,6 +10,9 @@ const LAYOUTS: { name: LayoutName; icon: IconName; label: string }[] = [
   { name: 'grid4', icon: 'grid', label: 'Grid · 4 panes' },
 ]
 
+/** Id of the session row currently being dragged (sidebar reorder). */
+let draggedId: string | null = null
+
 function activityColor(s: Session): string {
   if (s.status === 'waiting') return C.accentSoft
   if (s.status === 'error') return C.danger
@@ -21,15 +24,46 @@ function Row({ session }: { session: Session }): React.JSX.Element {
   const focusedId = useStore((s) => s.panes[s.focused])
   const openSession = useStore((s) => s.openSession)
   const setConfirm = useStore((s) => s.setConfirm)
+  const reorderWithinGroup = useStore((s) => s.reorderWithinGroup)
+  const [dragOver, setDragOver] = useState(false)
   const active = focusedId === session.id
   // A notified (needs-attention) session gets a clear highlight on its tab —
   // this is the primary in-app signal now that there's no popup toast.
   const notified = session.notified && !active
 
+  // Drag-reorder: only allow a drop when the dragged session is in the same
+  // project group (so groups stay contiguous).
+  const sameGroupDrag = (): boolean => {
+    if (!draggedId || draggedId === session.id) return false
+    const dragged = useStore.getState().sessions[draggedId]
+    return !!dragged && dragged.projectName === session.projectName
+  }
+
   return (
     <div
       className="cc-row"
+      draggable
       onClick={() => openSession(session.id)}
+      onDragStart={(e) => {
+        draggedId = session.id
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      onDragEnd={() => {
+        draggedId = null
+        setDragOver(false)
+      }}
+      onDragOver={(e) => {
+        if (!sameGroupDrag()) return
+        e.preventDefault()
+        if (!dragOver) setDragOver(true)
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDragOver(false)
+        if (draggedId) reorderWithinGroup(draggedId, session.id)
+        draggedId = null
+      }}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -45,6 +79,7 @@ function Row({ session }: { session: Session }): React.JSX.Element {
               ? 'rgba(214,209,196,0.04)'
               : 'transparent',
         border: `1px solid ${active ? 'rgba(217,119,87,0.22)' : notified ? 'rgba(217,119,87,0.4)' : 'transparent'}`,
+        boxShadow: dragOver ? `inset 0 2px 0 ${C.accent}` : undefined,
       }}
     >
       <span style={dotStyle(session.status, 9)} />

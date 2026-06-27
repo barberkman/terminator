@@ -136,6 +136,8 @@ export interface TerminatorApi {
   openGitGui(id: string): Promise<void>
   removeWorktree(id: string): Promise<void>
   clearNotified(id: string): void
+  /** Persist a new full session order (used by sidebar drag-reorder). */
+  reorderSessions(ids: string[]): void
 
   // pty hot path
   writePty(id: string, data: string): void

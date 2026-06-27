@@ -46,6 +46,7 @@ export function NewSessionModal(): React.JSX.Element | null {
   const show = useStore((s) => s.showNew)
   const setShowNew = useStore((s) => s.setShowNew)
   const settings = useStore((s) => s.settings)
+  const setSettings = useStore((s) => s.setSettings)
   const sessions = useStore((s) => s.sessions)
   const order = useStore((s) => s.order)
 
@@ -60,18 +61,20 @@ export function NewSessionModal(): React.JSX.Element | null {
   // other remembered projects — so you can add a session to an existing group.
   const recents = useMemo(() => {
     const seen = new Set<string>()
-    const list: { name: string; path: string }[] = []
+    // `removable` is true only for remembered projects with no live session — a
+    // session-backed project can't be deleted from the list while its session exists.
+    const list: { name: string; path: string; removable: boolean }[] = []
     for (const id of order) {
       const s = sessions[id]
       if (s && !seen.has(s.projectPath)) {
         seen.add(s.projectPath)
-        list.push({ name: s.projectName, path: s.projectPath })
+        list.push({ name: s.projectName, path: s.projectPath, removable: false })
       }
     }
     for (const p of settings?.projects ?? []) {
       if (!seen.has(p.path)) {
         seen.add(p.path)
-        list.push(p)
+        list.push({ ...p, removable: true })
       }
     }
     return list
@@ -104,6 +107,14 @@ export function NewSessionModal(): React.JSX.Element | null {
     }
   }
 
+  const removeRecent = async (path: string) => {
+    if (!settings) return
+    const projects = settings.projects.filter((p) => p.path !== path)
+    const result = await window.terminator.updateSettings({ projects })
+    setSettings(result)
+    if (folder === path) setFolder('')
+  }
+
   const create = async () => {
     if (!folder.trim() || busy) return
     setBusy(true)
@@ -125,7 +136,6 @@ export function NewSessionModal(): React.JSX.Element | null {
 
   return (
     <div
-      onClick={close}
       style={{
         position: 'fixed',
         inset: 0,
@@ -139,7 +149,6 @@ export function NewSessionModal(): React.JSX.Element | null {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         style={{
           width: 480,
           maxWidth: '92vw',
@@ -222,6 +231,7 @@ export function NewSessionModal(): React.JSX.Element | null {
                   return (
                     <div
                       key={rf.path}
+                      className="cc-row"
                       onClick={() => setFolder(rf.path)}
                       style={{
                         display: 'flex',
@@ -248,6 +258,32 @@ export function NewSessionModal(): React.JSX.Element | null {
                         <span style={{ display: 'flex', color: C.accent, flex: 'none' }}>
                           <Icon name="check" size={14} />
                         </span>
+                      )}
+                      {rf.removable && (
+                        <button
+                          className="cc-x"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void removeRecent(rf.path)
+                          }}
+                          title="Remove from recent projects"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 18,
+                            height: 18,
+                            borderRadius: 4,
+                            border: 'none',
+                            background: 'transparent',
+                            color: C.muted,
+                            cursor: 'pointer',
+                            padding: 0,
+                            flex: 'none',
+                          }}
+                        >
+                          <Icon name="close" size={13} />
+                        </button>
                       )}
                     </div>
                   )

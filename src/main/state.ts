@@ -48,7 +48,23 @@ function emit(channel: string, payload: unknown): void {
 }
 
 export function listSessions(): Session[] {
-  return [...sessions.values()].sort((a, b) => a.createdAt - b.createdAt)
+  // Map insertion order is the display order — preserved across restarts via
+  // persistence, and re-arranged by reorderSessions (sidebar drag-reorder).
+  return [...sessions.values()]
+}
+
+/** Re-arrange sessions to match a new id order (sidebar drag-reorder), then persist. */
+export function reorderSessions(ids: string[]): void {
+  const next = new Map<string, Session>()
+  for (const id of ids) {
+    const s = sessions.get(id)
+    if (s) next.set(id, s)
+  }
+  // Keep any sessions not present in `ids` (safety) in their existing order.
+  for (const [id, s] of sessions) if (!next.has(id)) next.set(id, s)
+  sessions.clear()
+  for (const [id, s] of next) sessions.set(id, s)
+  persist()
 }
 
 export function getSession(id: string): Session | undefined {

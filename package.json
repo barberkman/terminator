@@ -23,6 +23,12 @@
       "out/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
     "asarUnpack": [
       "**/node_modules/@lydell/**"
     ],
@@ -30,7 +36,8 @@
       "target": [
         "AppImage"
       ],
-      "category": "Development"
+      "category": "Development",
+      "icon": "build/icon.png"
     }
   },
   "dependencies": {

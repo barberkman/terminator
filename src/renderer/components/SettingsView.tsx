@@ -56,7 +56,6 @@ export function SettingsView(): React.JSX.Element | null {
 
   return (
     <div
-      onClick={() => setShow(false)}
       style={{
         position: 'fixed',
         inset: 0,
@@ -70,7 +69,6 @@ export function SettingsView(): React.JSX.Element | null {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         style={{
           width: 540,
           maxWidth: '94vw',

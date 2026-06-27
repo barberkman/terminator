@@ -8,6 +8,12 @@ import { startReportServer, stopReportServer } from './report-server'
 let win: BrowserWindow | null = null
 
 function createWindow(): void {
+  // Packaged: copied next to the app via electron-builder extraResources.
+  // Dev: __dirname is out/main, so ../../build/icon.png is the repo asset.
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(__dirname, '../../build/icon.png')
+
   win = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -15,6 +21,7 @@ function createWindow(): void {
     minHeight: 560,
     backgroundColor: '#1a1917',
     title: 'Terminator',
+    icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

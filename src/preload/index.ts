@@ -28,6 +28,7 @@ const api: TerminatorApi = {
   openGitGui: (id) => ipcRenderer.invoke(Channels.sessionOpenGitGui, id),
   removeWorktree: (id) => ipcRenderer.invoke(Channels.worktreeRemove, id),
   clearNotified: (id) => ipcRenderer.send(Channels.sessionClearNotified, id),
+  reorderSessions: (ids) => ipcRenderer.send(Channels.sessionReorder, ids),
 
   writePty: (id, data) => ipcRenderer.send(Channels.ptyWrite, { id, data }),
   resizePty: (id, cols, rows) => ipcRenderer.send(Channels.ptyResize, { id, cols, rows }),

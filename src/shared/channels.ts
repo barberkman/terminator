@@ -12,6 +12,7 @@ export const Channels = {
   sessionSetMode: 'session:setMode',
   sessionOpenGitGui: 'session:openGitGui',
   sessionClearNotified: 'session:clearNotified',
+  sessionReorder: 'session:reorder',
   worktreeRemove: 'worktree:remove',
 
   // pty hot path

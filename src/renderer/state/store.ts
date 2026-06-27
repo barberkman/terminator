@@ -36,6 +36,7 @@ interface StoreState {
   remove(id: string): void
   setLayout(name: LayoutName): void
   openSession(id: string): void
+  reorderWithinGroup(draggedId: string, targetId: string): void
   focusPane(i: number): void
   toggleGroup(name: string): void
   startEdit(id: string | null): void
@@ -170,6 +171,22 @@ export const useStore = create<StoreState>((set, get) => ({
       const sessions =
         cur && cur.notified ? { ...st.sessions, [id]: { ...cur, notified: false } } : st.sessions
       return { panes, focused, sessions, editingId: null }
+    })
+  },
+
+  reorderWithinGroup(draggedId, targetId) {
+    if (draggedId === targetId) return
+    set((st) => {
+      const a = st.sessions[draggedId]
+      const b = st.sessions[targetId]
+      // Only reorder within the same project group (keeps groups contiguous).
+      if (!a || !b || a.projectName !== b.projectName) return {}
+      const order = st.order.filter((x) => x !== draggedId)
+      const ti = order.indexOf(targetId)
+      if (ti < 0) return {}
+      order.splice(ti, 0, draggedId)
+      window.terminator.reorderSessions(order)
+      return { order }
     })
   },
 
