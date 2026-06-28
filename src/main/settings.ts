@@ -35,6 +35,7 @@ export function defaultSettings(): Settings {
     terminalFont: "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
     fontSize: 14,
     sidebarSide: 'left',
+    globalToggleShortcut: 'F12',
   }
 }
 

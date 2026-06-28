@@ -28,15 +28,107 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
+// Map a KeyboardEvent (via e.code, layout-independent) to an Electron accelerator token.
+function codeToAccel(code: string): string | null {
+  let m
+  if ((m = /^Key([A-Z])$/.exec(code))) return m[1]
+  if ((m = /^Digit([0-9])$/.exec(code))) return m[1]
+  if ((m = /^Numpad([0-9])$/.exec(code))) return 'num' + m[1]
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code
+  const named: Record<string, string> = {
+    Space: 'Space', Tab: 'Tab', Enter: 'Return', Backspace: 'Backspace',
+    Delete: 'Delete', Insert: 'Insert', Home: 'Home', End: 'End',
+    PageUp: 'PageUp', PageDown: 'PageDown',
+    ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+    Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+    Semicolon: ';', Quote: "'", Backquote: '`', Comma: ',', Period: '.', Slash: '/',
+  }
+  return named[code] ?? null
+}
+
+function eventToAccelerator(e: React.KeyboardEvent): string | null {
+  const key = codeToAccel(e.code)
+  if (!key) return null
+  const mods: string[] = []
+  if (e.ctrlKey) mods.push('Control')
+  if (e.metaKey) mods.push('Super')
+  if (e.altKey) mods.push('Alt')
+  if (e.shiftKey) mods.push('Shift')
+  return [...mods, key].join('+')
+}
+
+const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta'])
+
+/** Click-to-record control: captures a key combo and emits an Electron accelerator. */
+function ShortcutRecorder({ value, onChange }: { value: string; onChange: (accel: string) => void }): React.JSX.Element {
+  const [recording, setRecording] = useState(false)
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      <button
+        onClick={() => setRecording(true)}
+        onBlur={() => setRecording(false)}
+        onKeyDown={(e) => {
+          if (!recording) return
+          // Capture every key while recording so combos like Ctrl+N don't leak to
+          // the app's global handlers.
+          e.preventDefault()
+          e.stopPropagation()
+          if (e.key === 'Escape') {
+            setRecording(false)
+            return
+          }
+          if (MODIFIER_KEYS.has(e.key)) return // wait for a non-modifier key
+          const accel = eventToAccelerator(e)
+          if (accel) {
+            onChange(accel)
+            setRecording(false)
+          }
+        }}
+        style={{
+          ...inputStyle,
+          flex: 1,
+          textAlign: 'left',
+          cursor: 'pointer',
+          color: recording ? C.accentSoft : value ? C.textHi : C.dim,
+          borderColor: recording ? C.accentBorder : C.border2,
+        }}
+      >
+        {recording ? 'Press keys…  (Esc to cancel)' : value || 'Not set — click to record'}
+      </button>
+      <button
+        onClick={() => onChange('')}
+        title="Disable the global shortcut"
+        style={{
+          padding: '0 14px',
+          background: C.input,
+          border: `1px solid ${C.border3}`,
+          borderRadius: 8,
+          color: C.muted,
+          font: 'inherit',
+          fontSize: 12,
+          cursor: 'pointer',
+          flex: 'none',
+        }}
+      >
+        Clear
+      </button>
+    </div>
+  )
+}
+
 export function SettingsView(): React.JSX.Element | null {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
   const settings = useStore((s) => s.settings)
   const setSettings = useStore((s) => s.setSettings)
   const [draft, setDraft] = useState<Settings | null>(settings)
+  const [shortcutStatus, setShortcutStatus] = useState<{ accelerator: string; registered: boolean } | null>(null)
 
   useEffect(() => {
-    if (show) setDraft(settings)
+    if (show) {
+      setDraft(settings)
+      void window.terminator.getGlobalShortcutStatus().then(setShortcutStatus)
+    }
   }, [show, settings])
 
   if (!show || !draft) return null
@@ -177,6 +269,24 @@ export function SettingsView(): React.JSX.Element | null {
                 )
               })}
             </div>
+          </Field>
+          <Field
+            label="GLOBAL SHOW/HIDE SHORTCUT"
+            hint="System-wide hotkey to minimize/restore the window, even when the app isn't focused. Click to record, Esc to cancel, Clear to disable. Applies after Save."
+          >
+            <ShortcutRecorder
+              value={draft.globalToggleShortcut ?? ''}
+              onChange={(accel) => patch({ globalToggleShortcut: accel })}
+            />
+            {shortcutStatus && (
+              <div style={{ fontSize: 10.5, marginTop: 6, color: shortcutStatus.registered ? '#80a86f' : C.dim }}>
+                {shortcutStatus.accelerator
+                  ? shortcutStatus.registered
+                    ? `✓ Active: ${shortcutStatus.accelerator}`
+                    : `Not registered: ${shortcutStatus.accelerator} (the key may be in use)`
+                  : 'Currently disabled'}
+              </div>
+            )}
           </Field>
 
           <Field label="NOTIFICATION COMMAND" hint="Run on each notification, via your shell. Receives the event as JSON on stdin and TERMINATOR_* env vars. Leave blank to disable.">

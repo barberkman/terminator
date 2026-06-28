@@ -32,4 +32,5 @@ export const Channels = {
   pickFolder: 'dialog:pickFolder',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  globalShortcutStatus: 'globalShortcut:status',
 } as const

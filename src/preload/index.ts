@@ -43,6 +43,7 @@ const api: TerminatorApi = {
   pickFolder: () => ipcRenderer.invoke(Channels.pickFolder),
   getSettings: () => ipcRenderer.invoke(Channels.settingsGet),
   updateSettings: (patch: Partial<Settings>) => ipcRenderer.invoke(Channels.settingsUpdate, patch),
+  getGlobalShortcutStatus: () => ipcRenderer.invoke(Channels.globalShortcutStatus),
 
   setZoom: (factor: number) => webFrame.setZoomFactor(factor),
   getZoom: () => webFrame.getZoomFactor(),

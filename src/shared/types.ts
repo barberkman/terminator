@@ -105,6 +105,8 @@ export interface Settings {
   fontSize: number
   /** Which side of the window the session sidebar sits on. */
   sidebarSide: 'left' | 'right'
+  /** Electron accelerator for the global show/hide hotkey. Empty = disabled. */
+  globalToggleShortcut: string
 }
 
 // ---- Notifications ---------------------------------------------------------
@@ -157,6 +159,7 @@ export interface TerminatorApi {
   pickFolder(): Promise<string | null>
   getSettings(): Promise<Settings>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
+  getGlobalShortcutStatus(): Promise<{ accelerator: string; registered: boolean }>
 
   // UI zoom (global font scaling)
   setZoom(factor: number): void

@@ -4,6 +4,7 @@ import { registerIpc } from './ipc'
 import { killAll } from './pty-manager'
 import { loadPersisted, setWindow, wireProcessEvents } from './state'
 import { startReportServer, stopReportServer } from './report-server'
+import { applyGlobalShortcut, disposeGlobalShortcut } from './window-toggle'
 
 let win: BrowserWindow | null = null
 
@@ -46,6 +47,7 @@ app.whenReady().then(async () => {
   wireProcessEvents()
   registerIpc(() => win as BrowserWindow)
   createWindow()
+  applyGlobalShortcut(() => win)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -60,4 +62,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   killAll()
   stopReportServer()
+  disposeGlobalShortcut()
 })

@@ -6,6 +6,7 @@ import * as state from './state'
 import { startSession, switchMode } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
 import { addWorktree, openGitGui, removeWorktree } from './worktree'
+import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 
 /** Registers every ipcMain handler. The single IPC registry for the main process. */
 export function registerIpc(getWin: () => BrowserWindow): void {
@@ -72,5 +73,11 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
   })
   ipcMain.handle(Channels.settingsGet, () => loadSettings())
-  ipcMain.handle(Channels.settingsUpdate, (_e, patch) => saveSettings(patch))
+  ipcMain.handle(Channels.settingsUpdate, (_e, patch) => {
+    const next = saveSettings(patch)
+    // Re-register the global hotkey in case it changed.
+    applyGlobalShortcut(getWin)
+    return next
+  })
+  ipcMain.handle(Channels.globalShortcutStatus, () => globalShortcutStatus())
 }
