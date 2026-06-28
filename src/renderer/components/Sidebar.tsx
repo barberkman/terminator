@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import type { Session } from '../../shared/types'
-import { C, STATUS_COLORS, dotStyle } from '../theme'
+import { C, STATUS_COLORS, STATUS_LABELS, dotStyle } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { LAYOUT_COUNT, type LayoutName, buildGroups, useStore } from '../state/store'
 
@@ -240,6 +240,48 @@ function LayoutMenu(): React.JSX.Element {
   )
 }
 
+/**
+ * A session in the collapsed rail: a status-coloured dot (the "which session needs
+ * me" signal), highlighted when active/notified. Click or Alt+<index+1> to switch.
+ */
+function RailTab({ session, index }: { session: Session; index: number }): React.JSX.Element {
+  const focusedId = useStore((s) => s.panes[s.focused])
+  const shown = useStore((s) => s.panes.includes(session.id))
+  const openSession = useStore((s) => s.openSession)
+  const active = focusedId === session.id
+  const notified = session.notified && !active
+  const hint = index < 9 ? `  (Alt+${index + 1})` : ''
+
+  return (
+    <button
+      data-rail-session={session.id}
+      onClick={() => openSession(session.id)}
+      title={`${session.name} · ${STATUS_LABELS[session.status]}${hint}`}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 30,
+        height: 30,
+        borderRadius: 8,
+        flex: 'none',
+        cursor: 'pointer',
+        padding: 0,
+        background: active
+          ? 'rgba(217,119,87,0.1)'
+          : notified
+            ? 'rgba(217,119,87,0.14)'
+            : shown
+              ? 'rgba(214,209,196,0.04)'
+              : 'transparent',
+        border: `1px solid ${active ? 'rgba(217,119,87,0.22)' : notified ? 'rgba(217,119,87,0.4)' : 'transparent'}`,
+      }}
+    >
+      <span style={dotStyle(session.status, 11)} />
+    </button>
+  )
+}
+
 export function Sidebar(): React.JSX.Element {
   const order = useStore((s) => s.order)
   const sessions = useStore((s) => s.sessions)
@@ -251,6 +293,13 @@ export function Sidebar(): React.JSX.Element {
   const setShowSettings = useStore((s) => s.setShowSettings)
   const hidden = useStore((s) => s.sidebarHidden)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
+  const sidebarSide = useStore((s) => s.settings?.sidebarSide ?? 'left')
+
+  // The divider sits between the sidebar and the panes, so it flips with the side.
+  const sideBorder: React.CSSProperties =
+    sidebarSide === 'right'
+      ? { borderLeft: `1px solid ${C.border}` }
+      : { borderRight: `1px solid ${C.border}` }
 
   const railBtn: React.CSSProperties = {
     display: 'flex',
@@ -265,15 +314,22 @@ export function Sidebar(): React.JSX.Element {
     cursor: 'pointer',
   }
 
-  // Collapsed: a slim rail with expand + new-session, so there's always a way back.
+  // Collapsed: a slim rail with expand + new-session and the session tabs as status
+  // dots, so the "needs me" signal and session switching survive collapsing.
   if (hidden) {
+    // Flatten to the same grouped order the expanded sidebar (and Alt+1..9) use,
+    // tagging the first tab of each later group so we can draw a divider.
+    const railItems = groups.flatMap((g, gi) =>
+      g.sessions.map((s, si) => ({ session: s, groupStart: gi > 0 && si === 0 })),
+    )
+    const divider = <span style={{ width: 16, height: 1, background: C.hair, flex: 'none', margin: '1px 0' }} />
     return (
       <div
         style={{
           width: 42,
           flex: 'none',
           background: C.sidebar,
-          borderRight: `1px solid ${C.border}`,
+          ...sideBorder,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -291,6 +347,28 @@ export function Sidebar(): React.JSX.Element {
         >
           <Icon name="plus" size={16} />
         </button>
+        {railItems.length > 0 && divider}
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            width: '100%',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 6,
+            paddingBottom: 10,
+          }}
+        >
+          {railItems.map((it, i) => (
+            <Fragment key={it.session.id}>
+              {it.groupStart && divider}
+              <RailTab session={it.session} index={i} />
+            </Fragment>
+          ))}
+        </div>
       </div>
     )
   }
@@ -301,7 +379,7 @@ export function Sidebar(): React.JSX.Element {
         width: 262,
         flex: 'none',
         background: C.sidebar,
-        borderRight: `1px solid ${C.border}`,
+        ...sideBorder,
         display: 'flex',
         flexDirection: 'column',
       }}

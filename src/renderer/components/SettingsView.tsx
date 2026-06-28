@@ -151,6 +151,33 @@ export function SettingsView(): React.JSX.Element | null {
               />
             </div>
           </Field>
+          <Field label="SIDEBAR POSITION" hint="Which side of the window the session sidebar sits on.">
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(['left', 'right'] as const).map((side) => {
+                const on = (draft.sidebarSide ?? 'left') === side
+                return (
+                  <button
+                    key={side}
+                    onClick={() => patch({ sidebarSide: side })}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: `1px solid ${on ? C.accentBorder : C.border2}`,
+                      background: on ? 'rgba(217,119,87,0.12)' : 'transparent',
+                      color: on ? C.accentSoft : C.muted,
+                      font: 'inherit',
+                      fontSize: 12.5,
+                      cursor: 'pointer',
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {side}
+                  </button>
+                )
+              })}
+            </div>
+          </Field>
 
           <Field label="NOTIFICATION COMMAND" hint="Run on each notification, via your shell. Receives the event as JSON on stdin and TERMINATOR_* env vars. Leave blank to disable.">
             <input style={inputStyle} placeholder="python3 ~/notify.py" value={draft.notifications.command} onChange={(e) => patch({ notifications: { ...draft.notifications, command: e.target.value } })} />

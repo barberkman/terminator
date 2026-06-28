@@ -102,6 +102,19 @@ export function getOrCreate(id: string): Entry {
   host.style.cssText = 'width:100%;height:100%;'
   ensureHolder().appendChild(host)
   term.open(host)
+
+  // Disable auto copy-on-select: on Linux, xterm registers a mouse selection to the
+  // OS primary-selection buffer by writing it into the hidden textarea and calling
+  // select() (enabling middle-click paste). Neutralise that select() so selecting
+  // text never auto-copies — copying stays explicit via Ctrl/Cmd+C below. Our
+  // copy/paste don't rely on the textarea, and no native context menu uses it.
+  if (term.textarea) {
+    const ta = term.textarea
+    ta.select = () => {
+      ta.value = ''
+    }
+  }
+
   term.onData((d) => window.terminator.writePty(id, d))
 
   // Copy/paste: Ctrl/Cmd+C copies the selection (and otherwise passes ^C through

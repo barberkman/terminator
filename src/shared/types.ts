@@ -103,6 +103,8 @@ export interface Settings {
   terminalFont: string
   /** Global UI size — scales the whole interface via zoom (14 = 100%). */
   fontSize: number
+  /** Which side of the window the session sidebar sits on. */
+  sidebarSide: 'left' | 'right'
 }
 
 // ---- Notifications ---------------------------------------------------------
