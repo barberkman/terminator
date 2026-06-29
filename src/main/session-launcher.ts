@@ -15,7 +15,7 @@ import {
 } from './state'
 import { buildSettingsFile } from './hooks-config'
 import { reportPort, reportToken } from './report-server'
-import { shellRunArgs, shquote } from './shell'
+import { shellRunArgs, quoteFor } from './shell'
 
 export interface StartOpts {
   cols?: number
@@ -54,13 +54,13 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
   // run through the user's shell so the command resolves in their environment.
   const mode = s.mode === 'readonly' ? settings.modes.readonly : settings.modes.normal
   const settingsFile = buildSettingsFile(s)
-  const parts = [mode.command, ...mode.extraArgs.map(shquote)]
+  const parts = [mode.command, ...mode.extraArgs.map((a) => quoteFor(settings.defaultShell, a))]
   // --resume only works once a conversation exists. Before any prompt is sent the
   // id is unclaimed, so it must be set with --session-id (resuming an empty id
   // errors with "no conversation found", and re-claiming a used id also errors).
   if (claudeHasConversation(s.id, cwd)) parts.push('--resume', s.id)
   else parts.push('--session-id', s.id)
-  parts.push('--settings', shquote(settingsFile))
+  parts.push('--settings', quoteFor(settings.defaultShell, settingsFile))
   const command = parts.join(' ')
 
   ptyMgr.createPty(win, {
