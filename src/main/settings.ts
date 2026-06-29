@@ -3,11 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import type { Settings } from '../shared/types'
-
-function defaultShell(): string {
-  if (process.platform === 'win32') return process.env.COMSPEC || 'powershell.exe'
-  return process.env.SHELL || '/bin/bash'
-}
+import { defaultShell } from './shell'
 
 function defaultGitGui(): string {
   // The user's documented default on Windows is GitExtensions; elsewhere they set their own.

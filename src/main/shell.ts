@@ -1,3 +1,33 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
+/**
+ * Resolve the default shell for new sessions. Single source of truth shared by
+ * settings.ts (the stored default) and pty-manager.ts (the spawn-time fallback).
+ *
+ * - POSIX (Linux/macOS): the user's $SHELL, falling back to /bin/bash.
+ * - Windows: prefer PowerShell. Use PowerShell 7 (`pwsh.exe`) if it's on PATH,
+ *   else Windows PowerShell (`powershell.exe`, present since Windows ≥ 5.1). We
+ *   deliberately do NOT use COMSPEC, which always points at cmd.exe — a user who
+ *   wants cmd can still set it explicitly in Settings.
+ */
+export function defaultShell(): string {
+  if (process.platform === 'win32') {
+    return findOnPath('pwsh.exe') || 'powershell.exe'
+  }
+  return process.env.SHELL || '/bin/bash'
+}
+
+/** First absolute path for `name` found on PATH (Windows-only helper, no deps). */
+function findOnPath(name: string): string | undefined {
+  const dirs = (process.env.PATH || '').split(';').filter(Boolean)
+  for (const dir of dirs) {
+    const full = join(dir, name)
+    if (existsSync(full)) return full
+  }
+  return undefined
+}
+
 /** cmd.exe / PowerShell / POSIX shell argv to run a command string. */
 export function shellRunArgs(shell: string, command: string, interactive = false): string[] {
   const base = shell.toLowerCase()
@@ -17,4 +47,20 @@ export function shellRunArgs(shell: string, command: string, interactive = false
 export function shquote(s: string): string {
   if (/^[A-Za-z0-9_/.:=,@%+-]+$/.test(s)) return s
   return `'${s.replace(/'/g, `'\\''`)}'`
+}
+
+/**
+ * Quote a value for the given shell. On Windows + PowerShell, single-quoted
+ * strings are literal (no `$`/backtick expansion) and an embedded quote is escaped
+ * by doubling it (`''`) — so a path like C:\Users\me\x.json is passed verbatim.
+ * Everywhere else (POSIX shells, and the cmd.exe fallback) we use shquote.
+ */
+export function quoteFor(shell: string, s: string): string {
+  if (process.platform === 'win32') {
+    const base = shell.toLowerCase()
+    if (base.includes('powershell') || base.includes('pwsh')) {
+      return `'${s.replace(/'/g, `''`)}'`
+    }
+  }
+  return shquote(s)
 }

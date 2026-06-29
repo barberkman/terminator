@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import * as pty from '@lydell/node-pty'
 import type { BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
+import { defaultShell } from './shell'
 
 interface PtyCreateOpts {
   id: string
@@ -41,11 +42,6 @@ export function onData(cb: DataListener): void {
 }
 export function onExit(cb: ExitListener): void {
   exitListeners.push(cb)
-}
-
-function defaultShell(): string {
-  if (process.platform === 'win32') return process.env.COMSPEC || 'powershell.exe'
-  return process.env.SHELL || '/bin/bash'
 }
 
 /** Expand a leading ~ so user-typed folders like ~/code/x resolve correctly. */
