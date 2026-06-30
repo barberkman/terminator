@@ -3,7 +3,7 @@ import { Channels } from '../shared/channels'
 import type { CreateSessionInput, SessionMode } from '../shared/types'
 import * as ptyMgr from './pty-manager'
 import * as state from './state'
-import { startSession, switchMode } from './session-launcher'
+import { runTaskCommand, startSession, switchMode } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
 import { addWorktree, openGitGui, removeWorktree } from './worktree'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
@@ -16,7 +16,8 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   ipcMain.handle(Channels.sessionList, () => state.listSessions())
   ipcMain.handle(Channels.sessionCreate, async (_e, input: CreateSessionInput) => {
     const session = state.createSession(input)
-    rememberProject(input.projectPath, input.projectName)
+    // Build/Run terminals are synthetic ("Tasks") — keep them out of recent projects.
+    if (!input.task) rememberProject(input.projectPath, input.projectName)
     // Create the worktree before returning so the PTY launches in it (any kind).
     if (input.worktree) {
       try {
@@ -49,6 +50,11 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     (_e, { id, mode }: { id: string; mode: SessionMode }) => {
       switchMode(getWin(), id, mode)
     },
+  )
+  ipcMain.handle(
+    Channels.runTaskCommand,
+    (_e, { id, task }: { id: string; task: 'build' | 'run' }) =>
+      runTaskCommand(getWin(), id, task),
   )
   ipcMain.handle(Channels.sessionOpenGitGui, (_e, id: string) => openGitGui(id))
   ipcMain.handle(Channels.worktreeRemove, (_e, id: string) => removeWorktree(id))

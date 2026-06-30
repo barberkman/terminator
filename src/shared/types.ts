@@ -145,6 +145,8 @@ export interface TerminatorApi {
   removeSession(id: string): Promise<void>
   renameSession(id: string, name: string): Promise<void>
   setMode(id: string, mode: SessionMode): Promise<void>
+  /** Type the Build/Run command into its dedicated terminal (starting it if needed). */
+  runTaskCommand(id: string, task: 'build' | 'run'): Promise<void>
   openGitGui(id: string): Promise<void>
   removeWorktree(id: string): Promise<void>
   clearNotified(id: string): void

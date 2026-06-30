@@ -41,19 +41,25 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
   const buildCmd = settings?.buildCommand.trim()
   const runCmd = settings?.runCommand.trim()
 
-  // Build/Run open a transient shell pane that runs the configured command in this
-  // session's folder (same create→open flow as New Session).
+  // Build/Run use a single dedicated, reusable interactive terminal per task (in
+  // their own "Tasks" group). First click creates it; later clicks reuse it and
+  // just type the command at its prompt, so it stays usable after the run finishes.
   const runTask = async (task: 'build' | 'run') => {
-    const created = await window.terminator.createSession({
-      kind: 'shell',
-      mode: 'normal',
-      task,
-      name: task,
-      projectPath: session.worktreePath || session.projectPath,
-      projectName: session.projectName,
-    })
-    useStore.getState().upsert(created)
-    useStore.getState().openSession(created.id)
+    const store = useStore.getState()
+    let target = Object.values(store.sessions).find((x) => x.task === task)
+    if (!target) {
+      target = await window.terminator.createSession({
+        kind: 'shell',
+        mode: 'normal',
+        task,
+        name: task === 'build' ? 'Build' : 'Run',
+        projectName: 'Tasks',
+        projectPath: session.worktreePath || session.projectPath,
+      })
+      store.upsert(target)
+    }
+    store.openSession(target.id)
+    await window.terminator.runTaskCommand(target.id, task)
   }
 
   const commit = () => {
@@ -204,7 +210,7 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
         <button
           onClick={() => void runTask('build')}
           disabled={!buildCmd}
-          title={buildCmd ? 'Build — run in a new terminal' : 'Set a build command in Settings'}
+          title={buildCmd ? 'Build — run in the Build terminal' : 'Set a build command in Settings'}
           style={iconBtn(buildCmd ? undefined : { opacity: 0.4, cursor: 'default' })}
         >
           <Icon name="hammer" size={15} />
@@ -212,7 +218,7 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
         <button
           onClick={() => void runTask('run')}
           disabled={!runCmd}
-          title={runCmd ? 'Run — run in a new terminal' : 'Set a run command in Settings'}
+          title={runCmd ? 'Run — run in the Run terminal' : 'Set a run command in Settings'}
           style={iconBtn(runCmd ? undefined : { opacity: 0.4, cursor: 'default' })}
         >
           <Icon name="play" size={15} />

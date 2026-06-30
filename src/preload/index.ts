@@ -25,6 +25,7 @@ const api: TerminatorApi = {
   removeSession: (id) => ipcRenderer.invoke(Channels.sessionRemove, id),
   renameSession: (id, name) => ipcRenderer.invoke(Channels.sessionRename, { id, name }),
   setMode: (id, mode: SessionMode) => ipcRenderer.invoke(Channels.sessionSetMode, { id, mode }),
+  runTaskCommand: (id, task) => ipcRenderer.invoke(Channels.runTaskCommand, { id, task }),
   openGitGui: (id) => ipcRenderer.invoke(Channels.sessionOpenGitGui, id),
   removeWorktree: (id) => ipcRenderer.invoke(Channels.worktreeRemove, id),
   clearNotified: (id) => ipcRenderer.send(Channels.sessionClearNotified, id),

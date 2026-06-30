@@ -43,26 +43,9 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
   const rows = opts.rows ?? 24
 
   if (s.kind === 'shell') {
-    // A task shell (Build/Run button) runs the configured command once, in the
-    // session's folder, via the user's shell; output stays in the pane after exit.
-    if (s.task) {
-      const cmd = (s.task === 'build' ? settings.buildCommand : settings.runCommand).trim()
-      if (!cmd) {
-        setStatus(id, 'error', `no ${s.task} command set`)
-        return
-      }
-      ptyMgr.createPty(win, {
-        id,
-        file: settings.defaultShell,
-        args: shellRunArgs(settings.defaultShell, cmd, true),
-        cwd,
-        cols,
-        rows,
-      })
-      markStarted(id)
-      setStatus(id, 'busy', `running ${s.task}…`)
-      return
-    }
+    // Plain interactive shell. Build/Run dedicated terminals (s.task set) use this
+    // same persistent shell; their command is typed in via runTaskCommand so the
+    // prompt stays alive after it finishes.
     ptyMgr.createPty(win, { id, file: settings.defaultShell, args: settings.shellArgs, cwd, cols, rows })
     markStarted(id)
     setStatus(id, 'idle', 'idle')
@@ -102,6 +85,26 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
   })
   markStarted(id)
   setStatus(id, 'idle', 'ready')
+}
+
+/**
+ * Send a Build/Run command into its dedicated terminal. The terminal is a normal
+ * interactive shell that stays alive, so the command is typed at its prompt (not
+ * run as a one-shot process). Starts the shell first if it isn't running yet.
+ */
+export function runTaskCommand(win: BrowserWindow, id: string, task: 'build' | 'run'): void {
+  const s = getSession(id)
+  if (!s) return
+  const settings = loadSettings()
+  const cmd = (task === 'build' ? settings.buildCommand : settings.runCommand).trim()
+  if (!cmd) return
+  if (!s.alive) {
+    startSession(win, id)
+    // Let the freshly spawned shell finish loading rc files before we type.
+    setTimeout(() => ptyMgr.writePty(id, `${cmd}\n`), 300)
+  } else {
+    ptyMgr.writePty(id, `${cmd}\n`)
+  }
 }
 
 /**
