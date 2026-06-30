@@ -15,7 +15,7 @@ import {
 } from './state'
 import { buildSettingsFile } from './hooks-config'
 import { reportPort, reportToken } from './report-server'
-import { shellRunArgs, quoteFor } from './shell'
+import { shellRunArgs, shellKeepOpenArgs, quoteFor } from './shell'
 
 export interface StartOpts {
   cols?: number
@@ -43,8 +43,8 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
   const rows = opts.rows ?? 24
 
   if (s.kind === 'shell') {
-    // A task shell (Build/Run button) runs the configured command once, in the
-    // session's folder, via the user's shell; output stays in the pane after exit.
+    // A task shell (Build/Run button) runs the configured command in the session's
+    // folder, then stays open at an interactive prompt so the user can keep working.
     if (s.task) {
       const cmd = (s.task === 'build' ? settings.buildCommand : settings.runCommand).trim()
       if (!cmd) {
@@ -54,7 +54,7 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
       ptyMgr.createPty(win, {
         id,
         file: settings.defaultShell,
-        args: shellRunArgs(settings.defaultShell, cmd, true),
+        args: shellKeepOpenArgs(settings.defaultShell, cmd),
         cwd,
         cols,
         rows,

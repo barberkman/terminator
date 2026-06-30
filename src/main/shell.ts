@@ -43,6 +43,24 @@ export function shellRunArgs(shell: string, command: string, interactive = false
   return interactive ? ['-ic', command] : ['-lc', command]
 }
 
+/**
+ * Like shellRunArgs, but the shell stays open at an interactive prompt after the
+ * command finishes (Build/Run panes), using each shell's native idiom:
+ * PowerShell `-NoExit`, cmd `/k`, and POSIX `<cmd>; exec <shell>`. POSIX runs the
+ * command interactively first (so aliases resolve), then execs a fresh interactive
+ * shell so the pane stays usable — even if the command failed.
+ */
+export function shellKeepOpenArgs(shell: string, command: string): string[] {
+  const base = shell.toLowerCase()
+  if (process.platform === 'win32') {
+    if (base.includes('powershell') || base.includes('pwsh')) {
+      return ['-NoLogo', '-NoExit', '-Command', command]
+    }
+    return ['/k', command]
+  }
+  return ['-ic', `${command}; exec ${shquote(shell)}`]
+}
+
 /** Minimal POSIX shell quoting for values we interpolate into a command string. */
 export function shquote(s: string): string {
   if (/^[A-Za-z0-9_/.:=,@%+-]+$/.test(s)) return s
