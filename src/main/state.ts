@@ -76,9 +76,10 @@ export function createSession(input: CreateSessionInput): Session {
   const projectName = input.projectName?.trim() || basename(input.projectPath) || 'project'
   const session: Session = {
     id,
-    name: input.name?.trim() || (input.kind === 'shell' ? 'shell' : projectName),
+    name: input.name?.trim() || input.task || (input.kind === 'shell' ? 'shell' : projectName),
     kind: input.kind,
     mode: input.kind === 'shell' ? 'normal' : input.mode,
+    task: input.task,
     projectName,
     projectPath: input.projectPath,
     branch: input.worktree ? input.branch?.trim() || 'work' : 'main',
