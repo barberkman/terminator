@@ -44,6 +44,8 @@ export interface Session {
   name: string
   kind: SessionKind
   mode: SessionMode
+  /** When set, this shell session runs the configured build/run command (in a transient pane). */
+  task?: 'build' | 'run'
   projectName: string
   projectPath: string
   branch: string
@@ -70,6 +72,8 @@ export interface CreateSessionInput {
   projectName?: string
   worktree?: boolean
   branch?: string
+  /** Spawn a transient shell session that runs the configured build/run command. */
+  task?: 'build' | 'run'
 }
 
 // ---- Settings --------------------------------------------------------------
@@ -96,6 +100,10 @@ export interface Settings {
   defaultShell: string
   shellArgs: string[]
   gitGuiCommand: string
+  /** Command run by the pane-header Build button, in a new terminal via the default shell. Empty = disabled. */
+  buildCommand: string
+  /** Command run by the pane-header Run button, in a new terminal via the default shell. Empty = disabled. */
+  runCommand: string
   worktreesRoot: string
   projects: { name: string; path: string }[]
   notifications: NotificationSettings

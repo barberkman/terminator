@@ -9,6 +9,8 @@ export type IconName =
   | 'unlock'
   | 'git'
   | 'power'
+  | 'hammer'
+  | 'play'
   | 'folder'
   | 'chevron'
   | 'columns'
@@ -82,6 +84,19 @@ export function Icon({ name, size = 15 }: { name: IconName; size?: number }): Re
         <svg {...common}>
           <path d="M12 4v8" />
           <path d="M7.5 7.5a7 7 0 1 0 9 0" />
+        </svg>
+      )
+    case 'hammer':
+      return (
+        <svg {...common}>
+          <path d="M14.5 5.5l4 4-2.5 2.5-4-4z" />
+          <path d="M12 8L5 15a1.8 1.8 0 0 0 2.5 2.5L14.5 11" />
+        </svg>
+      )
+    case 'play':
+      return (
+        <svg {...common}>
+          <path d="M7 5l11 7-11 7z" />
         </svg>
       )
     case 'folder':

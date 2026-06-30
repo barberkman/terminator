@@ -56,11 +56,14 @@ export function savePersistedSessions(sessions: Session[]): void {
   try {
     const dir = app.getPath('userData')
     mkdirSync(dir, { recursive: true })
-    const data = sessions.map((s) => {
-      const o: Record<string, unknown> = {}
-      for (const k of KEYS) o[k] = s[k]
-      return o
-    })
+    const data = sessions
+      // Build/Run output panes are transient — don't restore them across restarts.
+      .filter((s) => !s.task)
+      .map((s) => {
+        const o: Record<string, unknown> = {}
+        for (const k of KEYS) o[k] = s[k]
+        return o
+      })
     const f = file()
     const tmp = `${f}.${process.pid}.tmp`
     writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')

@@ -33,10 +33,28 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
   const editing = useStore((s) => s.editingId === session.id)
   const startEdit = useStore((s) => s.startEdit)
   const setConfirm = useStore((s) => s.setConfirm)
+  const settings = useStore((s) => s.settings)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isClaude = session.kind === 'claude'
   const m = session.metrics
+  const buildCmd = settings?.buildCommand.trim()
+  const runCmd = settings?.runCommand.trim()
+
+  // Build/Run open a transient shell pane that runs the configured command in this
+  // session's folder (same create→open flow as New Session).
+  const runTask = async (task: 'build' | 'run') => {
+    const created = await window.terminator.createSession({
+      kind: 'shell',
+      mode: 'normal',
+      task,
+      name: task,
+      projectPath: session.worktreePath || session.projectPath,
+      projectName: session.projectName,
+    })
+    useStore.getState().upsert(created)
+    useStore.getState().openSession(created.id)
+  }
 
   const commit = () => {
     const v = inputRef.current?.value.trim()
@@ -183,6 +201,22 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
             <Icon name={session.mode === 'readonly' ? 'lock' : 'unlock'} size={15} />
           </button>
         )}
+        <button
+          onClick={() => void runTask('build')}
+          disabled={!buildCmd}
+          title={buildCmd ? 'Build — run in a new terminal' : 'Set a build command in Settings'}
+          style={iconBtn(buildCmd ? undefined : { opacity: 0.4, cursor: 'default' })}
+        >
+          <Icon name="hammer" size={15} />
+        </button>
+        <button
+          onClick={() => void runTask('run')}
+          disabled={!runCmd}
+          title={runCmd ? 'Run — run in a new terminal' : 'Set a run command in Settings'}
+          style={iconBtn(runCmd ? undefined : { opacity: 0.4, cursor: 'default' })}
+        >
+          <Icon name="play" size={15} />
+        </button>
         <button onClick={() => void window.terminator.openGitGui(session.id)} title="Open folder in git tool" style={iconBtn()}>
           <Icon name="git" size={15} />
         </button>

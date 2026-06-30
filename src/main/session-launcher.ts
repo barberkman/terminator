@@ -43,6 +43,26 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
   const rows = opts.rows ?? 24
 
   if (s.kind === 'shell') {
+    // A task shell (Build/Run button) runs the configured command once, in the
+    // session's folder, via the user's shell; output stays in the pane after exit.
+    if (s.task) {
+      const cmd = (s.task === 'build' ? settings.buildCommand : settings.runCommand).trim()
+      if (!cmd) {
+        setStatus(id, 'error', `no ${s.task} command set`)
+        return
+      }
+      ptyMgr.createPty(win, {
+        id,
+        file: settings.defaultShell,
+        args: shellRunArgs(settings.defaultShell, cmd, true),
+        cwd,
+        cols,
+        rows,
+      })
+      markStarted(id)
+      setStatus(id, 'busy', `running ${s.task}…`)
+      return
+    }
     ptyMgr.createPty(win, { id, file: settings.defaultShell, args: settings.shellArgs, cwd, cols, rows })
     markStarted(id)
     setStatus(id, 'idle', 'idle')
