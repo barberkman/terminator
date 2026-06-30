@@ -18,6 +18,7 @@ export type IconName =
   | 'grid'
   | 'terminal'
   | 'sparkle'
+  | 'note'
   | 'settings'
   | 'sidebar'
 
@@ -144,6 +145,15 @@ export function Icon({ name, size = 15 }: { name: IconName; size?: number }): Re
       return (
         <svg {...common}>
           <path d="M12 4l1.7 5.1L19 11l-5.3 1.9L12 18l-1.7-5.1L5 11l5.3-1.9z" />
+        </svg>
+      )
+    case 'note':
+      return (
+        <svg {...common}>
+          <rect x={5} y={3.5} width={14} height={17} rx={2} />
+          <path d="M9 8h6" />
+          <path d="M9 12h6" />
+          <path d="M9 16h4" />
         </svg>
       )
     case 'sidebar':

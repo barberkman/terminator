@@ -8,6 +8,7 @@ import { Footer } from './components/Footer'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { NewSessionModal } from './components/NewSessionModal'
 import { SettingsView } from './components/SettingsView'
+import { NotesView } from './components/NotesView'
 import { C } from './theme'
 
 export function App(): React.JSX.Element {
@@ -104,6 +105,7 @@ export function App(): React.JSX.Element {
       <ConfirmDialog />
       <NewSessionModal />
       <SettingsView />
+      <NotesView />
     </div>
   )
 }

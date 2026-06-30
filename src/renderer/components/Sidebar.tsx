@@ -291,6 +291,7 @@ export function Sidebar(): React.JSX.Element {
   const toggleGroup = useStore((s) => s.toggleGroup)
   const setShowNew = useStore((s) => s.setShowNew)
   const setShowSettings = useStore((s) => s.setShowSettings)
+  const setShowNotes = useStore((s) => s.setShowNotes)
   const hidden = useStore((s) => s.sidebarHidden)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const sidebarSide = useStore((s) => s.settings?.sidebarSide ?? 'left')
@@ -389,6 +390,25 @@ export function Sidebar(): React.JSX.Element {
           <span style={{ fontSize: 11, letterSpacing: 1.5, color: C.muted, fontWeight: 600 }}>SESSIONS</span>
           <span style={{ fontSize: 11, color: C.faint }}>{total}</span>
           <span style={{ flex: 1 }} />
+          <button
+            onClick={() => setShowNotes(true)}
+            title="Notes"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 26,
+              height: 26,
+              borderRadius: 6,
+              border: `1px solid ${C.border2}`,
+              background: 'transparent',
+              color: '#9a958a',
+              cursor: 'pointer',
+              marginRight: 6,
+            }}
+          >
+            <Icon name="note" size={15} />
+          </button>
           <button
             onClick={() => setShowSettings(true)}
             title="Settings"

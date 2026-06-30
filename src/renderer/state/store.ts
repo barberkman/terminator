@@ -26,6 +26,7 @@ interface StoreState {
   collapsed: Record<string, boolean>
   showNew: boolean
   showSettings: boolean
+  showNotes: boolean
   sidebarHidden: boolean
   editingId: string | null
   confirm: ConfirmState | null
@@ -42,6 +43,7 @@ interface StoreState {
   startEdit(id: string | null): void
   setShowNew(v: boolean): void
   setShowSettings(v: boolean): void
+  setShowNotes(v: boolean): void
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
@@ -62,6 +64,7 @@ export const useStore = create<StoreState>((set, get) => ({
   collapsed: {},
   showNew: false,
   showSettings: false,
+  showNotes: false,
   sidebarHidden: false,
   editingId: null,
   confirm: null,
@@ -207,6 +210,9 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   setShowSettings(v) {
     set({ showSettings: v })
+  },
+  setShowNotes(v) {
+    set({ showNotes: v })
   },
   toggleSidebar() {
     set((s) => ({ sidebarHidden: !s.sidebarHidden }))

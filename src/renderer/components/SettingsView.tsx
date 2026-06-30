@@ -3,7 +3,6 @@ import type { NotifType, Settings } from '../../shared/types'
 import { C } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
-import { NotesEditor } from './NotesEditor'
 
 const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited']
 
@@ -124,7 +123,6 @@ export function SettingsView(): React.JSX.Element | null {
   const setSettings = useStore((s) => s.setSettings)
   const [draft, setDraft] = useState<Settings | null>(settings)
   const [shortcutStatus, setShortcutStatus] = useState<{ accelerator: string; registered: boolean } | null>(null)
-  const [notesOpen, setNotesOpen] = useState(false)
 
   useEffect(() => {
     if (show) {
@@ -149,7 +147,6 @@ export function SettingsView(): React.JSX.Element | null {
   }
 
   return (
-    <>
     <div
       style={{
         position: 'fixed',
@@ -327,28 +324,6 @@ export function SettingsView(): React.JSX.Element | null {
               })}
             </div>
           </Field>
-
-          <div style={{ height: 1, background: C.hair, margin: '2px 0' }} />
-
-          <Field label="NOTES" hint="A single markdown note. Click to write it and preview the rendered markdown.">
-            <button
-              onClick={() => setNotesOpen(true)}
-              style={{
-                ...inputStyle,
-                textAlign: 'left',
-                cursor: 'pointer',
-                color: draft.notes?.trim() ? C.textHi : C.dim,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 9,
-              }}
-            >
-              <span style={{ display: 'flex', color: C.accent }}>
-                <Icon name="sparkle" size={14} />
-              </span>
-              {draft.notes?.trim() ? 'Open notes' : 'Open notes — empty'}
-            </button>
-          </Field>
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '18px 20px 20px', marginTop: 6 }}>
@@ -361,17 +336,5 @@ export function SettingsView(): React.JSX.Element | null {
         </div>
       </div>
     </div>
-    {notesOpen && (
-      <NotesEditor
-        value={draft.notes ?? ''}
-        onChange={(notes) => patch({ notes })}
-        onSave={() => {
-          void save()
-          setNotesOpen(false)
-        }}
-        onClose={() => setNotesOpen(false)}
-      />
-    )}
-    </>
   )
 }
