@@ -190,6 +190,17 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
     void window.terminator.setMode(session.id, session.mode === 'readonly' ? 'normal' : 'readonly')
   }
 
+  // Inject a /model|/effort change into the live session and optimistically reflect
+  // it in the header. Claude only re-runs its statusLine (our metrics source) after
+  // an assistant message, not after these slash commands, so without this the header
+  // value would stay stale until the next turn. The next statusLine report corrects it.
+  const pickMetric = (kind: 'model' | 'effort', opt: string) => {
+    window.terminator.writePty(session.id, `/${kind} ${opt}\r`)
+    const store = useStore.getState()
+    const cur = store.sessions[session.id]
+    if (cur) store.upsert({ ...cur, metrics: { ...cur.metrics, [kind]: opt } })
+  }
+
   return (
     <div
       style={{
@@ -289,7 +300,7 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
                 options={MODEL_OPTIONS}
                 isActive={(opt) => !!m?.model && m.model.toLowerCase().includes(opt)}
                 disabled={!session.alive}
-                onPick={(opt) => window.terminator.writePty(session.id, `/model ${opt}\r`)}
+                onPick={(opt) => pickMetric('model', opt)}
                 prefix={<span style={{ ...dotStyle('idle', 6), background: C.accent, animation: undefined }} />}
               />
             </Metric>
@@ -299,7 +310,7 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
                 options={EFFORT_OPTIONS}
                 isActive={(opt) => m?.effort?.toLowerCase() === opt}
                 disabled={!session.alive}
-                onPick={(opt) => window.terminator.writePty(session.id, `/effort ${opt}\r`)}
+                onPick={(opt) => pickMetric('effort', opt)}
               />
             </Metric>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 108 }}>
