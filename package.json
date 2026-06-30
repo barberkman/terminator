@@ -41,7 +41,9 @@
     }
   },
   "dependencies": {
-    "@lydell/node-pty": "1.1.0"
+    "@lydell/node-pty": "1.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

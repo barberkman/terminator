@@ -115,6 +115,8 @@ export interface Settings {
   sidebarSide: 'left' | 'right'
   /** Electron accelerator for the global show/hide hotkey. Empty = disabled. */
   globalToggleShortcut: string
+  /** Single freeform markdown note, edited from Settings → Notes. */
+  notes: string
 }
 
 // ---- Notifications ---------------------------------------------------------

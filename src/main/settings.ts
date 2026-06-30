@@ -34,6 +34,7 @@ export function defaultSettings(): Settings {
     fontSize: 14,
     sidebarSide: 'left',
     globalToggleShortcut: 'F12',
+    notes: '',
   }
 }
 
