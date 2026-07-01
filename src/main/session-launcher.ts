@@ -101,9 +101,12 @@ export function runTaskCommand(win: BrowserWindow, id: string, task: 'build' | '
   if (!s.alive) {
     startSession(win, id)
     // Let the freshly spawned shell finish loading rc files before we type.
-    setTimeout(() => ptyMgr.writePty(id, `${cmd}\n`), 300)
+    // Use \r (carriage return) not \n: PowerShell/conpty treats \n as a literal
+    // newline in the input line, so the command isn't submitted until Enter is
+    // pressed. \r is what terminals interpret as Enter across platforms.
+    setTimeout(() => ptyMgr.writePty(id, `${cmd}\r`), 300)
   } else {
-    ptyMgr.writePty(id, `${cmd}\n`)
+    ptyMgr.writePty(id, `${cmd}\r`)
   }
 }
 
