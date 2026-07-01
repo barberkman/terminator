@@ -120,6 +120,11 @@ function Row({ session }: { session: Session }): React.JSX.Element {
               <Icon name="terminal" size={12} />
             </span>
           )}
+          {session.kind === 'editor' && (
+            <span style={{ display: 'flex', color: C.kindIcon, flex: 'none' }}>
+              <Icon name="editor" size={12} />
+            </span>
+          )}
           <span
             style={{
               fontSize: 12.5,

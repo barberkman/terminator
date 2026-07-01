@@ -15,7 +15,7 @@ export interface PtyExit {
 
 // ---- Sessions --------------------------------------------------------------
 
-export type SessionKind = 'claude' | 'shell'
+export type SessionKind = 'claude' | 'shell' | 'editor'
 export type SessionMode = 'normal' | 'readonly'
 
 /** Unified status. Claude uses all five; plain shells use busy(=running)/idle/closed. */
@@ -141,6 +141,26 @@ export interface NotificationEvent {
   timestamp: number
 }
 
+// ---- Filesystem (Editor sessions) ------------------------------------------
+
+/** One entry in a directory listing. */
+export interface DirEntry {
+  name: string
+  isDir: boolean
+}
+
+/** Result of reading a file: either its text, or why it can't be shown. */
+export type FileReadResult =
+  | { ok: true; content: string }
+  | { ok: false; reason: 'binary' | 'tooLarge' | 'missing' }
+
+/** A watched path changed on disk. `dir` re-lists a directory; the rest touch a file. */
+export interface FsChange {
+  sessionId: string
+  path: string
+  kind: 'modified' | 'removed' | 'dir'
+}
+
 // ---- Renderer-facing API (window.terminator) -------------------------------
 
 export interface TerminatorApi {
@@ -173,6 +193,14 @@ export interface TerminatorApi {
   onSessionUpdated(cb: (s: Session) => void): () => void
   onSessionRemoved(cb: (id: string) => void): () => void
   onNavJump(cb: (id: string) => void): () => void
+
+  // filesystem (editor sessions) — every op is scoped to the session's root
+  fsList(sessionId: string, dir: string): Promise<DirEntry[]>
+  fsRead(sessionId: string, path: string): Promise<FileReadResult>
+  fsWrite(sessionId: string, path: string, content: string): Promise<void>
+  fsWatch(sessionId: string, path: string): void
+  fsUnwatch(sessionId: string, path: string): void
+  onFsChanged(cb: (c: FsChange) => void): () => void
 
   // dialogs / settings
   pickFolder(): Promise<string | null>

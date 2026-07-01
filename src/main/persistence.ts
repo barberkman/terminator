@@ -39,8 +39,10 @@ export function loadPersistedSessions(): Session[] {
         projectPath: p.projectPath ?? '',
         branch: p.branch ?? 'main',
         worktreePath: p.worktreePath,
-        status: 'closed',
-        activity: 'not running',
+        // Editor sessions have no process — they're immediately usable on restore,
+        // so they come back idle rather than "closed / needs relaunch".
+        status: p.kind === 'editor' ? 'idle' : 'closed',
+        activity: p.kind === 'editor' ? 'editing' : 'not running',
         notified: false,
         alive: false,
         everStarted: p.everStarted ?? true,

@@ -2,6 +2,7 @@ import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
 import type { CreateSessionInput, SessionMode } from '../shared/types'
 import * as ptyMgr from './pty-manager'
+import * as fsService from './fs-service'
 import * as state from './state'
 import { runTaskCommand, startSession, switchMode } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
@@ -72,6 +73,40 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     (_e, { id, cols, rows }: { id: string; cols: number; rows: number }) =>
       ptyMgr.resizePty(id, cols, rows),
   )
+
+  // ---- filesystem (editor sessions) ----
+  // Root is resolved here from the session id — never trusted from the renderer.
+  const editorRoot = (sessionId: string): string | null => {
+    const s = state.getSession(sessionId)
+    return s ? s.worktreePath || s.projectPath : null
+  }
+  ipcMain.handle(Channels.fsList, (_e, { sessionId, dir }: { sessionId: string; dir: string }) => {
+    const root = editorRoot(sessionId)
+    return root ? fsService.listDir(root, dir) : []
+  })
+  ipcMain.handle(
+    Channels.fsRead,
+    (_e, { sessionId, path }: { sessionId: string; path: string }) => {
+      const root = editorRoot(sessionId)
+      return root ? fsService.readFile(root, path) : { ok: false as const, reason: 'missing' as const }
+    },
+  )
+  ipcMain.handle(
+    Channels.fsWrite,
+    (_e, { sessionId, path, content }: { sessionId: string; path: string; content: string }) => {
+      const root = editorRoot(sessionId)
+      if (!root) throw new Error('unknown session')
+      return fsService.writeFile(root, path, content)
+    },
+  )
+  ipcMain.on(Channels.fsWatch, (_e, { sessionId, path }: { sessionId: string; path: string }) => {
+    const root = editorRoot(sessionId)
+    if (root) fsService.watchPath(sessionId, root, path)
+  })
+  ipcMain.on(Channels.fsUnwatch, (_e, { sessionId, path }: { sessionId: string; path: string }) => {
+    const root = editorRoot(sessionId)
+    if (root) fsService.unwatchPath(sessionId, root, path)
+  })
 
   // ---- dialogs / settings ----
   ipcMain.handle(Channels.pickFolder, async () => {

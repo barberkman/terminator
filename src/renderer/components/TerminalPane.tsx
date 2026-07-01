@@ -4,6 +4,7 @@ import { Icon } from '../icons'
 import * as registry from '../term/registry'
 import { PaneHeader } from './PaneHeader'
 import { TerminalView } from './TerminalView'
+import { EditorPaneBody } from './EditorPaneBody'
 
 export function TerminalPane({ id, index }: { id: string; index: number }): React.JSX.Element {
   const session = useStore((s) => (id ? s.sessions[id] : undefined))
@@ -58,6 +59,31 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
         >
           New session
         </button>
+      </div>
+    )
+  }
+
+  // Editor sessions have no PTY: render the in-app file browser/editor and skip
+  // both TerminalView (which would spawn a process) and the relaunch overlay.
+  if (session.kind === 'editor') {
+    return (
+      <div
+        data-pane-index={index}
+        data-pane-focused={focused ? 1 : 0}
+        data-pane-session={session.name}
+        onMouseDownCapture={() => focusPane(index)}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          minHeight: 0,
+          background: C.bg,
+          overflow: 'hidden',
+          ...frame,
+        }}
+      >
+        <PaneHeader session={session} active={focused} />
+        <EditorPaneBody session={session} />
       </div>
     )
   }

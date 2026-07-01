@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { basename } from 'node:path'
+import { basename, resolve } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
 import type {
@@ -10,6 +10,7 @@ import type {
   SessionStatus,
 } from '../shared/types'
 import * as ptyMgr from './pty-manager'
+import { closeAllForSession as closeFsWatchers } from './fs-service'
 import { runNotifyCommand } from './notify-runner'
 import { loadPersistedSessions, savePersistedSessions } from './persistence'
 
@@ -71,21 +72,31 @@ export function getSession(id: string): Session | undefined {
   return sessions.get(id)
 }
 
+/** Initial activity label per session kind. */
+function initialActivity(kind: CreateSessionInput['kind']): string {
+  if (kind === 'shell') return 'idle'
+  if (kind === 'editor') return 'editing'
+  return 'ready'
+}
+
 export function createSession(input: CreateSessionInput): Session {
   const id = randomUUID()
-  const projectName = input.projectName?.trim() || basename(input.projectPath) || 'project'
+  // Store an absolute, ~-expanded path so the editor's file ops and the renderer's
+  // path identities always agree (the PTY cwd is expanded again at spawn anyway).
+  const projectPath = resolve(ptyMgr.expandHome(input.projectPath) || input.projectPath)
+  const projectName = input.projectName?.trim() || basename(projectPath) || 'project'
   const session: Session = {
     id,
     name: input.name?.trim() || input.task || (input.kind === 'shell' ? 'shell' : projectName),
     kind: input.kind,
-    mode: input.kind === 'shell' ? 'normal' : input.mode,
+    mode: input.kind === 'claude' ? input.mode : 'normal',
     task: input.task,
     projectName,
-    projectPath: input.projectPath,
+    projectPath,
     branch: input.worktree ? input.branch?.trim() || 'work' : 'main',
     worktreePath: undefined,
     status: 'idle',
-    activity: input.kind === 'shell' ? 'idle' : 'ready',
+    activity: initialActivity(input.kind),
     notified: false,
     alive: false,
     everStarted: false,
@@ -161,6 +172,7 @@ export function clearNotified(id: string): void {
 
 export function removeSession(id: string): void {
   ptyMgr.killPty(id)
+  closeFsWatchers(id) // no-op for non-editor sessions
   if (sessions.delete(id)) {
     emit(Channels.sessionRemoved, id)
     persist()

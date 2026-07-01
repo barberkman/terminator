@@ -4,18 +4,20 @@ import { C } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { useStore } from '../state/store'
 
-type TypeKey = 'claude' | 'claude-ro' | 'shell'
+type TypeKey = 'claude' | 'claude-ro' | 'shell' | 'editor'
 
 const TYPES: { key: TypeKey; icon: IconName; color: string; label: string; desc: string }[] = [
   { key: 'claude', icon: 'sparkle', color: C.accent, label: 'Claude', desc: 'Normal Claude Code session' },
   { key: 'claude-ro', icon: 'lock', color: C.muted, label: 'Claude · read-only', desc: 'Runs the read-only command' },
   { key: 'shell', icon: 'terminal', color: C.kindIcon, label: 'Terminal', desc: 'Plain shell — no Claude features' },
+  { key: 'editor', icon: 'editor', color: C.kindIcon, label: 'Editor', desc: 'Browse and edit files — no Claude, no shell' },
 ]
 
 const TYPE_MAP: Record<TypeKey, Pick<CreateSessionInput, 'kind' | 'mode'>> = {
   claude: { kind: 'claude', mode: 'normal' },
   'claude-ro': { kind: 'claude', mode: 'readonly' },
   shell: { kind: 'shell', mode: 'normal' },
+  editor: { kind: 'editor', mode: 'normal' },
 }
 
 function basename(p: string): string {

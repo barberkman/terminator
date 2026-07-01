@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Session, Settings } from '../../shared/types'
+import * as editor from '../editor/registry'
 
 export type LayoutName = 'single' | 'cols2' | 'grid4'
 export const LAYOUT_COUNT: Record<LayoutName, number> = { single: 1, cols2: 2, grid4: 4 }
@@ -102,6 +103,8 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   remove(id) {
+    // Tear down any editor CodeMirror instances/state for this session (no-op otherwise).
+    editor.disposeSession(id)
     set((st) => {
       const sessions = { ...st.sessions }
       delete sessions[id]
