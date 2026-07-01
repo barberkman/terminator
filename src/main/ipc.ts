@@ -5,7 +5,7 @@ import * as ptyMgr from './pty-manager'
 import * as state from './state'
 import { runTaskCommand, startSession, switchMode } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
-import { addWorktree, openGitGui, removeWorktree } from './worktree'
+import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 
 /** Registers every ipcMain handler. The single IPC registry for the main process. */
@@ -57,6 +57,7 @@ export function registerIpc(getWin: () => BrowserWindow): void {
       runTaskCommand(getWin(), id, task),
   )
   ipcMain.handle(Channels.sessionOpenGitGui, (_e, id: string) => openGitGui(id))
+  ipcMain.handle(Channels.sessionOpenInFolder, (_e, id: string) => openInFolder(id))
   ipcMain.handle(Channels.worktreeRemove, (_e, id: string) => removeWorktree(id))
   ipcMain.on(Channels.sessionClearNotified, (_e, id: string) => state.clearNotified(id))
   ipcMain.on(Channels.sessionReorder, (_e, ids: string[]) => state.reorderSessions(ids))

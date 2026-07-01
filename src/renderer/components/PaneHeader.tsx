@@ -364,6 +364,9 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
         >
           <Icon name="play" size={15} />
         </button>
+        <button onClick={() => void window.terminator.openInFolder(session.id)} title="Open folder in file manager" style={iconBtn()}>
+          <Icon name="folder" size={15} />
+        </button>
         <button onClick={() => void window.terminator.openGitGui(session.id)} title="Open folder in git tool" style={iconBtn()}>
           <Icon name="git" size={15} />
         </button>

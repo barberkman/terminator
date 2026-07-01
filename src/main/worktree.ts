@@ -1,3 +1,4 @@
+import { shell } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
@@ -24,6 +25,15 @@ export function openGitGui(id: string): void {
     /* GUI not installed / bad command — no-op (best effort) */
   })
   child.unref()
+}
+
+/** Open a session's folder in the OS default file manager. Best effort. */
+export function openInFolder(id: string): void {
+  const s = getSession(id)
+  if (!s) return
+  const folder = expandHome(s.worktreePath || s.projectPath) || s.projectPath
+  // Resolves to '' on success, an error string on failure — ignored (best effort).
+  void shell.openPath(folder)
 }
 
 /** `git worktree add <root>/<branch> -b <branch>` from a repo. Returns the new path. */

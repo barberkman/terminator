@@ -150,6 +150,7 @@ export interface TerminatorApi {
   /** Type the Build/Run command into its dedicated terminal (starting it if needed). */
   runTaskCommand(id: string, task: 'build' | 'run'): Promise<void>
   openGitGui(id: string): Promise<void>
+  openInFolder(id: string): Promise<void>
   removeWorktree(id: string): Promise<void>
   clearNotified(id: string): void
   /** Persist a new full session order (used by sidebar drag-reorder). */
