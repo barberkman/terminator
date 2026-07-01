@@ -92,6 +92,16 @@ export interface NotificationSettings {
   perType: Partial<Record<NotifType, string>>
 }
 
+/** A remembered project and its per-project Build/Run commands. */
+export interface ProjectConfig {
+  name: string
+  path: string
+  /** Command run by this project's sidebar Build button. Empty/unset = disabled. */
+  buildCommand?: string
+  /** Command run by this project's sidebar Run button. Empty/unset = disabled. */
+  runCommand?: string
+}
+
 export interface Settings {
   modes: {
     normal: ModeConfig
@@ -100,12 +110,8 @@ export interface Settings {
   defaultShell: string
   shellArgs: string[]
   gitGuiCommand: string
-  /** Command run by the pane-header Build button, in a new terminal via the default shell. Empty = disabled. */
-  buildCommand: string
-  /** Command run by the pane-header Run button, in a new terminal via the default shell. Empty = disabled. */
-  runCommand: string
   worktreesRoot: string
-  projects: { name: string; path: string }[]
+  projects: ProjectConfig[]
   notifications: NotificationSettings
   /** CSS font-family applied to the terminal (xterm) panes. */
   terminalFont: string

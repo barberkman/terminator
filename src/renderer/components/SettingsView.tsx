@@ -198,12 +198,6 @@ export function SettingsView(): React.JSX.Element | null {
           <Field label="GIT GUI COMMAND" hint="Launched with a session's folder by the git button. App never merges.">
             <input style={inputStyle} value={draft.gitGuiCommand} onChange={(e) => patch({ gitGuiCommand: e.target.value })} />
           </Field>
-          <Field label="BUILD COMMAND" hint="Run by the Build button in a new terminal (the session's folder, via the default shell). Empty = disabled.">
-            <input style={inputStyle} placeholder="npm run build" value={draft.buildCommand} onChange={(e) => patch({ buildCommand: e.target.value })} />
-          </Field>
-          <Field label="RUN COMMAND" hint="Run by the Run button in a new terminal (the session's folder, via the default shell). Empty = disabled.">
-            <input style={inputStyle} placeholder="npm run dev" value={draft.runCommand} onChange={(e) => patch({ runCommand: e.target.value })} />
-          </Field>
           <Field label="WORKTREES ROOT" hint="Where new git worktrees are created.">
             <input style={inputStyle} value={draft.worktreesRoot} onChange={(e) => patch({ worktreesRoot: e.target.value })} />
           </Field>
