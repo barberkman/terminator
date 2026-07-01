@@ -1,8 +1,8 @@
 import type { Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { syntaxHighlighting } from '@codemirror/language'
-import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
 import { C, FONT } from '../theme'
+import { warmHighlight } from './highlight'
 
 // Chrome (background, gutter, cursor, selection) mapped to the app's warm-dark
 // tokens; token colors reuse one-dark's highlight style so we don't hand-roll a
@@ -39,4 +39,4 @@ const chrome = EditorView.theme(
   { dark: true },
 )
 
-export const editorTheme: Extension = [chrome, syntaxHighlighting(oneDarkHighlightStyle)]
+export const editorTheme: Extension = [chrome, syntaxHighlighting(warmHighlight)]
