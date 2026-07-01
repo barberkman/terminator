@@ -30,6 +30,14 @@ export const Channels = {
   notify: 'session:notify',
   navJump: 'nav:jump',
 
+  // filesystem (editor sessions)
+  fsList: 'fs:list',
+  fsRead: 'fs:read',
+  fsWrite: 'fs:write',
+  fsWatch: 'fs:watch',
+  fsUnwatch: 'fs:unwatch',
+  fsChanged: 'fs:changed',
+
   // dialogs / settings
   pickFolder: 'dialog:pickFolder',
   settingsGet: 'settings:get',

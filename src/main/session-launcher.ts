@@ -37,6 +37,10 @@ function claudeHasConversation(sessionId: string, cwd: string): boolean {
 export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {}): void {
   const s = getSession(id)
   if (!s || s.alive) return
+  // Editor sessions have no process — they render an in-app file browser/editor,
+  // never a PTY. Return before any launch logic (otherwise a non-shell kind would
+  // fall through to the Claude branch below).
+  if (s.kind === 'editor') return
   const settings = loadSettings()
   const cwd = s.worktreePath || s.projectPath
   const cols = opts.cols ?? 80

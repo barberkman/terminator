@@ -2,6 +2,7 @@ import { clipboard, contextBridge, ipcRenderer, webFrame } from 'electron'
 import { Channels } from '../shared/channels'
 import type {
   CreateSessionInput,
+  FsChange,
   PtyData,
   PtyExit,
   Session,
@@ -41,6 +42,14 @@ const api: TerminatorApi = {
   onSessionUpdated: (cb: (s: Session) => void) => on(Channels.sessionUpdated, cb),
   onSessionRemoved: (cb: (id: string) => void) => on(Channels.sessionRemoved, cb),
   onNavJump: (cb: (id: string) => void) => on(Channels.navJump, cb),
+
+  fsList: (sessionId, dir) => ipcRenderer.invoke(Channels.fsList, { sessionId, dir }),
+  fsRead: (sessionId, path) => ipcRenderer.invoke(Channels.fsRead, { sessionId, path }),
+  fsWrite: (sessionId, path, content) =>
+    ipcRenderer.invoke(Channels.fsWrite, { sessionId, path, content }),
+  fsWatch: (sessionId, path) => ipcRenderer.send(Channels.fsWatch, { sessionId, path }),
+  fsUnwatch: (sessionId, path) => ipcRenderer.send(Channels.fsUnwatch, { sessionId, path }),
+  onFsChanged: (cb: (c: FsChange) => void) => on(Channels.fsChanged, cb),
 
   pickFolder: () => ipcRenderer.invoke(Channels.pickFolder),
   getSettings: () => ipcRenderer.invoke(Channels.settingsGet),

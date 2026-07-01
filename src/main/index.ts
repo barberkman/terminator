@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { registerIpc } from './ipc'
 import { killAll } from './pty-manager'
+import { closeAll as closeFsWatchers, setWindow as setFsWindow } from './fs-service'
 import { loadPersisted, setWindow, wireProcessEvents } from './state'
 import { startReportServer, stopReportServer } from './report-server'
 import { applyGlobalShortcut, disposeGlobalShortcut } from './window-toggle'
@@ -39,6 +40,7 @@ function createWindow(): void {
   }
 
   setWindow(win)
+  setFsWindow(win)
 }
 
 app.whenReady().then(async () => {
@@ -61,6 +63,7 @@ app.on('window-all-closed', () => {
 // Make sure no shell/claude PTYs are orphaned when the app quits.
 app.on('before-quit', () => {
   killAll()
+  closeFsWatchers()
   stopReportServer()
   disposeGlobalShortcut()
 })
