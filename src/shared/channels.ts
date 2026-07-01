@@ -12,6 +12,7 @@ export const Channels = {
   sessionSetMode: 'session:setMode',
   runTaskCommand: 'session:runTaskCommand',
   sessionOpenGitGui: 'session:openGitGui',
+  sessionOpenInFolder: 'session:openInFolder',
   sessionClearNotified: 'session:clearNotified',
   sessionReorder: 'session:reorder',
   worktreeRemove: 'worktree:remove',
