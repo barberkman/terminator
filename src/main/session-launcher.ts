@@ -96,7 +96,8 @@ export function runTaskCommand(win: BrowserWindow, id: string, task: 'build' | '
   const s = getSession(id)
   if (!s) return
   const settings = loadSettings()
-  const cmd = (task === 'build' ? settings.buildCommand : settings.runCommand).trim()
+  const proj = settings.projects.find((p) => p.path === s.projectPath)
+  const cmd = (task === 'build' ? proj?.buildCommand : proj?.runCommand)?.trim()
   if (!cmd) return
   if (!s.alive) {
     startSession(win, id)

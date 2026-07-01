@@ -21,8 +21,6 @@ export function defaultSettings(): Settings {
     defaultShell: defaultShell(),
     shellArgs: [],
     gitGuiCommand: defaultGitGui(),
-    buildCommand: '',
-    runCommand: '',
     worktreesRoot: join(homedir(), 'terminator-worktrees'),
     projects: [],
     notifications: {

@@ -1,8 +1,38 @@
 import { Fragment, useMemo, useState } from 'react'
-import type { Session } from '../../shared/types'
+import type { ProjectConfig, Session } from '../../shared/types'
 import { C, STATUS_COLORS, STATUS_LABELS, dotStyle } from '../theme'
 import { Icon, type IconName } from '../icons'
-import { LAYOUT_COUNT, type LayoutName, buildGroups, useStore } from '../state/store'
+import { LAYOUT_COUNT, type LayoutName, type ProjectGroup, buildGroups, useStore } from '../state/store'
+
+const HEADER_BTN_HOVER = 'rgba(214,209,196,0.06)'
+
+const headerBtnStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 22,
+  height: 22,
+  borderRadius: 6,
+  border: 'none',
+  background: 'transparent',
+  color: C.muted,
+  cursor: 'pointer',
+  padding: 0,
+  flex: 'none',
+}
+
+const menuInputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '7px 9px',
+  background: C.input,
+  border: `1px solid ${C.border2}`,
+  borderRadius: 7,
+  color: C.textHi,
+  font: 'inherit',
+  fontSize: 12,
+  outline: 'none',
+  boxSizing: 'border-box',
+}
 
 const LAYOUTS: { name: LayoutName; icon: IconName; label: string }[] = [
   { name: 'single', icon: 'single', label: 'Single pane' },
@@ -282,13 +312,246 @@ function RailTab({ session, index }: { session: Session; index: number }): React
   )
 }
 
+/**
+ * Popover to set a project's Build/Run commands. Prefilled from the current config;
+ * Save writes the whole `projects` array back through updateSettings (its `merge`
+ * replaces `projects` wholesale). Anchored to the group header's button cluster.
+ */
+function ProjectCommandsMenu({
+  projectName,
+  projectPath,
+  proj,
+  onClose,
+}: {
+  projectName: string
+  projectPath: string
+  proj?: ProjectConfig
+  onClose: () => void
+}): React.JSX.Element {
+  const setSettings = useStore((s) => s.setSettings)
+  const [build, setBuild] = useState(proj?.buildCommand ?? '')
+  const [run, setRun] = useState(proj?.runCommand ?? '')
+
+  const save = async () => {
+    const settings = useStore.getState().settings
+    if (!settings) return
+    const buildCommand = build.trim()
+    const runCommand = run.trim()
+    const exists = settings.projects.some((p) => p.path === projectPath)
+    const projects = exists
+      ? settings.projects.map((p) => (p.path === projectPath ? { ...p, buildCommand, runCommand } : p))
+      : [...settings.projects, { name: projectName, path: projectPath, buildCommand, runCommand }]
+    const result = await window.terminator.updateSettings({ projects })
+    setSettings(result)
+    onClose()
+  }
+
+  return (
+    <>
+      <div
+        onClick={(e) => {
+          e.stopPropagation()
+          onClose()
+        }}
+        style={{ position: 'fixed', inset: 0, zIndex: 30 }}
+      />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: 'absolute',
+          top: 26,
+          right: 0,
+          zIndex: 31,
+          width: 236,
+          padding: 12,
+          background: C.panel,
+          border: `1px solid ${C.border3}`,
+          borderRadius: 10,
+          boxShadow: '0 16px 40px rgba(0,0,0,0.55)',
+          animation: 'cc-fade 0.12s ease',
+          cursor: 'default',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: C.textHi,
+            marginBottom: 10,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {projectName} · commands
+        </div>
+        <div style={{ fontSize: 10, letterSpacing: 0.5, color: C.muted, fontWeight: 600, marginBottom: 5 }}>BUILD</div>
+        <input
+          autoFocus
+          value={build}
+          onChange={(e) => setBuild(e.target.value)}
+          placeholder="npm run build"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void save()
+            else if (e.key === 'Escape') onClose()
+          }}
+          style={menuInputStyle}
+        />
+        <div style={{ fontSize: 10, letterSpacing: 0.5, color: C.muted, fontWeight: 600, margin: '10px 0 5px' }}>RUN</div>
+        <input
+          value={run}
+          onChange={(e) => setRun(e.target.value)}
+          placeholder="npm run dev"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void save()
+            else if (e.key === 'Escape') onClose()
+          }}
+          style={menuInputStyle}
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+          <button
+            onClick={onClose}
+            style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${C.border3}`, borderRadius: 7, color: '#b4afa3', font: 'inherit', fontSize: 12, cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void save()}
+            style={{ padding: '6px 14px', background: C.accent, border: 'none', borderRadius: 7, color: C.accentText, font: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+/**
+ * One project group: a collapsible header (name + session count) carrying this
+ * project's Build/Run buttons and a gear that opens the command editor, followed by
+ * its session rows. Build/Run reuse one dedicated interactive terminal per project +
+ * task, created inside this group; later clicks retype the command at its prompt.
+ */
+function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
+  const isCollapsed = useStore((s) => !!s.collapsed[group.name])
+  const toggleGroup = useStore((s) => s.toggleGroup)
+  const settings = useStore((s) => s.settings)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const projectPath = group.sessions[0]?.projectPath ?? ''
+  const proj = settings?.projects.find((p) => p.path === projectPath)
+  const buildCmd = proj?.buildCommand?.trim()
+  const runCmd = proj?.runCommand?.trim()
+
+  const runTask = async (task: 'build' | 'run') => {
+    const store = useStore.getState()
+    let target = Object.values(store.sessions).find((x) => x.task === task && x.projectPath === projectPath)
+    if (!target) {
+      target = await window.terminator.createSession({
+        kind: 'shell',
+        mode: 'normal',
+        task,
+        name: task === 'build' ? 'Build' : 'Run',
+        projectName: group.name,
+        projectPath,
+      })
+      store.upsert(target)
+    }
+    store.openSession(target.id)
+    await window.terminator.runTaskCommand(target.id, task)
+  }
+
+  const taskBtn = (task: 'build' | 'run', enabled: boolean): React.JSX.Element => (
+    <button
+      onClick={(e) => {
+        e.stopPropagation()
+        if (enabled) void runTask(task)
+      }}
+      title={enabled ? (task === 'build' ? 'Build' : 'Run') : `Set a ${task} command — click the gear`}
+      style={{ ...headerBtnStyle, opacity: enabled ? 1 : 0.3, cursor: enabled ? 'pointer' : 'default' }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = HEADER_BTN_HOVER)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+    >
+      <Icon name={task === 'build' ? 'hammer' : 'play'} size={13} />
+    </button>
+  )
+
+  return (
+    <div>
+      <div
+        onClick={() => toggleGroup(group.name)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '13px 4px 6px', cursor: 'pointer' }}
+      >
+        <span
+          style={{
+            display: 'flex',
+            color: C.muted,
+            transform: isCollapsed ? 'rotate(-90deg)' : 'none',
+            transition: 'transform 0.12s ease',
+          }}
+        >
+          <Icon name="chevron" size={12} />
+        </span>
+        <span
+          style={{
+            fontSize: 10.5,
+            letterSpacing: 0.6,
+            color: C.dim,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {group.name}
+        </span>
+        <span style={{ fontSize: 10, color: C.faint2 }}>{group.sessions.length}</span>
+        <span style={{ flex: 1, height: 1, background: C.hair, minWidth: 8 }} />
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{ display: 'flex', alignItems: 'center', gap: 1, position: 'relative', flex: 'none' }}
+        >
+          {taskBtn('build', !!buildCmd)}
+          {taskBtn('run', !!runCmd)}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setMenuOpen((v) => !v)
+            }}
+            title="Set Build / Run commands for this project"
+            style={{ ...headerBtnStyle, background: menuOpen ? HEADER_BTN_HOVER : 'transparent' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = HEADER_BTN_HOVER)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = menuOpen ? HEADER_BTN_HOVER : 'transparent')}
+          >
+            <Icon name="settings" size={13} />
+          </button>
+          {menuOpen && (
+            <ProjectCommandsMenu
+              projectName={group.name}
+              projectPath={projectPath}
+              proj={proj}
+              onClose={() => setMenuOpen(false)}
+            />
+          )}
+        </div>
+      </div>
+      {!isCollapsed && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {group.sessions.map((s) => (
+            <Row key={s.id} session={s} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Sidebar(): React.JSX.Element {
   const order = useStore((s) => s.order)
   const sessions = useStore((s) => s.sessions)
   const groups = useMemo(() => buildGroups(order, sessions), [order, sessions])
   const total = order.length
-  const collapsed = useStore((s) => s.collapsed)
-  const toggleGroup = useStore((s) => s.toggleGroup)
   const setShowNew = useStore((s) => s.setShowNew)
   const setShowSettings = useStore((s) => s.setShowSettings)
   const setShowNotes = useStore((s) => s.setShowNotes)
@@ -484,40 +747,9 @@ export function Sidebar(): React.JSX.Element {
             Create one to get started.
           </div>
         )}
-        {groups.map((g) => {
-          const isCollapsed = collapsed[g.name]
-          return (
-            <div key={g.name}>
-              <div
-                onClick={() => toggleGroup(g.name)}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '13px 4px 6px', cursor: 'pointer' }}
-              >
-                <span
-                  style={{
-                    display: 'flex',
-                    color: C.muted,
-                    transform: isCollapsed ? 'rotate(-90deg)' : 'none',
-                    transition: 'transform 0.12s ease',
-                  }}
-                >
-                  <Icon name="chevron" size={12} />
-                </span>
-                <span style={{ fontSize: 10.5, letterSpacing: 0.6, color: C.dim, fontWeight: 600 }}>
-                  {g.name}
-                </span>
-                <span style={{ fontSize: 10, color: C.faint2 }}>{g.sessions.length}</span>
-                <span style={{ flex: 1, height: 1, background: C.hair }} />
-              </div>
-              {!isCollapsed && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {g.sessions.map((s) => (
-                    <Row key={s.id} session={s} />
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
+        {groups.map((g) => (
+          <Group key={g.name} group={g} />
+        ))}
       </div>
     </div>
   )

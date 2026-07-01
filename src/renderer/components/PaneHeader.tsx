@@ -151,34 +151,10 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
   const editing = useStore((s) => s.editingId === session.id)
   const startEdit = useStore((s) => s.startEdit)
   const setConfirm = useStore((s) => s.setConfirm)
-  const settings = useStore((s) => s.settings)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isClaude = session.kind === 'claude'
   const m = session.metrics
-  const buildCmd = settings?.buildCommand.trim()
-  const runCmd = settings?.runCommand.trim()
-
-  // Build/Run use a single dedicated, reusable interactive terminal per task (in
-  // their own "Tasks" group). First click creates it; later clicks reuse it and
-  // just type the command at its prompt, so it stays usable after the run finishes.
-  const runTask = async (task: 'build' | 'run') => {
-    const store = useStore.getState()
-    let target = Object.values(store.sessions).find((x) => x.task === task)
-    if (!target) {
-      target = await window.terminator.createSession({
-        kind: 'shell',
-        mode: 'normal',
-        task,
-        name: task === 'build' ? 'Build' : 'Run',
-        projectName: 'Tasks',
-        projectPath: session.worktreePath || session.projectPath,
-      })
-      store.upsert(target)
-    }
-    store.openSession(target.id)
-    await window.terminator.runTaskCommand(target.id, task)
-  }
 
   const commit = () => {
     const v = inputRef.current?.value.trim()
@@ -348,22 +324,6 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
             <Icon name={session.mode === 'readonly' ? 'lock' : 'unlock'} size={15} />
           </button>
         )}
-        <button
-          onClick={() => void runTask('build')}
-          disabled={!buildCmd}
-          title={buildCmd ? 'Build — run in the Build terminal' : 'Set a build command in Settings'}
-          style={iconBtn(buildCmd ? undefined : { opacity: 0.4, cursor: 'default' })}
-        >
-          <Icon name="hammer" size={15} />
-        </button>
-        <button
-          onClick={() => void runTask('run')}
-          disabled={!runCmd}
-          title={runCmd ? 'Run — run in the Run terminal' : 'Set a run command in Settings'}
-          style={iconBtn(runCmd ? undefined : { opacity: 0.4, cursor: 'default' })}
-        >
-          <Icon name="play" size={15} />
-        </button>
         <button onClick={() => void window.terminator.openInFolder(session.id)} title="Open folder in file manager" style={iconBtn()}>
           <Icon name="folder" size={15} />
         </button>

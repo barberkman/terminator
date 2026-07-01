@@ -16,7 +16,8 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   ipcMain.handle(Channels.sessionList, () => state.listSessions())
   ipcMain.handle(Channels.sessionCreate, async (_e, input: CreateSessionInput) => {
     const session = state.createSession(input)
-    // Build/Run terminals are synthetic ("Tasks") — keep them out of recent projects.
+    // A Build/Run terminal reuses its project's path; that project is already in
+    // recents from its first non-task session, so only remember on real sessions.
     if (!input.task) rememberProject(input.projectPath, input.projectName)
     // Create the worktree before returning so the PTY launches in it (any kind).
     if (input.worktree) {
