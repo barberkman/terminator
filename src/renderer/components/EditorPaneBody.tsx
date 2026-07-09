@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Session } from '../../shared/types'
-import { C } from '../theme'
+import { C, sz } from '../theme'
 import { Icon } from '../icons'
 import { useEditorStore, type TabStatus } from '../editor/editorStore'
 import * as editor from '../editor/registry'
@@ -74,8 +74,8 @@ function Tab({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: 18,
-          height: 18,
+          width: sz(18),
+          height: sz(18),
           borderRadius: 4,
           border: 'none',
           background: 'transparent',

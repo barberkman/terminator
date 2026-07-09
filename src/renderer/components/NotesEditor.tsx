@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { C, FONT } from '../theme'
+import { C, FONT, sz } from '../theme'
 import { Icon } from '../icons'
 
 /** A fenced code block rendered with a hover-revealed Copy button (top-right). */
@@ -303,7 +303,7 @@ export function NotesEditor({
           </div>
           <button
             onClick={onClose}
-            style={{ marginLeft: 'auto', display: 'flex', width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: 'none', background: 'transparent', color: C.muted, cursor: 'pointer' }}
+            style={{ marginLeft: 'auto', display: 'flex', width: sz(26), height: sz(26), alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: 'none', background: 'transparent', color: C.muted, cursor: 'pointer' }}
           >
             <Icon name="close" size={13} />
           </button>

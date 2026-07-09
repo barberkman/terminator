@@ -49,6 +49,13 @@ export const STATUS_LABELS: Record<SessionStatus, string> = {
 
 export const FONT = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
 
+/**
+ * Scales a pixel value by the user-controlled `--icon-scale` CSS variable so
+ * icon-button boxes grow/shrink in lockstep with their icons. Falls back to 1
+ * (no scaling) before the variable is set. See Settings → ICON SIZE.
+ */
+export const sz = (px: number): string => `calc(${px}px * var(--icon-scale, 1))`
+
 /** Inline-style for a status dot, including the animation per status. */
 export function dotStyle(status: SessionStatus, size = 9): React.CSSProperties {
   const base: React.CSSProperties = {

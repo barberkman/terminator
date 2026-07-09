@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { CreateSessionInput } from '../../shared/types'
-import { C } from '../theme'
+import { C, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { useStore } from '../state/store'
 
@@ -172,8 +172,8 @@ export function NewSessionModal(): React.JSX.Element | null {
             style={{
               marginLeft: 'auto',
               display: 'flex',
-              width: 26,
-              height: 26,
+              width: sz(26),
+              height: sz(26),
               alignItems: 'center',
               justifyContent: 'center',
               borderRadius: 6,
@@ -273,8 +273,8 @@ export function NewSessionModal(): React.JSX.Element | null {
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            width: 18,
-                            height: 18,
+                            width: sz(18),
+                            height: sz(18),
                             borderRadius: 4,
                             border: 'none',
                             background: 'transparent',
