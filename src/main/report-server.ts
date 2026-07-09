@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import { REPORTER_SOURCE } from './reporter-source'
 import { getSession, notify, setStatus, updateSession } from './state'
+import * as usage from './usage'
 import type { SessionMetrics } from '../shared/types'
 
 let server: Server | null = null
@@ -144,12 +145,21 @@ function handleStatus(p: Record<string, unknown>): void {
   if (ctxTokens !== undefined) next.contextTokens = ctxTokens
   const c = num(cost?.total_cost_usd)
   if (c !== undefined) next.costUsd = c
-  const usage = num(limits?.five_hour?.used_percentage)
-  if (usage !== undefined) next.usagePct = usage
+  const fiveHour = num(limits?.five_hour?.used_percentage)
+  if (fiveHour !== undefined) next.usagePct = fiveHour
   if (limits?.five_hour?.resets_at) next.usageResetsAt = limits.five_hour.resets_at
   const weekly = num(limits?.seven_day?.used_percentage)
   if (weekly !== undefined) next.weeklyUsagePct = weekly
   if (limits?.seven_day?.resets_at) next.weeklyResetsAt = limits.seven_day.resets_at
 
   updateSession(id, { metrics: next })
+
+  // Rate limits are account-wide — mirror them into the global usage store so
+  // the footer shows them regardless of which session is focused.
+  usage.update({
+    fiveHourPct: fiveHour,
+    fiveHourResetsAt: limits?.five_hour?.resets_at,
+    weeklyPct: weekly,
+    weeklyResetsAt: limits?.seven_day?.resets_at,
+  })
 }

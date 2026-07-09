@@ -35,6 +35,7 @@ export function defaultSettings(): Settings {
     globalToggleShortcut: 'F12',
     notesShortcut: 'CommandOrControl+Shift+N',
     notes: '',
+    usageRefreshSeconds: 30,
   }
 }
 

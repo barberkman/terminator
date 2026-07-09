@@ -48,6 +48,11 @@ function emit(channel: string, payload: unknown): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
 }
 
+/** Broadcast an arbitrary payload to the renderer (reuses the window emit path). */
+export function emitUsage(channel: string, payload: unknown): void {
+  emit(channel, payload)
+}
+
 export function listSessions(): Session[] {
   // Map insertion order is the display order — preserved across restarts via
   // persistence, and re-arranged by reorderSessions (sidebar drag-reorder).

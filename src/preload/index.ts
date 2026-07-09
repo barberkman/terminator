@@ -3,6 +3,7 @@ import { Channels } from '../shared/channels'
 import type {
   CreateSessionInput,
   FsChange,
+  GlobalUsage,
   PtyData,
   PtyExit,
   Session,
@@ -42,6 +43,9 @@ const api: TerminatorApi = {
   onSessionUpdated: (cb: (s: Session) => void) => on(Channels.sessionUpdated, cb),
   onSessionRemoved: (cb: (id: string) => void) => on(Channels.sessionRemoved, cb),
   onNavJump: (cb: (id: string) => void) => on(Channels.navJump, cb),
+
+  getUsage: () => ipcRenderer.invoke(Channels.usageGet),
+  onUsageUpdated: (cb: (u: GlobalUsage) => void) => on(Channels.usageUpdated, cb),
 
   fsList: (sessionId, dir) => ipcRenderer.invoke(Channels.fsList, { sessionId, dir }),
   fsRead: (sessionId, path) => ipcRenderer.invoke(Channels.fsRead, { sessionId, path }),

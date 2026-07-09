@@ -292,6 +292,31 @@ export function SettingsView(): React.JSX.Element | null {
             />
           </Field>
 
+          <Field label="USAGE REFRESH (SECONDS)" hint="How often the footer usage countdown (time until reset) re-renders. The percentages still update when Claude reports them. 30 = default.">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <input
+                type="range"
+                min={5}
+                max={300}
+                step={5}
+                value={draft.usageRefreshSeconds}
+                onChange={(e) => patch({ usageRefreshSeconds: Number(e.target.value) || draft.usageRefreshSeconds })}
+                style={{ flex: 1, accentColor: C.accent }}
+              />
+              <input
+                type="number"
+                min={5}
+                max={300}
+                step={5}
+                style={{ ...inputStyle, width: 70, flex: 'none' }}
+                value={draft.usageRefreshSeconds}
+                onChange={(e) => patch({ usageRefreshSeconds: Number(e.target.value) || draft.usageRefreshSeconds })}
+              />
+            </div>
+          </Field>
+
+          <div style={{ height: 1, background: C.hair, margin: '2px 0' }} />
+
           <Field label="NOTIFICATION COMMAND" hint="Run on each notification, via your shell. Receives the event as JSON on stdin and TERMINATOR_* env vars. Leave blank to disable.">
             <input style={inputStyle} placeholder="python3 ~/notify.py" value={draft.notifications.command} onChange={(e) => patch({ notifications: { ...draft.notifications, command: e.target.value } })} />
           </Field>

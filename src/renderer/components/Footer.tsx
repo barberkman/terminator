@@ -1,5 +1,27 @@
+import { useEffect, useState } from 'react'
 import { C, STATUS_COLORS, STATUS_LABELS, dotStyle } from '../theme'
 import { useStore } from '../state/store'
+
+/** "2h 14m left" (or "14m left") until the ISO reset, or null if past/invalid. */
+function timeLeft(resetsAt: string | undefined, now: number): string | null {
+  if (!resetsAt) return null
+  const t = new Date(resetsAt).getTime()
+  if (!Number.isFinite(t)) return null
+  const diff = t - now
+  if (diff <= 0) return null
+  const totalMin = Math.floor(diff / 60000)
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return h > 0 ? `${h}h ${m}m left` : `${m}m left`
+}
+
+/** Local wall-clock time the window resets at, e.g. "14:30", or null. */
+function resetClock(resetsAt: string | undefined): string | null {
+  if (!resetsAt) return null
+  const t = new Date(resetsAt).getTime()
+  if (!Number.isFinite(t)) return null
+  return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 
 function Meter({ label, pct }: { label: string; pct: number }): React.JSX.Element {
   return (
@@ -22,9 +44,25 @@ function Meter({ label, pct }: { label: string; pct: number }): React.JSX.Elemen
 export function Footer(): React.JSX.Element {
   const focusedId = useStore((s) => s.panes[s.focused])
   const session = useStore((s) => (focusedId ? s.sessions[focusedId] : undefined))
-  const usagePct = session?.metrics?.usagePct
-  const weeklyPct = session?.metrics?.weeklyUsagePct
+  // Usage is account-wide (global), not tied to the focused session.
+  const usage = useStore((s) => s.usage)
+  const refreshSeconds = useStore((s) => s.settings?.usageRefreshSeconds) ?? 30
   const cwd = session ? session.worktreePath || session.projectPath : ''
+
+  // Periodically re-render so the reset countdown stays live even when Claude
+  // isn't reporting. Interval configurable via Settings → Usage Refresh.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const ms = Math.max(1, refreshSeconds) * 1000
+    const id = setInterval(() => setNow(Date.now()), ms)
+    return () => clearInterval(id)
+  }, [refreshSeconds])
+
+  const hasUsage = usage.updatedAt != null
+  const fiveHourPct = usage.fiveHourPct
+  const weeklyPct = usage.weeklyPct
+  const fiveHourLeft = timeLeft(usage.fiveHourResetsAt, now)
+  const fiveHourReset = resetClock(usage.fiveHourResetsAt)
 
   return (
     <div
@@ -75,9 +113,15 @@ export function Footer(): React.JSX.Element {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 'none' }}>
         <span style={{ fontSize: 9.5, letterSpacing: 0.6, color: C.dim, fontWeight: 700 }}>USAGE</span>
-        {usagePct != null || weeklyPct != null ? (
+        {hasUsage ? (
           <>
-            {usagePct != null ? <Meter label="5-hour" pct={usagePct} /> : null}
+            {fiveHourPct != null ? <Meter label="5-hour" pct={fiveHourPct} /> : null}
+            {fiveHourLeft ? (
+              <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>
+                <span style={{ color: C.textHi, fontWeight: 600 }}>{fiveHourLeft}</span>
+                {fiveHourReset ? <span style={{ color: C.faint2 }}> · resets {fiveHourReset}</span> : null}
+              </span>
+            ) : null}
             {weeklyPct != null ? <Meter label="weekly" pct={weeklyPct} /> : null}
           </>
         ) : (
