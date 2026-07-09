@@ -123,6 +123,8 @@ export interface Settings {
   sidebarSide: 'left' | 'right'
   /** Electron accelerator for the global show/hide hotkey. Empty = disabled. */
   globalToggleShortcut: string
+  /** Electron accelerator to toggle the Notes overlay (renderer-side). Empty = disabled. */
+  notesShortcut: string
   /** Single freeform markdown note, edited from Settings → Notes. */
   notes: string
 }

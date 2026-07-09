@@ -33,6 +33,7 @@ export function defaultSettings(): Settings {
     iconScale: 100,
     sidebarSide: 'left',
     globalToggleShortcut: 'F12',
+    notesShortcut: 'CommandOrControl+Shift+N',
     notes: '',
   }
 }

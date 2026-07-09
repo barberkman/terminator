@@ -3,6 +3,7 @@ import type { NotifType, Settings } from '../../shared/types'
 import { C, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
+import { eventToAccelerator } from '../shortcuts'
 
 const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited']
 
@@ -26,35 +27,6 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       {hint && <div style={{ fontSize: 10.5, color: C.dim, marginTop: 5 }}>{hint}</div>}
     </div>
   )
-}
-
-// Map a KeyboardEvent (via e.code, layout-independent) to an Electron accelerator token.
-function codeToAccel(code: string): string | null {
-  let m
-  if ((m = /^Key([A-Z])$/.exec(code))) return m[1]
-  if ((m = /^Digit([0-9])$/.exec(code))) return m[1]
-  if ((m = /^Numpad([0-9])$/.exec(code))) return 'num' + m[1]
-  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code
-  const named: Record<string, string> = {
-    Space: 'Space', Tab: 'Tab', Enter: 'Return', Backspace: 'Backspace',
-    Delete: 'Delete', Insert: 'Insert', Home: 'Home', End: 'End',
-    PageUp: 'PageUp', PageDown: 'PageDown',
-    ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
-    Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
-    Semicolon: ';', Quote: "'", Backquote: '`', Comma: ',', Period: '.', Slash: '/',
-  }
-  return named[code] ?? null
-}
-
-function eventToAccelerator(e: React.KeyboardEvent): string | null {
-  const key = codeToAccel(e.code)
-  if (!key) return null
-  const mods: string[] = []
-  if (e.ctrlKey) mods.push('Control')
-  if (e.metaKey) mods.push('Super')
-  if (e.altKey) mods.push('Alt')
-  if (e.shiftKey) mods.push('Shift')
-  return [...mods, key].join('+')
 }
 
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta'])
@@ -309,6 +281,15 @@ export function SettingsView(): React.JSX.Element | null {
                   : 'Currently disabled'}
               </div>
             )}
+          </Field>
+          <Field
+            label="OPEN NOTES SHORTCUT"
+            hint="In-app hotkey to toggle the Notes overlay. Click to record, Esc to cancel, Clear to disable. Applies after Save."
+          >
+            <ShortcutRecorder
+              value={draft.notesShortcut ?? ''}
+              onChange={(accel) => patch({ notesShortcut: accel })}
+            />
           </Field>
 
           <Field label="NOTIFICATION COMMAND" hint="Run on each notification, via your shell. Receives the event as JSON on stdin and TERMINATOR_* env vars. Leave blank to disable.">
