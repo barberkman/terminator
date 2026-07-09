@@ -57,9 +57,9 @@ function Row({ session }: { session: Session }): React.JSX.Element {
   const reorderWithinGroup = useStore((s) => s.reorderWithinGroup)
   const [dragOver, setDragOver] = useState(false)
   const active = focusedId === session.id
-  // A notified (needs-attention) session gets a clear highlight on its tab —
-  // this is the primary in-app signal now that there's no popup toast.
-  const notified = session.notified && !active
+  // The accent "selected" treatment is reserved for the single focused session.
+  // A notified (needs-attention) session is signalled separately by the pulsing
+  // dot below, so it never competes with selection when several are notified.
 
   // Drag-reorder: only allow a drop when the dragged session is in the same
   // project group (so groups stay contiguous).
@@ -103,12 +103,10 @@ function Row({ session }: { session: Session }): React.JSX.Element {
         cursor: 'pointer',
         background: active
           ? 'rgba(217,119,87,0.1)'
-          : notified
-            ? 'rgba(217,119,87,0.14)'
-            : shown
-              ? 'rgba(214,209,196,0.04)'
-              : 'transparent',
-        border: `1px solid ${active ? 'rgba(217,119,87,0.22)' : notified ? 'rgba(217,119,87,0.4)' : 'transparent'}`,
+          : shown
+            ? 'rgba(214,209,196,0.04)'
+            : 'transparent',
+        border: `1px solid ${active ? 'rgba(217,119,87,0.22)' : 'transparent'}`,
         boxShadow: dragOver ? `inset 0 2px 0 ${C.accent}` : undefined,
       }}
     >
@@ -277,7 +275,9 @@ function LayoutMenu(): React.JSX.Element {
 
 /**
  * A session in the collapsed rail: a status-coloured dot (the "which session needs
- * me" signal), highlighted when active/notified. Click or Alt+<index+1> to switch.
+ * me" signal). The accent "selected" ring is reserved for the single focused
+ * session; a notified session is flagged by a distinct corner badge instead, so
+ * several notified tabs never read as several selected ones.
  */
 function RailTab({ session, index }: { session: Session; index: number }): React.JSX.Element {
   const focusedId = useStore((s) => s.panes[s.focused])
@@ -293,6 +293,7 @@ function RailTab({ session, index }: { session: Session; index: number }): React
       onClick={() => openSession(session.id)}
       title={`${session.name} · ${STATUS_LABELS[session.status]}${hint}`}
       style={{
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -304,15 +305,28 @@ function RailTab({ session, index }: { session: Session; index: number }): React
         padding: 0,
         background: active
           ? 'rgba(217,119,87,0.1)'
-          : notified
-            ? 'rgba(217,119,87,0.14)'
-            : shown
-              ? 'rgba(214,209,196,0.04)'
-              : 'transparent',
-        border: `1px solid ${active ? 'rgba(217,119,87,0.22)' : notified ? 'rgba(217,119,87,0.4)' : 'transparent'}`,
+          : shown
+            ? 'rgba(214,209,196,0.04)'
+            : 'transparent',
+        border: `1px solid ${active ? 'rgba(217,119,87,0.22)' : 'transparent'}`,
       }}
     >
       <span style={dotStyle(session.status, 11)} />
+      {notified && (
+        <span
+          style={{
+            position: 'absolute',
+            top: 3,
+            right: 3,
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: C.accent,
+            border: `1px solid ${C.sidebar}`,
+            animation: 'cc-notif 1.2s ease-in-out infinite',
+          }}
+        />
+      )}
     </button>
   )
 }
