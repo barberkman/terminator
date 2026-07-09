@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { NotifType, Settings } from '../../shared/types'
-import { C } from '../theme'
+import { C, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 
@@ -179,7 +179,7 @@ export function SettingsView(): React.JSX.Element | null {
           <span style={{ fontSize: 14, fontWeight: 600, color: C.textMax }}>Settings</span>
           <button
             onClick={() => setShow(false)}
-            style={{ marginLeft: 'auto', display: 'flex', width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: 'none', background: 'transparent', color: C.muted, cursor: 'pointer' }}
+            style={{ marginLeft: 'auto', display: 'flex', width: sz(26), height: sz(26), alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: 'none', background: 'transparent', color: C.muted, cursor: 'pointer' }}
           >
             <Icon name="close" size={13} />
           </button>
@@ -240,6 +240,28 @@ export function SettingsView(): React.JSX.Element | null {
                 style={{ ...inputStyle, width: 70, flex: 'none' }}
                 value={draft.fontSize}
                 onChange={(e) => patch({ fontSize: Number(e.target.value) || draft.fontSize })}
+              />
+            </div>
+          </Field>
+          <Field label="ICON SIZE" hint="Scales buttons and icons only, on top of the interface size. 100 = default.">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <input
+                type="range"
+                min={80}
+                max={160}
+                step={10}
+                value={draft.iconScale}
+                onChange={(e) => patch({ iconScale: Number(e.target.value) || draft.iconScale })}
+                style={{ flex: 1, accentColor: C.accent }}
+              />
+              <input
+                type="number"
+                min={80}
+                max={160}
+                step={10}
+                style={{ ...inputStyle, width: 70, flex: 'none' }}
+                value={draft.iconScale}
+                onChange={(e) => patch({ iconScale: Number(e.target.value) || draft.iconScale })}
               />
             </div>
           </Field>

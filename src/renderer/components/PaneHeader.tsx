@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { Session } from '../../shared/types'
-import { C, STATUS_COLORS, STATUS_LABELS, dotStyle } from '../theme'
+import { C, STATUS_COLORS, STATUS_LABELS, dotStyle, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 
@@ -9,8 +9,8 @@ function iconBtn(extra?: React.CSSProperties): React.CSSProperties {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 30,
-    height: 30,
+    width: sz(30),
+    height: sz(30),
     borderRadius: 7,
     border: `1px solid ${C.border2}`,
     background: 'transparent',

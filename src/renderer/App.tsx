@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { UI_BASE_FONT_SIZE } from '../shared/types'
+import { UI_BASE_FONT_SIZE, UI_BASE_ICON_SCALE } from '../shared/types'
 import { buildGroups, useStore } from './state/store'
 import * as registry from './term/registry'
 import { Sidebar } from './components/Sidebar'
@@ -17,6 +17,7 @@ export function App(): React.JSX.Element {
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const termFont = useStore((s) => s.settings?.terminalFont)
   const fontSize = useStore((s) => s.settings?.fontSize)
+  const iconScale = useStore((s) => s.settings?.iconScale)
   const sidebarSide = useStore((s) => s.settings?.sidebarSide)
 
   useEffect(() => {
@@ -35,6 +36,13 @@ export function App(): React.JSX.Element {
       registry.refitVisible()
     }
   }, [fontSize])
+
+  // Icon/button size → CSS variable consumed by Icon + button-box styles (via sz()).
+  // Independent of the global zoom; multiplies on top of it. No terminal refit needed.
+  useEffect(() => {
+    const scale = (iconScale ?? UI_BASE_ICON_SCALE) / UI_BASE_ICON_SCALE
+    document.documentElement.style.setProperty('--icon-scale', String(scale))
+  }, [iconScale])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

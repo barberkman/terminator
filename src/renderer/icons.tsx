@@ -26,8 +26,8 @@ export type IconName =
 
 export function Icon({ name, size = 15 }: { name: IconName; size?: number }): React.JSX.Element {
   const common = {
-    width: size,
-    height: size,
+    width: `calc(${size}px * var(--icon-scale, 1))`,
+    height: `calc(${size}px * var(--icon-scale, 1))`,
     viewBox: '0 0 24 24',
     fill: 'none',
     stroke: 'currentColor',

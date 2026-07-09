@@ -117,6 +117,8 @@ export interface Settings {
   terminalFont: string
   /** Global UI size — scales the whole interface via zoom (14 = 100%). */
   fontSize: number
+  /** Extra scale applied to icons and their button boxes only (100 = default). Multiplies on top of the global zoom. */
+  iconScale: number
   /** Which side of the window the session sidebar sits on. */
   sidebarSide: 'left' | 'right'
   /** Electron accelerator for the global show/hide hotkey. Empty = disabled. */
@@ -219,3 +221,6 @@ export interface TerminatorApi {
 
 /** `fontSize` value that corresponds to 100% zoom (the as-designed sizing). */
 export const UI_BASE_FONT_SIZE = 14
+
+/** `iconScale` value that corresponds to the as-designed icon/button sizing. */
+export const UI_BASE_ICON_SCALE = 100
