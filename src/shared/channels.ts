@@ -29,6 +29,10 @@ export const Channels = {
   sessionRemoved: 'session:removed',
   notify: 'session:notify',
   navJump: 'nav:jump',
+  usageUpdated: 'usage:updated',
+
+  // global usage (renderer -> main, invoke)
+  usageGet: 'usage:get',
 
   // filesystem (editor sessions)
   fsList: 'fs:list',

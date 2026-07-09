@@ -39,6 +39,25 @@ export interface SessionMetrics {
   weeklyResetsAt?: string
 }
 
+/**
+ * Account-wide rate-limit usage, kept globally rather than per-session (the
+ * limits are per-account, so any Claude session reports the same numbers). The
+ * percentages come from Claude Code's statusLine; the reset timestamps drive a
+ * live countdown in the footer.
+ */
+export interface GlobalUsage {
+  /** 5-hour rate-limit window usage percentage. */
+  fiveHourPct?: number
+  /** ISO timestamp when the 5-hour window resets. */
+  fiveHourResetsAt?: string
+  /** 7-day (weekly) rate-limit window usage percentage. */
+  weeklyPct?: number
+  /** ISO timestamp when the weekly window resets. */
+  weeklyResetsAt?: string
+  /** When we last received a report (Date.now()); absent = never reported. */
+  updatedAt?: number
+}
+
 export interface Session {
   id: string
   name: string
@@ -125,6 +144,8 @@ export interface Settings {
   globalToggleShortcut: string
   /** Single freeform markdown note, edited from Settings → Notes. */
   notes: string
+  /** How often (seconds) the footer usage countdown re-renders. */
+  usageRefreshSeconds: number
 }
 
 // ---- Notifications ---------------------------------------------------------
@@ -203,6 +224,10 @@ export interface TerminatorApi {
   fsWatch(sessionId: string, path: string): void
   fsUnwatch(sessionId: string, path: string): void
   onFsChanged(cb: (c: FsChange) => void): () => void
+
+  // global usage (account-wide rate limits)
+  getUsage(): Promise<GlobalUsage>
+  onUsageUpdated(cb: (u: GlobalUsage) => void): () => void
 
   // dialogs / settings
   pickFolder(): Promise<string | null>

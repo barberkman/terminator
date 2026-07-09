@@ -6,6 +6,7 @@ import * as fsService from './fs-service'
 import * as state from './state'
 import { runTaskCommand, startSession, switchMode } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
+import * as usage from './usage'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 
@@ -107,6 +108,9 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const root = editorRoot(sessionId)
     if (root) fsService.unwatchPath(sessionId, root, path)
   })
+
+  // ---- global usage ----
+  ipcMain.handle(Channels.usageGet, () => usage.get())
 
   // ---- dialogs / settings ----
   ipcMain.handle(Channels.pickFolder, async () => {

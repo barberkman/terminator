@@ -34,6 +34,7 @@ export function defaultSettings(): Settings {
     sidebarSide: 'left',
     globalToggleShortcut: 'F12',
     notes: '',
+    usageRefreshSeconds: 30,
   }
 }
 

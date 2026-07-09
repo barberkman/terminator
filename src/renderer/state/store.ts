@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, Settings } from '../../shared/types'
+import type { GlobalUsage, Session, Settings } from '../../shared/types'
 import * as editor from '../editor/registry'
 
 export type LayoutName = 'single' | 'cols2' | 'grid4'
@@ -32,6 +32,7 @@ interface StoreState {
   editingId: string | null
   confirm: ConfirmState | null
   settings: Settings | null
+  usage: GlobalUsage
 
   init(): Promise<void>
   upsert(s: Session): void
@@ -70,13 +71,15 @@ export const useStore = create<StoreState>((set, get) => ({
   editingId: null,
   confirm: null,
   settings: null,
+  usage: {},
 
   async init() {
     if (initialized) return
     initialized = true
-    const [list, settings] = await Promise.all([
+    const [list, settings, usage] = await Promise.all([
       window.terminator.listSessions(),
       window.terminator.getSettings(),
+      window.terminator.getUsage(),
     ])
     const sessions: Record<string, Session> = {}
     const order: string[] = []
@@ -85,11 +88,12 @@ export const useStore = create<StoreState>((set, get) => ({
       order.push(s.id)
     }
     const panes = order.length ? [order[0]] : ['']
-    set({ sessions, order, settings, panes })
+    set({ sessions, order, settings, usage, panes })
 
     window.terminator.onSessionUpdated((s) => get().upsert(s))
     window.terminator.onSessionRemoved((id) => get().remove(id))
     window.terminator.onNavJump((id) => get().openSession(id))
+    window.terminator.onUsageUpdated((u) => set({ usage: u }))
   },
 
   upsert(s) {
