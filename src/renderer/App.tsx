@@ -9,6 +9,7 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { NewSessionModal } from './components/NewSessionModal'
 import { SettingsView } from './components/SettingsView'
 import { NotesView } from './components/NotesView'
+import { matchesAccelerator } from './shortcuts'
 import { C } from './theme'
 
 export function App(): React.JSX.Element {
@@ -82,6 +83,43 @@ export function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onAltDigit, true)
     return () => window.removeEventListener('keydown', onAltDigit, true)
+  }, [])
+
+  // Escape closes the topmost open modal. Bubble phase and only acts when a modal
+  // is actually open, so a bare Esc still reaches terminals/vim untouched. The
+  // Settings shortcut recorder stops propagation of its own keys (incl. Esc), so
+  // recording never leaks here.
+  useEffect(() => {
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const st = useStore.getState()
+      // Close the highest-stacked modal by zIndex: Notes(60) > Confirm(55) > Settings/New(50).
+      if (st.showNotes) st.setShowNotes(false)
+      else if (st.confirm) st.setConfirm(null)
+      else if (st.showSettings) st.setShowSettings(false)
+      else if (st.showNew) st.setShowNew(false)
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [])
+
+  // Configurable accelerator toggles the Notes overlay. Capture phase + stopPropagation
+  // (like Alt+digit) so it fires before xterm forwards the combo to the PTY — i.e. it
+  // works even while a terminal is focused. Reads fresh store state, so no re-binding.
+  useEffect(() => {
+    const onNotesKey = (e: KeyboardEvent) => {
+      const st = useStore.getState()
+      const accel = st.settings?.notesShortcut ?? ''
+      if (!accel || !matchesAccelerator(e, accel)) return
+      if (st.showNew || st.showSettings || st.confirm) return // don't toggle underneath another modal
+      e.preventDefault()
+      e.stopPropagation()
+      st.setShowNotes(!st.showNotes)
+    }
+    window.addEventListener('keydown', onNotesKey, true)
+    return () => window.removeEventListener('keydown', onNotesKey, true)
   }, [])
 
   return (
