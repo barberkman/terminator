@@ -1,5 +1,6 @@
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { C, FONT } from '../theme'
 
@@ -102,6 +103,21 @@ export function getOrCreate(id: string): Entry {
   host.style.cssText = 'width:100%;height:100%;'
   ensureHolder().appendChild(host)
   term.open(host)
+
+  // Use the WebGL renderer so box-drawing and block glyphs are drawn as
+  // continuous vectors (customGlyphs). The default DOM renderer paints these
+  // characters with the font, which leaves visible gaps in horizontal rules —
+  // e.g. the discontinuous divider above Claude's prompt input. If WebGL is
+  // unavailable (no GPU context, or a renderer/addon mismatch), activate()
+  // throws and we simply keep the DOM renderer — same as before. A later
+  // context loss disposes the addon, which also falls back to the DOM renderer.
+  try {
+    const webgl = new WebglAddon()
+    webgl.onContextLoss(() => webgl.dispose())
+    term.loadAddon(webgl)
+  } catch {
+    // WebGL not available — fall back to the built-in DOM renderer.
+  }
 
   // Disable auto copy-on-select: on Linux, xterm registers a mouse selection to the
   // OS primary-selection buffer by writing it into the hidden textarea and calling

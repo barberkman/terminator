@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { C, STATUS_COLORS, STATUS_LABELS, dotStyle } from '../theme'
 import { useStore } from '../state/store'
 
-/** "2h 14m left" (or "14m left") until the ISO reset, or null if past/invalid. */
+/** "1d 3h left" / "2h 14m left" / "14m left" until the ISO reset, or null if past/invalid. */
 function timeLeft(resetsAt: string | undefined, now: number): string | null {
   if (!resetsAt) return null
   const t = new Date(resetsAt).getTime()
@@ -10,20 +10,42 @@ function timeLeft(resetsAt: string | undefined, now: number): string | null {
   const diff = t - now
   if (diff <= 0) return null
   const totalMin = Math.floor(diff / 60000)
-  const h = Math.floor(totalMin / 60)
+  const d = Math.floor(totalMin / 1440)
+  const h = Math.floor((totalMin % 1440) / 60)
   const m = totalMin % 60
+  if (d > 0) return `${d}d ${h}h left`
   return h > 0 ? `${h}h ${m}m left` : `${m}m left`
 }
 
-/** Local wall-clock time the window resets at, e.g. "14:30", or null. */
-function resetClock(resetsAt: string | undefined): string | null {
+/**
+ * Local wall-clock time the window resets at — "14:30" when it's later today,
+ * or "Mon 14:30" when it's on another day (e.g. the weekly reset). Null if invalid.
+ */
+function resetClock(resetsAt: string | undefined, now: number): string | null {
   if (!resetsAt) return null
   const t = new Date(resetsAt).getTime()
   if (!Number.isFinite(t)) return null
-  return new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const at = new Date(t)
+  const hm = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const sameDay = at.toDateString() === new Date(now).toDateString()
+  return sameDay ? hm : `${at.toLocaleDateString([], { weekday: 'short' })} ${hm}`
 }
 
-function Meter({ label, pct }: { label: string; pct: number }): React.JSX.Element {
+/**
+ * One rate-limit window: label, a fill meter with its percentage, and — when the
+ * reset time is known — how long until it resets and the wall-clock time it does.
+ */
+function Meter({
+  label,
+  pct,
+  left,
+  reset,
+}: {
+  label: string
+  pct: number
+  left?: string | null
+  reset?: string | null
+}): React.JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 'none' }}>
       <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>{label}</span>
@@ -37,6 +59,12 @@ function Meter({ label, pct }: { label: string; pct: number }): React.JSX.Elemen
         />
       </div>
       <span style={{ color: C.textHi, fontWeight: 600, whiteSpace: 'nowrap' }}>{Math.round(pct)}%</span>
+      {left ? (
+        <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>
+          · <span style={{ color: C.textHi, fontWeight: 600 }}>{left}</span>
+          {reset ? <span style={{ color: C.faint2 }}> · resets {reset}</span> : null}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -62,7 +90,9 @@ export function Footer(): React.JSX.Element {
   const fiveHourPct = usage.fiveHourPct
   const weeklyPct = usage.weeklyPct
   const fiveHourLeft = timeLeft(usage.fiveHourResetsAt, now)
-  const fiveHourReset = resetClock(usage.fiveHourResetsAt)
+  const fiveHourReset = resetClock(usage.fiveHourResetsAt, now)
+  const weeklyLeft = timeLeft(usage.weeklyResetsAt, now)
+  const weeklyReset = resetClock(usage.weeklyResetsAt, now)
 
   return (
     <div
@@ -118,14 +148,12 @@ export function Footer(): React.JSX.Element {
         <span style={{ fontSize: 9.5, letterSpacing: 0.6, color: C.dim, fontWeight: 700 }}>USAGE</span>
         {hasUsage ? (
           <>
-            {fiveHourPct != null ? <Meter label="5-hour" pct={fiveHourPct} /> : null}
-            {fiveHourLeft ? (
-              <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>
-                <span style={{ color: C.textHi, fontWeight: 600 }}>{fiveHourLeft}</span>
-                {fiveHourReset ? <span style={{ color: C.faint2 }}> · resets {fiveHourReset}</span> : null}
-              </span>
+            {fiveHourPct != null ? (
+              <Meter label="5-hour" pct={fiveHourPct} left={fiveHourLeft} reset={fiveHourReset} />
             ) : null}
-            {weeklyPct != null ? <Meter label="weekly" pct={weeklyPct} /> : null}
+            {weeklyPct != null ? (
+              <Meter label="weekly" pct={weeklyPct} left={weeklyLeft} reset={weeklyReset} />
+            ) : null}
           </>
         ) : (
           <span style={{ color: C.faint }}>—</span>
