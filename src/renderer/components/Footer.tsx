@@ -73,7 +73,10 @@ export function Footer(): React.JSX.Element {
         height: 40,
         flex: 'none',
         padding: '0 16px',
-        background: C.footer,
+        // Match the sidebar surface (not the darker C.footer) so the strip under
+        // the sidebar blends in rather than reading as an empty black rectangle
+        // glued to the bottom of the session list.
+        background: C.sidebar,
         borderTop: `1px solid ${C.border}`,
         fontSize: 11.5,
         color: C.muted,
