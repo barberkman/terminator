@@ -39,6 +39,13 @@ export interface SessionMetrics {
   weeklyResetsAt?: string
 }
 
+/**
+ * What a task button types into a project terminal. 'build' and 'run' each own a
+ * dedicated terminal (`Session.task`); 'stop' has none of its own — it targets the
+ * project's existing Run terminal.
+ */
+export type TaskCommand = 'build' | 'run' | 'stop'
+
 export interface Session {
   id: string
   name: string
@@ -127,7 +134,7 @@ export interface NotificationSettings {
   perType: Partial<Record<NotifType, string>>
 }
 
-/** A remembered project and its per-project Build/Run commands. */
+/** A remembered project and its per-project Build/Run/Stop commands. */
 export interface ProjectConfig {
   name: string
   path: string
@@ -135,6 +142,8 @@ export interface ProjectConfig {
   buildCommand?: string
   /** Command run by this project's sidebar Run button. Empty/unset = disabled. */
   runCommand?: string
+  /** Command typed into this project's Run terminal by the Stop button. Empty/unset = disabled. */
+  stopCommand?: string
 }
 
 export interface Settings {
@@ -212,8 +221,8 @@ export interface TerminatorApi {
   removeSession(id: string): Promise<void>
   renameSession(id: string, name: string): Promise<void>
   setMode(id: string, mode: SessionMode): Promise<void>
-  /** Type the Build/Run command into its dedicated terminal (starting it if needed). */
-  runTaskCommand(id: string, task: 'build' | 'run'): Promise<void>
+  /** Type the Build/Run/Stop command into the task's terminal (starting it if needed). */
+  runTaskCommand(id: string, task: TaskCommand): Promise<void>
   openGitGui(id: string): Promise<void>
   openInFolder(id: string): Promise<void>
   removeWorktree(id: string): Promise<void>

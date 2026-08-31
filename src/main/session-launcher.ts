@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron'
-import type { SessionMode } from '../shared/types'
+import type { SessionMode, TaskCommand } from '../shared/types'
 import { loadSettings } from './settings'
 import * as ptyMgr from './pty-manager'
 import {
@@ -80,16 +80,19 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
 }
 
 /**
- * Send a Build/Run command into its dedicated terminal. The terminal is a normal
+ * Send a Build/Run/Stop command into a task terminal. The terminal is a normal
  * interactive shell that stays alive, so the command is typed at its prompt (not
  * run as a one-shot process). Starts the shell first if it isn't running yet.
+ * 'stop' has no terminal of its own — callers pass the Run terminal's id.
  */
-export function runTaskCommand(win: BrowserWindow, id: string, task: 'build' | 'run'): void {
+export function runTaskCommand(win: BrowserWindow, id: string, task: TaskCommand): void {
   const s = getSession(id)
   if (!s) return
   const settings = loadSettings()
   const proj = settings.projects.find((p) => p.path === s.projectPath)
-  const cmd = (task === 'build' ? proj?.buildCommand : proj?.runCommand)?.trim()
+  const cmd = (
+    task === 'build' ? proj?.buildCommand : task === 'run' ? proj?.runCommand : proj?.stopCommand
+  )?.trim()
   if (!cmd) return
   if (!s.alive) {
     startSession(win, id)
