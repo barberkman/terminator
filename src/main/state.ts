@@ -12,6 +12,7 @@ import type {
 import * as ptyMgr from './pty-manager'
 import { closeAllForSession as closeFsWatchers } from './fs-service'
 import { runNotifyCommand } from './notify-runner'
+import { cancelPendingPrompt } from './prefill'
 import { loadPersistedSessions, savePersistedSessions } from './persistence'
 
 const sessions = new Map<string, Session>()
@@ -79,7 +80,41 @@ function initialActivity(kind: CreateSessionInput['kind']): string {
   return 'ready'
 }
 
-export function createSession(input: CreateSessionInput): Session {
+/** Branch metadata, set only by the branch path in ipc.ts. */
+export interface BranchMeta {
+  parentId: string
+  branchedFrom: string
+  branchPoint: number
+}
+
+/** Whether `id` sits anywhere under `ancestorId` in the branch tree. */
+function isDescendantOf(id: string, ancestorId: string): boolean {
+  let cur = sessions.get(id)?.parentId
+  const seen = new Set<string>()
+  while (cur && !seen.has(cur)) {
+    if (cur === ancestorId) return true
+    seen.add(cur)
+    cur = sessions.get(cur)?.parentId
+  }
+  return false
+}
+
+/**
+ * Move a freshly created branch to sit directly after its parent's existing
+ * subtree, so the sidebar tree stays contiguous (Map insertion order is the
+ * display order). No-op if the parent is gone.
+ */
+function placeAfterParent(id: string, parentId: string): void {
+  const ids = [...sessions.keys()].filter((x) => x !== id)
+  const at = ids.indexOf(parentId)
+  if (at < 0) return
+  let insert = at + 1
+  while (insert < ids.length && isDescendantOf(ids[insert], parentId)) insert++
+  ids.splice(insert, 0, id)
+  reorderSessions(ids)
+}
+
+export function createSession(input: CreateSessionInput, branch?: BranchMeta): Session {
   const id = randomUUID()
   // Store an absolute, ~-expanded path so the editor's file ops and the renderer's
   // path identities always agree (the PTY cwd is expanded again at spawn anyway).
@@ -102,8 +137,12 @@ export function createSession(input: CreateSessionInput): Session {
     everStarted: false,
     metrics: input.kind === 'claude' ? {} : undefined,
     createdAt: Date.now(),
+    parentId: branch?.parentId,
+    branchedFrom: branch?.branchedFrom,
+    branchPoint: branch?.branchPoint,
   }
   sessions.set(id, session)
+  if (branch) placeAfterParent(id, branch.parentId)
   emit(Channels.sessionUpdated, session)
   persist()
   return session
@@ -173,7 +212,16 @@ export function clearNotified(id: string): void {
 export function removeSession(id: string): void {
   ptyMgr.killPty(id)
   closeFsWatchers(id) // no-op for non-editor sessions
+  cancelPendingPrompt(id) // no-op unless a branch never started
+  const grandparent = sessions.get(id)?.parentId
   if (sessions.delete(id)) {
+    // Re-parent this session's branches onto its own parent so they don't vanish
+    // from the tree. `branchedFrom` keeps naming the session they came from.
+    for (const child of sessions.values()) {
+      if (child.parentId !== id) continue
+      child.parentId = grandparent
+      emit(Channels.sessionUpdated, child)
+    }
     emit(Channels.sessionRemoved, id)
     persist()
   }

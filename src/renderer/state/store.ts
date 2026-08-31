@@ -16,6 +16,20 @@ export interface ConfirmState {
 export interface ProjectGroup {
   name: string
   sessions: Session[]
+  /** Nesting depth per session id — a branch sits one level under its parent. */
+  depth: Record<string, number>
+}
+
+/** One sidebar line: a session plus what the branch tree adds around it. */
+export interface SidebarRow {
+  session: Session
+  depth: number
+  /** How many branches hang directly off this session. */
+  branches: number
+  /** True when this session's branches are collapsed out of view. */
+  collapsed: boolean
+  /** True when a branch hidden under this collapsed session needs attention. */
+  hiddenNotified: boolean
 }
 
 interface StoreState {
@@ -28,6 +42,8 @@ interface StoreState {
   showNew: boolean
   showSettings: boolean
   showNotes: boolean
+  /** Session whose conversation the branch picker is open for. */
+  branchFor: string | null
   sidebarHidden: boolean
   editingId: string | null
   confirm: ConfirmState | null
@@ -45,6 +61,7 @@ interface StoreState {
   setShowNew(v: boolean): void
   setShowSettings(v: boolean): void
   setShowNotes(v: boolean): void
+  setBranchFor(id: string | null): void
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
@@ -66,6 +83,7 @@ export const useStore = create<StoreState>((set, get) => ({
   showNew: false,
   showSettings: false,
   showNotes: false,
+  branchFor: null,
   sidebarHidden: false,
   editingId: null,
   confirm: null,
@@ -95,9 +113,10 @@ export const useStore = create<StoreState>((set, get) => ({
   upsert(s) {
     set((st) => {
       const isNew = !st.sessions[s.id]
+      const sessions = { ...st.sessions, [s.id]: s }
       return {
-        sessions: { ...st.sessions, [s.id]: s },
-        order: isNew ? [...st.order, s.id] : st.order,
+        sessions,
+        order: isNew ? insertInOrder(st.order, sessions, s) : st.order,
       }
     })
   },
@@ -185,12 +204,13 @@ export const useStore = create<StoreState>((set, get) => ({
     set((st) => {
       const a = st.sessions[draggedId]
       const b = st.sessions[targetId]
-      // Only reorder within the same project group (keeps groups contiguous).
-      if (!a || !b || a.projectName !== b.projectName) return {}
-      const order = st.order.filter((x) => x !== draggedId)
+      if (!a || !b || !canReorderOnto(a, b)) return {}
+      // A session drags its branches along, so subtrees stay contiguous.
+      const block = subtreeIds(st.order, st.sessions, draggedId)
+      const order = st.order.filter((x) => !block.includes(x))
       const ti = order.indexOf(targetId)
       if (ti < 0) return {}
-      order.splice(ti, 0, draggedId)
+      order.splice(ti, 0, ...block)
       window.terminator.reorderSessions(order)
       return { order }
     })
@@ -217,6 +237,9 @@ export const useStore = create<StoreState>((set, get) => ({
   setShowNotes(v) {
     set({ showNotes: v })
   },
+  setBranchFor(id) {
+    set({ branchFor: id })
+  },
   toggleSidebar() {
     set((s) => ({ sidebarHidden: !s.sidebarHidden }))
   },
@@ -227,6 +250,63 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ settings: s })
   },
 }))
+
+/** Whether `id` sits anywhere under `ancestorId` in the branch tree. */
+function isDescendantOf(id: string, ancestorId: string, sessions: Record<string, Session>): boolean {
+  let cur = sessions[id]?.parentId
+  const seen = new Set<string>()
+  while (cur && !seen.has(cur)) {
+    if (cur === ancestorId) return true
+    seen.add(cur)
+    cur = sessions[cur]?.parentId
+  }
+  return false
+}
+
+/**
+ * Where a newly arrived session goes in the display order: a branch lands right
+ * after its parent's existing subtree (mirroring state.ts, which does the same to
+ * the persisted order), anything else at the end.
+ */
+function insertInOrder(order: string[], sessions: Record<string, Session>, s: Session): string[] {
+  const parentId = s.parentId
+  if (!parentId) return [...order, s.id]
+  const at = order.indexOf(parentId)
+  if (at < 0) return [...order, s.id]
+  let insert = at + 1
+  while (insert < order.length && isDescendantOf(order[insert], parentId, sessions)) insert++
+  const next = order.slice()
+  next.splice(insert, 0, s.id)
+  return next
+}
+
+/**
+ * A session plus its branches, as the contiguous run they occupy in `order`.
+ * Both the main process and `insertInOrder` keep subtrees contiguous.
+ */
+export function subtreeIds(
+  order: string[],
+  sessions: Record<string, Session>,
+  rootId: string,
+): string[] {
+  const at = order.indexOf(rootId)
+  if (at < 0) return [rootId]
+  const ids = [rootId]
+  for (let i = at + 1; i < order.length && isDescendantOf(order[i], rootId, sessions); i++) {
+    ids.push(order[i])
+  }
+  return ids
+}
+
+/**
+ * Whether a drag-reorder is allowed: same project group, and siblings under the
+ * same parent — dropping a branch outside its parent's subtree would leave the
+ * tree unreadable rather than reordered.
+ */
+export function canReorderOnto(dragged: Session, target: Session): boolean {
+  if (dragged.projectName !== target.projectName) return false
+  return (dragged.parentId ?? null) === (target.parentId ?? null)
+}
 
 /**
  * Sessions grouped by project, preserving creation order. Takes the stable
@@ -241,11 +321,72 @@ export function buildGroups(order: string[], sessions: Record<string, Session>):
     if (!s) continue
     let g = byName.get(s.projectName)
     if (!g) {
-      g = { name: s.projectName, sessions: [] }
+      g = { name: s.projectName, sessions: [], depth: {} }
       byName.set(s.projectName, g)
       groups.push(g)
     }
     g.sessions.push(s)
+    // Branches follow their parent in `order`, so one forward pass is enough.
+    // Depth is capped so a long chain can't indent a row off the sidebar.
+    const parentDepth = s.parentId ? g.depth[s.parentId] : undefined
+    g.depth[s.id] = parentDepth === undefined ? 0 : Math.min(parentDepth + 1, 4)
   }
   return groups
+}
+
+/**
+ * A project group's visible sidebar lines: sessions whose parents are all
+ * expanded, each carrying its branch count and, when collapsed, whether a hidden
+ * branch under it needs attention — so the "which session needs me" signal never
+ * disappears behind a collapsed subtree.
+ */
+export function buildRows(group: ProjectGroup, collapsed: Record<string, boolean>): SidebarRow[] {
+  const byId = new Map(group.sessions.map((s) => [s.id, s]))
+  const children = new Map<string, Session[]>()
+  for (const s of group.sessions) {
+    if (!s.parentId || !byId.has(s.parentId)) continue
+    const list = children.get(s.parentId)
+    if (list) list.push(s)
+    else children.set(s.parentId, [s])
+  }
+
+  const isCollapsed = (id: string): boolean => !!collapsed[branchKey(id)]
+  const hiddenUnder = (id: string): boolean => {
+    const stack = [...(children.get(id) ?? [])]
+    while (stack.length) {
+      const s = stack.pop()!
+      if (s.notified) return true
+      stack.push(...(children.get(s.id) ?? []))
+    }
+    return false
+  }
+  const anyAncestorCollapsed = (s: Session): boolean => {
+    let cur = s.parentId
+    const seen = new Set<string>()
+    while (cur && byId.has(cur) && !seen.has(cur)) {
+      if (isCollapsed(cur)) return true
+      seen.add(cur)
+      cur = byId.get(cur)?.parentId
+    }
+    return false
+  }
+
+  const rows: SidebarRow[] = []
+  for (const s of group.sessions) {
+    if (anyAncestorCollapsed(s)) continue
+    const collapsedHere = isCollapsed(s.id)
+    rows.push({
+      session: s,
+      depth: group.depth[s.id] ?? 0,
+      branches: children.get(s.id)?.length ?? 0,
+      collapsed: collapsedHere,
+      hiddenNotified: collapsedHere && hiddenUnder(s.id),
+    })
+  }
+  return rows
+}
+
+/** `collapsed` key for a session's branch subtree (project groups key by name). */
+export function branchKey(id: string): string {
+  return `br:${id}`
 }

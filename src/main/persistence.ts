@@ -17,6 +17,9 @@ const KEYS = [
   'worktreePath',
   'everStarted',
   'createdAt',
+  'parentId',
+  'branchedFrom',
+  'branchPoint',
 ] as const
 
 function file(): string {
@@ -48,6 +51,9 @@ export function loadPersistedSessions(): Session[] {
         everStarted: p.everStarted ?? true,
         metrics: p.kind === 'claude' ? {} : undefined,
         createdAt: p.createdAt ?? Date.now(),
+        parentId: p.parentId,
+        branchedFrom: p.branchedFrom,
+        branchPoint: p.branchPoint,
       }))
   } catch {
     return []

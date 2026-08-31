@@ -1,12 +1,20 @@
 import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
-import type { CreateSessionInput, SessionMode } from '../shared/types'
+import type {
+  BranchResult,
+  BranchSessionInput,
+  CreateSessionInput,
+  SessionMode,
+  TranscriptPrompt,
+} from '../shared/types'
 import * as ptyMgr from './pty-manager'
 import * as fsService from './fs-service'
 import * as state from './state'
 import { runTaskCommand, startSession, switchMode } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
+import { forkTranscript, listPrompts } from './transcript'
+import { setPendingPrompt } from './prefill'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 
 /** Registers every ipcMain handler. The single IPC registry for the main process. */
@@ -63,6 +71,73 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   ipcMain.handle(Channels.worktreeRemove, (_e, id: string) => removeWorktree(id))
   ipcMain.on(Channels.sessionClearNotified, (_e, id: string) => state.clearNotified(id))
   ipcMain.on(Channels.sessionReorder, (_e, ids: string[]) => state.reorderSessions(ids))
+
+  // ---- conversation branching ----
+  ipcMain.handle(Channels.sessionListPrompts, (_e, id: string): TranscriptPrompt[] => {
+    const s = state.getSession(id)
+    if (!s || s.kind !== 'claude') return []
+    return listPrompts(s.id, s.worktreePath || s.projectPath)
+  })
+  ipcMain.handle(
+    Channels.sessionBranch,
+    async (_e, input: BranchSessionInput): Promise<BranchResult> => {
+      const parent = state.getSession(input.parentId)
+      if (!parent || parent.kind !== 'claude') {
+        return { ok: false, reason: 'only a Claude session has a conversation to branch' }
+      }
+      const parentCwd = parent.worktreePath || parent.projectPath
+      const branchName = input.branch?.trim() || `${parent.name}-branch`
+
+      // The worktree comes first: Claude keys a transcript's location by the
+      // working directory, so the branch's cwd has to be settled before the fork.
+      let worktreePath: string | undefined
+      if (input.worktree) {
+        try {
+          worktreePath = await addWorktree(parent.projectPath, branchName)
+        } catch (e) {
+          return { ok: false, reason: `worktree failed: ${String(e).slice(0, 120)}` }
+        }
+      }
+
+      const session = state.createSession(
+        {
+          kind: 'claude',
+          mode: parent.mode,
+          name: input.name?.trim() || `${parent.name} ⑂`,
+          projectPath: parent.projectPath,
+          projectName: parent.projectName,
+        },
+        { parentId: parent.id, branchedFrom: parent.name, branchPoint: input.keptPrompts },
+      )
+      state.updateSession(session.id, {
+        worktreePath,
+        branch: worktreePath ? branchName : parent.branch,
+      })
+
+      // Cutting above the first prompt means "same project, blank slate": there is
+      // no history to carry, so leave the transcript unseeded and let the launcher
+      // start it with --session-id like any new session.
+      const forked =
+        input.keptPrompts > 0
+          ? forkTranscript({
+              parentSessionId: parent.id,
+              parentCwd,
+              newSessionId: session.id,
+              newCwd: worktreePath || parent.projectPath,
+              cutBeforeUuid: input.cutBeforeUuid,
+            })
+          : ({ ok: true } as const)
+      if (!forked.ok) {
+        // Leave nothing behind: the session never ran, and its worktree would be
+        // orphaned once the session row is gone.
+        if (worktreePath) await removeWorktree(session.id).catch(() => {})
+        state.removeSession(session.id)
+        return forked
+      }
+      if (input.prefill) setPendingPrompt(session.id, input.prefill)
+      return { ok: true, session: state.getSession(session.id)! }
+    },
+  )
 
   // ---- pty hot path ----
   ipcMain.on(Channels.ptyWrite, (_e, { id, data }: { id: string; data: string }) =>

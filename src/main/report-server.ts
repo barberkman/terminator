@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import { REPORTER_SOURCE } from './reporter-source'
 import { getSession, notify, setStatus, updateSession } from './state'
+import { flushPendingPrompt } from './prefill'
 import type { SessionMetrics } from '../shared/types'
 
 let server: Server | null = null
@@ -110,6 +111,8 @@ function handleHook(p: Record<string, unknown>): void {
     notify(id, 'error', `${s.name} hit an error`)
   } else if (event === 'SessionStart') {
     setStatus(id, 'idle', 'ready')
+    // A branch can carry the prompt it was cut before, as an editable draft.
+    flushPendingPrompt(id)
   }
   // SessionEnd is handled by the PTY exit path.
 }
