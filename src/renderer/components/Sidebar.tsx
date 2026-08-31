@@ -406,9 +406,10 @@ function RailTab({ session, index }: { session: Session; index: number }): React
 }
 
 /**
- * Popover to set a project's Build/Run commands. Prefilled from the current config;
- * Save writes the whole `projects` array back through updateSettings (its `merge`
- * replaces `projects` wholesale). Anchored to the group header's button cluster.
+ * Popover to set a project's Build/Run/Stop commands. Prefilled from the current
+ * config; Save writes the whole `projects` array back through updateSettings (its
+ * `merge` replaces `projects` wholesale, so every command must be written each time).
+ * Anchored to the group header's button cluster.
  */
 function ProjectCommandsMenu({
   projectName,
@@ -424,16 +425,23 @@ function ProjectCommandsMenu({
   const setSettings = useStore((s) => s.setSettings)
   const [build, setBuild] = useState(proj?.buildCommand ?? '')
   const [run, setRun] = useState(proj?.runCommand ?? '')
+  const [stop, setStop] = useState(proj?.stopCommand ?? '')
 
   const save = async () => {
     const settings = useStore.getState().settings
     if (!settings) return
     const buildCommand = build.trim()
     const runCommand = run.trim()
+    const stopCommand = stop.trim()
     const exists = settings.projects.some((p) => p.path === projectPath)
     const projects = exists
-      ? settings.projects.map((p) => (p.path === projectPath ? { ...p, buildCommand, runCommand } : p))
-      : [...settings.projects, { name: projectName, path: projectPath, buildCommand, runCommand }]
+      ? settings.projects.map((p) =>
+          p.path === projectPath ? { ...p, buildCommand, runCommand, stopCommand } : p,
+        )
+      : [
+          ...settings.projects,
+          { name: projectName, path: projectPath, buildCommand, runCommand, stopCommand },
+        ]
     const result = await window.terminator.updateSettings({ projects })
     setSettings(result)
     onClose()
@@ -501,6 +509,17 @@ function ProjectCommandsMenu({
           }}
           style={menuInputStyle}
         />
+        <div style={{ fontSize: 10, letterSpacing: 0.5, color: C.muted, fontWeight: 600, margin: '10px 0 5px' }}>STOP</div>
+        <input
+          value={stop}
+          onChange={(e) => setStop(e.target.value)}
+          placeholder="npm run stop"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void save()
+            else if (e.key === 'Escape') onClose()
+          }}
+          style={menuInputStyle}
+        />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
           <button
             onClick={onClose}
@@ -525,6 +544,8 @@ function ProjectCommandsMenu({
  * project's Build/Run buttons and a gear that opens the command editor, followed by
  * its session rows. Build/Run reuse one dedicated interactive terminal per project +
  * task, created inside this group; later clicks retype the command at its prompt.
+ * Stop has no terminal of its own — it types the stop command into the Run terminal,
+ * so it only appears once that terminal exists (i.e. after Run has been clicked).
  */
 function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
   const isCollapsed = useStore((s) => !!s.collapsed[group.name])
@@ -537,6 +558,10 @@ function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
   const proj = settings?.projects.find((p) => p.path === projectPath)
   const buildCmd = proj?.buildCommand?.trim()
   const runCmd = proj?.runCommand?.trim()
+  const stopCmd = proj?.stopCommand?.trim()
+  // From `group.sessions` (not the store snapshot) so the Stop button appears the
+  // moment Run creates the terminal and vanishes when it is closed.
+  const runSession = group.sessions.find((s) => s.task === 'run' && s.projectPath === projectPath)
 
   const runTask = async (task: 'build' | 'run') => {
     const store = useStore.getState()
@@ -556,20 +581,40 @@ function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
     await window.terminator.runTaskCommand(target.id, task)
   }
 
-  const taskBtn = (task: 'build' | 'run', enabled: boolean): React.JSX.Element => (
+  // Types the stop command into the existing Run terminal — never creates one.
+  const stopTask = async () => {
+    if (!runSession) return
+    useStore.getState().openSession(runSession.id)
+    await window.terminator.runTaskCommand(runSession.id, 'stop')
+  }
+
+  const headerBtn = (
+    icon: IconName,
+    title: string,
+    enabled: boolean,
+    onClick: () => void,
+  ): React.JSX.Element => (
     <button
       onClick={(e) => {
         e.stopPropagation()
-        if (enabled) void runTask(task)
+        if (enabled) onClick()
       }}
-      title={enabled ? (task === 'build' ? 'Build' : 'Run') : `Set a ${task} command — click the gear`}
+      title={title}
       style={{ ...headerBtnStyle, opacity: enabled ? 1 : 0.3, cursor: enabled ? 'pointer' : 'default' }}
       onMouseEnter={(e) => (e.currentTarget.style.background = HEADER_BTN_HOVER)}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
-      <Icon name={task === 'build' ? 'hammer' : 'play'} size={13} />
+      <Icon name={icon} size={13} />
     </button>
   )
+
+  const taskBtn = (task: 'build' | 'run', enabled: boolean): React.JSX.Element =>
+    headerBtn(
+      task === 'build' ? 'hammer' : 'play',
+      enabled ? (task === 'build' ? 'Build' : 'Run') : `Set a ${task} command — click the gear`,
+      enabled,
+      () => void runTask(task),
+    )
 
   return (
     <div>
@@ -608,12 +653,19 @@ function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
         >
           {taskBtn('build', !!buildCmd)}
           {taskBtn('run', !!runCmd)}
+          {runSession &&
+            headerBtn(
+              'stop',
+              stopCmd ? 'Stop' : 'Set a stop command — click the gear',
+              !!stopCmd,
+              () => void stopTask(),
+            )}
           <button
             onClick={(e) => {
               e.stopPropagation()
               setMenuOpen((v) => !v)
             }}
-            title="Set Build / Run commands for this project"
+            title="Set Build / Run / Stop commands for this project"
             style={{ ...headerBtnStyle, background: menuOpen ? HEADER_BTN_HOVER : 'transparent' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = HEADER_BTN_HOVER)}
             onMouseLeave={(e) => (e.currentTarget.style.background = menuOpen ? HEADER_BTN_HOVER : 'transparent')}

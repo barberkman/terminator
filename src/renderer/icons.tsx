@@ -12,6 +12,7 @@ export type IconName =
   | 'power'
   | 'hammer'
   | 'play'
+  | 'stop'
   | 'folder'
   | 'chevron'
   | 'columns'
@@ -111,6 +112,12 @@ export function Icon({ name, size = 15 }: { name: IconName; size?: number }): Re
       return (
         <svg {...common}>
           <path d="M7 5l11 7-11 7z" />
+        </svg>
+      )
+    case 'stop':
+      return (
+        <svg {...common}>
+          <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" />
         </svg>
       )
     case 'folder':

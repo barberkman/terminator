@@ -5,6 +5,7 @@ import type {
   BranchSessionInput,
   CreateSessionInput,
   SessionMode,
+  TaskCommand,
   TranscriptPrompt,
 } from '../shared/types'
 import * as ptyMgr from './pty-manager'
@@ -63,7 +64,7 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   )
   ipcMain.handle(
     Channels.runTaskCommand,
-    (_e, { id, task }: { id: string; task: 'build' | 'run' }) =>
+    (_e, { id, task }: { id: string; task: TaskCommand }) =>
       runTaskCommand(getWin(), id, task),
   )
   ipcMain.handle(Channels.sessionOpenGitGui, (_e, id: string) => openGitGui(id))
