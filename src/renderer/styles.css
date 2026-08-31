@@ -201,8 +201,10 @@ textarea {
    it. Since the scrollable element only spans whole rows, the sub-row remainder
    the fit leaves at the bottom of the pane showed that black through as a band
    above the status bar. Keep it transparent so the pane background runs down
-   cleanly. */
-.xterm .xterm-viewport {
+   cleanly. The `div` qualifier is deliberate: it outweighs xterm.css's own
+   `.xterm .xterm-viewport` rule on specificity, so this wins whichever order
+   the two stylesheets happen to land in. */
+.xterm div.xterm-viewport {
   background-color: transparent;
 }
 .xterm .xterm-viewport::-webkit-scrollbar-thumb {
