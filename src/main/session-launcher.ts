@@ -1,6 +1,3 @@
-import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import type { SessionMode } from '../shared/types'
 import { loadSettings } from './settings'
@@ -14,24 +11,13 @@ import {
   updateSession,
 } from './state'
 import { buildSettingsFile } from './hooks-config'
+import { hasTranscript } from './transcript'
 import { reportPort, reportToken } from './report-server'
 import { shellRunArgs, quoteFor } from './shell'
 
 export interface StartOpts {
   cols?: number
   rows?: number
-}
-
-/**
- * Whether Claude already has a saved conversation for this session id in cwd's
- * project. This is the ground truth for --resume vs --session-id (the in-memory
- * flag can't know it for sessions restored across an app restart). Claude stores
- * transcripts at ~/.claude/projects/<cwd-with-nonalnum-as-dash>/<id>.jsonl.
- */
-function claudeHasConversation(sessionId: string, cwd: string): boolean {
-  const abs = ptyMgr.expandHome(cwd) || cwd
-  const encoded = abs.replace(/[^a-zA-Z0-9]/g, '-')
-  return existsSync(join(homedir(), '.claude', 'projects', encoded, `${sessionId}.jsonl`))
 }
 
 export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {}): void {
@@ -65,7 +51,9 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
   // --resume only works once a conversation exists. Before any prompt is sent the
   // id is unclaimed, so it must be set with --session-id (resuming an empty id
   // errors with "no conversation found", and re-claiming a used id also errors).
-  if (claudeHasConversation(s.id, cwd)) parts.push('--resume', s.id)
+  // A branched session lands here too: its transcript was seeded on disk by
+  // transcript.ts, so it resumes the conversation it was forked from.
+  if (hasTranscript(s.id, cwd)) parts.push('--resume', s.id)
   else parts.push('--session-id', s.id)
   parts.push('--settings', quoteFor(settings.defaultShell, settingsFile))
   const command = parts.join(' ')

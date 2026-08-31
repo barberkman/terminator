@@ -15,6 +15,8 @@ export const Channels = {
   sessionOpenInFolder: 'session:openInFolder',
   sessionClearNotified: 'session:clearNotified',
   sessionReorder: 'session:reorder',
+  sessionListPrompts: 'session:listPrompts',
+  sessionBranch: 'session:branch',
   worktreeRemove: 'worktree:remove',
 
   // pty hot path

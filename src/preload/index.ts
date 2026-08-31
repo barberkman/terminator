@@ -1,6 +1,7 @@
 import { clipboard, contextBridge, ipcRenderer, webFrame } from 'electron'
 import { Channels } from '../shared/channels'
 import type {
+  BranchSessionInput,
   CreateSessionInput,
   FsChange,
   PtyData,
@@ -32,6 +33,8 @@ const api: TerminatorApi = {
   removeWorktree: (id) => ipcRenderer.invoke(Channels.worktreeRemove, id),
   clearNotified: (id) => ipcRenderer.send(Channels.sessionClearNotified, id),
   reorderSessions: (ids) => ipcRenderer.send(Channels.sessionReorder, ids),
+  listPrompts: (id) => ipcRenderer.invoke(Channels.sessionListPrompts, id),
+  branchSession: (input: BranchSessionInput) => ipcRenderer.invoke(Channels.sessionBranch, input),
 
   writePty: (id, data) => ipcRenderer.send(Channels.ptyWrite, { id, data }),
   resizePty: (id, cols, rows) => ipcRenderer.send(Channels.ptyResize, { id, cols, rows }),

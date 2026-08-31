@@ -36,6 +36,8 @@ npm run typecheck  # tsc, no emit
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
 - **Mode switch**: one click toggles a Claude session between normal and read-only, **continuing
   the same conversation** (it relaunches with `--resume`).
+- **Branch a conversation**: fork a Claude session from any earlier prompt into a sibling
+  session. Both keep running, nested in the sidebar. See below.
 - **Open in git GUI**: launches your configured git tool on the session's folder for manual
   merging. The app never merges; after you close a worktree session it offers to remove the
   worktree.
@@ -55,6 +57,30 @@ file injects **hooks** and a **statusLine** that report back to a loopback HTTP 
 Because the app forces `--session-id`, every hook payload's `session_id` maps back to the exact
 session — so two Claude sessions in the *same folder* are tracked independently. Your own
 `~/.claude` and project hooks are read and merged in, so they keep firing.
+
+## Branching a conversation
+
+The branch button (pane header, or a session row on hover) opens the session's prompts with a
+cut line you move between them: everything above comes along, everything below stays with the
+parent. Confirm and you get a **new session** — not a rewind — so the original conversation
+keeps running beside it, each with its own status dot, metrics and pane.
+
+- The branch is nested under its parent in the sidebar with a `⑂ n` count you can fold away.
+  A folded branch that starts waiting still lights its parent's badge, so the "needs me"
+  signal never hides.
+- Cutting *above* a prompt means you want to ask that one differently: its text is typed into
+  the new session's input box, unsent, ready to edit.
+- Optionally the branch gets its own **git worktree**, which is what you want when the parent
+  is a live normal-mode session — otherwise both Claudes edit the same files.
+- Removing a parent doesn't take its branches with it; they move up a level and keep the
+  `⑂ from <name>` label.
+
+Under the hood a branch is a **seeded transcript**. Claude keeps one JSONL per session at
+`~/.claude/projects/<cwd-encoded>/<session-id>.jsonl`; the app copies the parent's file up to
+the cut under a new session id and lets the normal launch path resume it. `--fork-session`
+would be the obvious alternative, but it mints a random session id, and every hook and
+statusLine payload is matched to a session *by* its id — so the app has to choose the id
+itself. The parent's file is only ever read, never modified.
 
 ## Settings
 

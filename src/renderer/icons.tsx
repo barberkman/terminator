@@ -8,6 +8,7 @@ export type IconName =
   | 'lock'
   | 'unlock'
   | 'git'
+  | 'branch'
   | 'power'
   | 'hammer'
   | 'play'
@@ -80,6 +81,16 @@ export function Icon({ name, size = 15 }: { name: IconName; size?: number }): Re
           <circle cx={18} cy={9} r={2.4} />
           <path d="M18 11.4a6 6 0 0 1-6 6H6" />
           <path d="M6 8.4v7.2" />
+        </svg>
+      )
+    case 'branch':
+      return (
+        <svg {...common}>
+          <circle cx={8} cy={5} r={2.2} />
+          <circle cx={8} cy={19} r={2.2} />
+          <circle cx={17} cy={12} r={2.2} />
+          <path d="M8 7.2v9.6" />
+          <path d="M8 8.8c0 2 1.5 3.2 3.5 3.2h3.3" />
         </svg>
       )
     case 'power':

@@ -2,7 +2,17 @@ import { Fragment, useMemo, useState } from 'react'
 import type { ProjectConfig, Session } from '../../shared/types'
 import { C, STATUS_COLORS, STATUS_LABELS, dotStyle, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
-import { LAYOUT_COUNT, type LayoutName, type ProjectGroup, buildGroups, useStore } from '../state/store'
+import {
+  LAYOUT_COUNT,
+  type LayoutName,
+  type ProjectGroup,
+  type SidebarRow,
+  branchKey,
+  buildGroups,
+  canReorderOnto,
+  buildRows,
+  useStore,
+} from '../state/store'
 
 const HEADER_BTN_HOVER = 'rgba(214,209,196,0.06)'
 
@@ -49,11 +59,19 @@ function activityColor(s: Session): string {
   return C.muted
 }
 
-function Row({ session }: { session: Session }): React.JSX.Element {
+/**
+ * One session line. Branches are indented under the session they were forked
+ * from, and a session with branches carries a count badge that folds them away —
+ * while still flagging a hidden branch that needs attention.
+ */
+function Row({ row }: { row: SidebarRow }): React.JSX.Element {
+  const { session, depth, branches, collapsed, hiddenNotified } = row
   const shown = useStore((s) => s.panes.includes(session.id))
   const focusedId = useStore((s) => s.panes[s.focused])
   const openSession = useStore((s) => s.openSession)
   const setConfirm = useStore((s) => s.setConfirm)
+  const setBranchFor = useStore((s) => s.setBranchFor)
+  const toggleGroup = useStore((s) => s.toggleGroup)
   const reorderWithinGroup = useStore((s) => s.reorderWithinGroup)
   const [dragOver, setDragOver] = useState(false)
   const active = focusedId === session.id
@@ -61,13 +79,29 @@ function Row({ session }: { session: Session }): React.JSX.Element {
   // A notified (needs-attention) session is signalled separately by the pulsing
   // dot below, so it never competes with selection when several are notified.
 
-  // Drag-reorder: only allow a drop when the dragged session is in the same
-  // project group (so groups stay contiguous).
-  const sameGroupDrag = (): boolean => {
+  // Drag-reorder: only offer a drop where the order stays meaningful — same
+  // project group, same place in the branch tree.
+  const canDropHere = (): boolean => {
     if (!draggedId || draggedId === session.id) return false
     const dragged = useStore.getState().sessions[draggedId]
-    return !!dragged && dragged.projectName === session.projectName
+    return !!dragged && canReorderOnto(dragged, session)
   }
+
+  const iconBtn = (extra?: React.CSSProperties): React.CSSProperties => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: sz(18),
+    height: sz(18),
+    borderRadius: 4,
+    border: 'none',
+    background: 'transparent',
+    color: C.muted,
+    cursor: 'pointer',
+    padding: 0,
+    flex: 'none',
+    ...extra,
+  })
 
   return (
     <div
@@ -83,7 +117,7 @@ function Row({ session }: { session: Session }): React.JSX.Element {
         setDragOver(false)
       }}
       onDragOver={(e) => {
-        if (!sameGroupDrag()) return
+        if (!canDropHere()) return
         e.preventDefault()
         if (!dragOver) setDragOver(true)
       }}
@@ -99,6 +133,7 @@ function Row({ session }: { session: Session }): React.JSX.Element {
         alignItems: 'center',
         gap: 9,
         padding: '7px 8px',
+        paddingLeft: 8 + depth * 12,
         borderRadius: 7,
         cursor: 'pointer',
         background: active
@@ -110,6 +145,14 @@ function Row({ session }: { session: Session }): React.JSX.Element {
         boxShadow: dragOver ? `inset 0 2px 0 ${C.accent}` : undefined,
       }}
     >
+      {depth > 0 && (
+        <span
+          title={session.branchedFrom ? `branched from ${session.branchedFrom}` : 'branch'}
+          style={{ display: 'flex', color: C.faint2, flex: 'none', marginRight: -4 }}
+        >
+          <Icon name="branch" size={11} />
+        </span>
+      )}
       <span style={dotStyle(session.status, 9)} />
       <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -166,6 +209,50 @@ function Row({ session }: { session: Session }): React.JSX.Element {
           {session.activity}
         </span>
       </div>
+      {branches > 0 && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleGroup(branchKey(session.id))
+          }}
+          title={
+            collapsed
+              ? `Show ${branches} branch${branches > 1 ? 'es' : ''}${hiddenNotified ? ' — one needs your input' : ''}`
+              : `Hide ${branches} branch${branches > 1 ? 'es' : ''}`
+          }
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 3,
+            padding: '2px 5px',
+            borderRadius: 5,
+            border: 'none',
+            background: collapsed ? 'rgba(214,209,196,0.06)' : 'transparent',
+            color: hiddenNotified ? C.accent : C.muted,
+            font: 'inherit',
+            fontSize: 10,
+            cursor: 'pointer',
+            flex: 'none',
+            animation: hiddenNotified ? 'cc-notif 1.2s ease-in-out infinite' : undefined,
+          }}
+        >
+          <Icon name="branch" size={11} />
+          {branches}
+        </button>
+      )}
+      {session.kind === 'claude' && (
+        <button
+          className="cc-x"
+          onClick={(e) => {
+            e.stopPropagation()
+            setBranchFor(session.id)
+          }}
+          title="Branch this conversation"
+          style={iconBtn()}
+        >
+          <Icon name="branch" size={13} />
+        </button>
+      )}
       <button
         className="cc-x"
         onClick={(e) => {
@@ -173,20 +260,7 @@ function Row({ session }: { session: Session }): React.JSX.Element {
           setConfirm({ kind: 'remove', id: session.id, name: session.name })
         }}
         title="Remove session"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: sz(18),
-          height: sz(18),
-          borderRadius: 4,
-          border: 'none',
-          background: 'transparent',
-          color: C.muted,
-          cursor: 'pointer',
-          padding: 0,
-          flex: 'none',
-        }}
+        style={iconBtn()}
       >
         <Icon name="close" size={13} />
       </button>
@@ -454,6 +528,7 @@ function ProjectCommandsMenu({
  */
 function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
   const isCollapsed = useStore((s) => !!s.collapsed[group.name])
+  const collapsedMap = useStore((s) => s.collapsed)
   const toggleGroup = useStore((s) => s.toggleGroup)
   const settings = useStore((s) => s.settings)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -557,8 +632,8 @@ function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
       </div>
       {!isCollapsed && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {group.sessions.map((s) => (
-            <Row key={s.id} session={s} />
+          {buildRows(group, collapsedMap).map((r) => (
+            <Row key={r.session.id} row={r} />
           ))}
         </div>
       )}

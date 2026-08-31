@@ -151,6 +151,8 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
   const editing = useStore((s) => s.editingId === session.id)
   const startEdit = useStore((s) => s.startEdit)
   const setConfirm = useStore((s) => s.setConfirm)
+  const setBranchFor = useStore((s) => s.setBranchFor)
+  const openSession = useStore((s) => s.openSession)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isClaude = session.kind === 'claude'
@@ -264,6 +266,31 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
           <span>{session.branch}</span>
           <span style={{ color: C.faint2 }}>·</span>
           <span>{session.activity}</span>
+          {!!session.branchedFrom && (
+            <>
+              <span style={{ color: C.faint2 }}>·</span>
+              <span
+                onClick={() => session.parentId && openSession(session.parentId)}
+                title={
+                  session.parentId
+                    ? `Branched from ${session.branchedFrom} — click to open it`
+                    : `Branched from ${session.branchedFrom} (since removed)`
+                }
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  color: C.accentSoft,
+                  cursor: session.parentId ? 'pointer' : 'default',
+                }}
+              >
+                <Icon name="branch" size={11} />
+                from {session.branchedFrom}
+                {session.branchPoint !== undefined &&
+                  (session.branchPoint > 0 ? ` · after prompt ${session.branchPoint}` : ' · from the start')}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -322,6 +349,15 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
             style={iconBtn({ color: session.mode === 'readonly' ? C.accentSoft : '#9a958a' })}
           >
             <Icon name={session.mode === 'readonly' ? 'lock' : 'unlock'} size={15} />
+          </button>
+        )}
+        {isClaude && (
+          <button
+            onClick={() => setBranchFor(session.id)}
+            title="Branch this conversation from an earlier prompt"
+            style={iconBtn()}
+          >
+            <Icon name="branch" size={15} />
           </button>
         )}
         <button onClick={() => void window.terminator.openInFolder(session.id)} title="Open folder in file manager" style={iconBtn()}>

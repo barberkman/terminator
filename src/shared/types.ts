@@ -62,6 +62,12 @@ export interface Session {
   everStarted: boolean
   metrics?: SessionMetrics
   createdAt: number
+  /** Set when this session was branched off another Claude session's conversation. */
+  parentId?: string
+  /** The parent's name at branch time — so the label survives the parent being removed. */
+  branchedFrom?: string
+  /** How many of the parent's prompts this branch carries over (display only). */
+  branchPoint?: number
 }
 
 export interface CreateSessionInput {
@@ -75,6 +81,35 @@ export interface CreateSessionInput {
   /** Spawn a transient shell session that runs the configured build/run command. */
   task?: 'build' | 'run'
 }
+
+/** One prompt the user typed, read out of a Claude session's transcript. */
+export interface TranscriptPrompt {
+  /** 1-based position among the session's human prompts. */
+  index: number
+  uuid: string
+  text: string
+  /** ISO timestamp, or '' when the record didn't carry one. */
+  timestamp: string
+}
+
+export interface BranchSessionInput {
+  parentId: string
+  /**
+   * uuid of the first prompt to leave behind — the branch is cut in the gap
+   * *before* it. null branches at the tip (carries the whole conversation).
+   */
+  cutBeforeUuid: string | null
+  /** How many parent prompts the branch carries (display only). */
+  keptPrompts: number
+  name?: string
+  /** Run the branch in its own git worktree instead of the parent's folder. */
+  worktree?: boolean
+  branch?: string
+  /** Text to drop into the new session's input box, unsent, once it's ready. */
+  prefill?: string
+}
+
+export type BranchResult = { ok: true; session: Session } | { ok: false; reason: string }
 
 // ---- Settings --------------------------------------------------------------
 
@@ -185,6 +220,10 @@ export interface TerminatorApi {
   clearNotified(id: string): void
   /** Persist a new full session order (used by sidebar drag-reorder). */
   reorderSessions(ids: string[]): void
+  /** The prompts a Claude session's saved conversation contains (branch points). */
+  listPrompts(id: string): Promise<TranscriptPrompt[]>
+  /** Fork a Claude session's conversation into a new sibling session. */
+  branchSession(input: BranchSessionInput): Promise<BranchResult>
 
   // pty hot path
   writePty(id: string, data: string): void
