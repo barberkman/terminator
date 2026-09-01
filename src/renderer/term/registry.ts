@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { C, FONT } from '../theme'
+import { useStore } from '../state/store'
 
 // One persistent xterm Terminal per session, alive for the session's lifetime
 // regardless of which pane (if any) currently shows it. Hidden terminals are
@@ -117,17 +118,36 @@ export function getOrCreate(id: string): Entry {
 
   term.onData((d) => window.terminator.writePty(id, d))
 
+  /** Copy the selection to the clipboard; false when nothing was selected. */
+  const copySelection = (): boolean => {
+    if (!term.hasSelection()) return false
+    window.terminator.clipboardWrite(term.getSelection())
+    term.clearSelection()
+    return true
+  }
+
+  // Shift+Enter: start a new line in Claude's prompt instead of submitting it.
+  // xterm encodes Shift+Enter as a bare CR — the same byte as plain Enter, so
+  // Claude can't tell them apart. ESC+CR is what Alt+Enter already produces and
+  // what Claude's /terminal-setup makes other terminals send for Shift+Enter.
+  // Shell sessions keep the default, where Shift+Enter runs the command.
   // Copy/paste: Ctrl/Cmd+C copies the selection (and otherwise passes ^C through
   // as SIGINT); Ctrl/Cmd+V pastes. Returning false stops xterm from sending the key.
   term.attachCustomKeyEventHandler((e) => {
-    if (e.type !== 'keydown' || !(e.ctrlKey || e.metaKey) || e.altKey) return true
+    if (e.type !== 'keydown') return true
+    if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (useStore.getState().sessions[id]?.kind !== 'claude') return true
+      // preventDefault as well as returning false: returning false only stops
+      // xterm's own key handling, and the browser would still type the Enter into
+      // xterm's hidden textarea, which it forwards as a second, bare CR.
+      e.preventDefault()
+      window.terminator.writePty(id, '\x1b\r')
+      return false
+    }
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return true
     const k = e.key.toLowerCase()
     if (k === 'c') {
-      if (term.hasSelection()) {
-        window.terminator.clipboardWrite(term.getSelection())
-        term.clearSelection()
-        return false
-      }
+      if (copySelection()) return false
       return true // no selection → let ^C reach the shell (interrupt)
     }
     if (k === 'v') {
@@ -140,6 +160,24 @@ export function getOrCreate(id: string): Entry {
     }
     return true
   })
+
+  // Right-click copies the selection, same as Ctrl/Cmd+C. Capture phase so xterm
+  // never sees the button — it would otherwise report it to a mouse-tracking child
+  // app or (on macOS) select the word under the cursor. With nothing selected the
+  // event is left untouched so those apps still get their right-click. Stopping
+  // propagation also hides it from React's root listener, so re-apply the focus
+  // TerminalView's onMouseDown would have given the terminal.
+  host.addEventListener(
+    'mousedown',
+    (e) => {
+      if (e.button !== 2 || !copySelection()) return
+      e.preventDefault()
+      e.stopPropagation()
+      term.focus()
+    },
+    true,
+  )
+  host.addEventListener('contextmenu', (e) => e.preventDefault())
 
   const entry: Entry = { term, fit, host }
   entries.set(id, entry)

@@ -82,6 +82,23 @@ would be the obvious alternative, but it mints a random session id, and every ho
 statusLine payload is matched to a session *by* its id — so the app has to choose the id
 itself. The parent's file is only ever read, never modified.
 
+## Keyboard & mouse
+
+In a terminal pane:
+
+- **Shift+Enter** (Claude sessions) — new line in the prompt instead of submitting it. The pane
+  sends `ESC`+`CR`, the same bytes as **Alt+Enter** and what Claude's `/terminal-setup` makes
+  other terminals send. Plain **Enter** still submits. Shell panes are untouched, so there
+  Shift+Enter still runs the command.
+- **Right-click** — copies the selection and clears the highlight. With nothing selected the
+  click passes through to the program in the pane (no context menu either way).
+- **Ctrl/Cmd+C** — copies the selection; with nothing selected it sends `^C` (interrupt).
+- **Ctrl/Cmd+V** — pastes.
+
+Elsewhere in the app: **Ctrl/Cmd+N** new session, **Ctrl/Cmd+B** toggle sidebar, **Alt+1..9**
+jump to a session, **Esc** closes the top modal. The global show/hide hotkey (default `F12`)
+and the notes hotkey (default `Ctrl/Cmd+Shift+N`) are configurable in Settings.
+
 ## Settings
 
 Settings live in a JSON file in the app's user-data directory (editable in-app via the gear
