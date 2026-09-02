@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react'
 import type { ProjectConfig, Session } from '../../shared/types'
-import { C, STATUS_COLORS, STATUS_LABELS, dotStyle, sz } from '../theme'
+import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
 import {
   LAYOUT_COUNT,
@@ -14,7 +14,7 @@ import {
   useStore,
 } from '../state/store'
 
-const HEADER_BTN_HOVER = 'rgba(214,209,196,0.06)'
+const HEADER_BTN_HOVER = ink(0.06)
 
 const headerBtnStyle: React.CSSProperties = {
   display: 'flex',
@@ -137,11 +137,11 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
         borderRadius: 7,
         cursor: 'pointer',
         background: active
-          ? 'rgba(217,119,87,0.1)'
+          ? accentA(0.1)
           : shown
-            ? 'rgba(214,209,196,0.04)'
+            ? ink(0.04)
             : 'transparent',
-        border: `1px solid ${active ? 'rgba(217,119,87,0.22)' : 'transparent'}`,
+        border: `1px solid ${active ? accentA(0.22) : 'transparent'}`,
         boxShadow: dragOver ? `inset 0 2px 0 ${C.accent}` : undefined,
       }}
     >
@@ -227,7 +227,7 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
             padding: '2px 5px',
             borderRadius: 5,
             border: 'none',
-            background: collapsed ? 'rgba(214,209,196,0.06)' : 'transparent',
+            background: collapsed ? ink(0.06) : 'transparent',
             color: hiddenNotified ? C.accent : C.muted,
             font: 'inherit',
             fontSize: 10,
@@ -288,7 +288,7 @@ function LayoutMenu(): React.JSX.Element {
           borderRadius: 6,
           border: `1px solid ${C.border2}`,
           background: 'transparent',
-          color: '#9a958a',
+          color: C.textSubtle,
           cursor: 'pointer',
         }}
       >
@@ -308,7 +308,7 @@ function LayoutMenu(): React.JSX.Element {
               background: C.panel,
               border: `1px solid ${C.border3}`,
               borderRadius: 10,
-              boxShadow: '0 16px 40px rgba(0,0,0,0.55)',
+              boxShadow: C.shadowMenu,
               animation: 'cc-fade 0.12s ease',
             }}
           >
@@ -378,11 +378,11 @@ function RailTab({ session, index }: { session: Session; index: number }): React
         cursor: 'pointer',
         padding: 0,
         background: active
-          ? 'rgba(217,119,87,0.1)'
+          ? accentA(0.1)
           : shown
-            ? 'rgba(214,209,196,0.04)'
+            ? ink(0.04)
             : 'transparent',
-        border: `1px solid ${active ? 'rgba(217,119,87,0.22)' : 'transparent'}`,
+        border: `1px solid ${active ? accentA(0.22) : 'transparent'}`,
       }}
     >
       <span style={dotStyle(session.status, 11)} />
@@ -468,7 +468,7 @@ function ProjectCommandsMenu({
           background: C.panel,
           border: `1px solid ${C.border3}`,
           borderRadius: 10,
-          boxShadow: '0 16px 40px rgba(0,0,0,0.55)',
+          boxShadow: C.shadowMenu,
           animation: 'cc-fade 0.12s ease',
           cursor: 'default',
         }}
@@ -523,7 +523,7 @@ function ProjectCommandsMenu({
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
           <button
             onClick={onClose}
-            style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${C.border3}`, borderRadius: 7, color: '#b4afa3', font: 'inherit', fontSize: 12, cursor: 'pointer' }}
+            style={{ padding: '6px 12px', background: 'transparent', border: `1px solid ${C.border3}`, borderRadius: 7, color: C.textBtn, font: 'inherit', fontSize: 12, cursor: 'pointer' }}
           >
             Cancel
           </button>
@@ -720,7 +720,7 @@ export function Sidebar(): React.JSX.Element {
     borderRadius: 7,
     border: `1px solid ${C.border2}`,
     background: 'transparent',
-    color: '#9a958a',
+    color: C.textSubtle,
     cursor: 'pointer',
   }
 
@@ -811,7 +811,7 @@ export function Sidebar(): React.JSX.Element {
               borderRadius: 6,
               border: `1px solid ${C.border2}`,
               background: 'transparent',
-              color: '#9a958a',
+              color: C.textSubtle,
               cursor: 'pointer',
               marginRight: 6,
             }}
@@ -830,7 +830,7 @@ export function Sidebar(): React.JSX.Element {
               borderRadius: 6,
               border: `1px solid ${C.border2}`,
               background: 'transparent',
-              color: '#9a958a',
+              color: C.textSubtle,
               cursor: 'pointer',
               marginRight: 6,
             }}
@@ -850,7 +850,7 @@ export function Sidebar(): React.JSX.Element {
               borderRadius: 6,
               border: `1px solid ${C.border2}`,
               background: 'transparent',
-              color: '#9a958a',
+              color: C.textSubtle,
               cursor: 'pointer',
               marginLeft: 6,
             }}

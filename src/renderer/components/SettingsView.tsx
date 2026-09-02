@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { NotifType, Settings } from '../../shared/types'
-import { C, sz } from '../theme'
+import { C, STATUS_COLORS, accentA, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
+import { ThemePicker } from './ThemePicker'
+import { applyThemeFromSettings } from '../theme-apply'
 import { eventToAccelerator } from '../shortcuts'
 
 const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited']
@@ -103,6 +105,13 @@ export function SettingsView(): React.JSX.Element | null {
     }
   }, [show, settings])
 
+  // Picking a theme applies it immediately so the swatch grid is a real preview;
+  // closing without saving puts the saved one back.
+  useEffect(() => {
+    if (show || !settings) return
+    applyThemeFromSettings(settings)
+  }, [show, settings])
+
   if (!show || !draft) return null
 
   const patch = (p: Partial<Settings>) => setDraft({ ...draft, ...p })
@@ -124,7 +133,7 @@ export function SettingsView(): React.JSX.Element | null {
         position: 'fixed',
         inset: 0,
         zIndex: 50,
-        background: 'rgba(10,9,8,0.66)',
+        background: C.scrim,
         backdropFilter: 'blur(3px)',
         display: 'flex',
         alignItems: 'center',
@@ -141,7 +150,7 @@ export function SettingsView(): React.JSX.Element | null {
           background: C.panel,
           border: `1px solid ${C.border3}`,
           borderRadius: 14,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          boxShadow: C.shadowModal,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '18px 20px 14px' }}>
@@ -175,6 +184,16 @@ export function SettingsView(): React.JSX.Element | null {
           </Field>
 
           <div style={{ height: 1, background: C.hair, margin: '2px 0' }} />
+
+          <Field label="THEME" hint="Applies to the app, the terminal panes (including ANSI colours) and the file editor. Individual colours can be overridden with a customTheme block in settings.json.">
+            <ThemePicker
+              value={draft.theme}
+              onPick={(theme) => {
+                patch({ theme })
+                applyThemeFromSettings({ theme, customTheme: draft.customTheme })
+              }}
+            />
+          </Field>
 
           <Field label="TERMINAL FONT" hint="Font family for the terminal panes (the app chrome uses JetBrains Mono).">
             <input
@@ -250,7 +269,7 @@ export function SettingsView(): React.JSX.Element | null {
                       padding: '8px 12px',
                       borderRadius: 8,
                       border: `1px solid ${on ? C.accentBorder : C.border2}`,
-                      background: on ? 'rgba(217,119,87,0.12)' : 'transparent',
+                      background: on ? accentA(0.12) : 'transparent',
                       color: on ? C.accentSoft : C.muted,
                       font: 'inherit',
                       fontSize: 12.5,
@@ -273,7 +292,7 @@ export function SettingsView(): React.JSX.Element | null {
               onChange={(accel) => patch({ globalToggleShortcut: accel })}
             />
             {shortcutStatus && (
-              <div style={{ fontSize: 10.5, marginTop: 6, color: shortcutStatus.registered ? '#80a86f' : C.dim }}>
+              <div style={{ fontSize: 10.5, marginTop: 6, color: shortcutStatus.registered ? STATUS_COLORS.idle : C.dim }}>
                 {shortcutStatus.accelerator
                   ? shortcutStatus.registered
                     ? `✓ Active: ${shortcutStatus.accelerator}`
@@ -307,7 +326,7 @@ export function SettingsView(): React.JSX.Element | null {
                       padding: '6px 12px',
                       borderRadius: 7,
                       border: `1px solid ${on ? C.accentBorder : C.border2}`,
-                      background: on ? 'rgba(217,119,87,0.12)' : 'transparent',
+                      background: on ? accentA(0.12) : 'transparent',
                       color: on ? C.accentSoft : C.muted,
                       font: 'inherit',
                       fontSize: 12,
@@ -324,7 +343,7 @@ export function SettingsView(): React.JSX.Element | null {
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '18px 20px 20px', marginTop: 6 }}>
-          <button onClick={() => setShow(false)} style={{ padding: '10px 18px', background: 'transparent', border: `1px solid ${C.border3}`, borderRadius: 9, color: '#b4afa3', font: 'inherit', fontSize: 12.5, cursor: 'pointer' }}>
+          <button onClick={() => setShow(false)} style={{ padding: '10px 18px', background: 'transparent', border: `1px solid ${C.border3}`, borderRadius: 9, color: C.textBtn, font: 'inherit', fontSize: 12.5, cursor: 'pointer' }}>
             Cancel
           </button>
           <button onClick={save} style={{ padding: '10px 20px', background: C.accent, border: 'none', borderRadius: 9, color: C.accentText, font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>

@@ -6,6 +6,8 @@ import { closeAll as closeFsWatchers, setWindow as setFsWindow } from './fs-serv
 import { loadPersisted, setWindow, wireProcessEvents } from './state'
 import { startReportServer, stopReportServer } from './report-server'
 import { applyGlobalShortcut, disposeGlobalShortcut } from './window-toggle'
+import { loadSettings } from './settings'
+import { resolveTheme } from '../shared/themes'
 
 let win: BrowserWindow | null = null
 
@@ -16,12 +18,17 @@ function createWindow(): void {
     ? join(process.resourcesPath, 'icon.png')
     : join(__dirname, '../../build/icon.png')
 
+  const settings = loadSettings()
+  const theme = resolveTheme(settings.theme, settings.customTheme)
+
   win = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 900,
     minHeight: 560,
-    backgroundColor: '#1a1917',
+    // The window paints this before the renderer's first frame, so it has to be
+    // the chosen theme's background — otherwise a light theme opens with a dark flash.
+    backgroundColor: theme.bg,
     title: 'Terminator',
     icon: iconPath,
     autoHideMenuBar: true,

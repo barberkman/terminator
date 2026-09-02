@@ -1,5 +1,5 @@
 import { useStore } from '../state/store'
-import { C } from '../theme'
+import { C, accentA } from '../theme'
 import { Icon } from '../icons'
 import { TerminalPane } from './TerminalPane'
 
@@ -28,7 +28,7 @@ function EmptyState(): React.JSX.Element {
           alignItems: 'center',
           gap: 8,
           padding: '9px 16px',
-          background: 'rgba(217,119,87,0.12)',
+          background: accentA(0.12),
           border: `1px solid ${C.accentBorder}`,
           borderRadius: 8,
           color: C.accentSoft,

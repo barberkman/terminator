@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Session } from '../../shared/types'
-import { C, sz } from '../theme'
+import { C, dangerA, sz } from '../theme'
 import { Icon } from '../icons'
 import { useEditorStore, type TabStatus } from '../editor/editorStore'
 import * as editor from '../editor/registry'
@@ -148,7 +148,7 @@ function EditorArea({ sessionId, activePath }: { sessionId: string; activePath: 
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {tab.changedOnDisk && <ChangedBanner sessionId={sessionId} path={activePath} />}
       {tab.status === 'missing' && hasView && (
-        <div style={{ padding: '7px 12px', background: 'rgba(207,94,78,0.12)', borderBottom: `1px solid ${C.border3}`, fontSize: 12, color: C.danger }}>
+        <div style={{ padding: '7px 12px', background: dangerA(0.12), borderBottom: `1px solid ${C.border3}`, fontSize: 12, color: C.danger }}>
           Deleted on disk — save to recreate it.
         </div>
       )}

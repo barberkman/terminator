@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import type { Settings } from '../shared/types'
+import { DEFAULT_THEME_ID } from '../shared/themes'
 import { defaultShell } from './shell'
 
 function defaultGitGui(): string {
@@ -32,6 +33,7 @@ export function defaultSettings(): Settings {
     fontSize: 14,
     iconScale: 100,
     sidebarSide: 'left',
+    theme: DEFAULT_THEME_ID,
     globalToggleShortcut: 'F12',
     notesShortcut: 'CommandOrControl+Shift+N',
     notes: '',
@@ -49,6 +51,9 @@ function merge(base: Settings, patch: Partial<Settings>): Settings {
     ...patch,
     modes: { ...base.modes, ...(patch.modes ?? {}) },
     notifications: { ...base.notifications, ...(patch.notifications ?? {}) },
+    // Replaced wholesale rather than deep-merged, so deleting a token from
+    // settings.json actually removes that override.
+    customTheme: 'customTheme' in patch ? patch.customTheme : base.customTheme,
   }
 }
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { CreateSessionInput } from '../../shared/types'
-import { C, sz } from '../theme'
+import { C, accentA, ink, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { useStore } from '../state/store'
 
@@ -142,7 +142,7 @@ export function NewSessionModal(): React.JSX.Element | null {
         position: 'fixed',
         inset: 0,
         zIndex: 50,
-        background: 'rgba(10,9,8,0.66)',
+        background: C.scrim,
         backdropFilter: 'blur(3px)',
         display: 'flex',
         alignItems: 'center',
@@ -159,7 +159,7 @@ export function NewSessionModal(): React.JSX.Element | null {
           background: C.panel,
           border: `1px solid ${C.border3}`,
           borderRadius: 14,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          boxShadow: C.shadowModal,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '18px 20px 14px' }}>
@@ -242,7 +242,7 @@ export function NewSessionModal(): React.JSX.Element | null {
                         padding: '7px 9px',
                         borderRadius: 7,
                         cursor: 'pointer',
-                        background: selected ? 'rgba(217,119,87,0.08)' : 'transparent',
+                        background: selected ? accentA(0.08) : 'transparent',
                       }}
                     >
                       <span style={{ display: 'flex', color: C.muted, flex: 'none' }}>
@@ -321,7 +321,7 @@ export function NewSessionModal(): React.JSX.Element | null {
                       padding: '10px 12px',
                       borderRadius: 9,
                       cursor: 'pointer',
-                      background: selected ? 'rgba(217,119,87,0.08)' : C.input,
+                      background: selected ? accentA(0.08) : C.input,
                       border: `1px solid ${selected ? C.accentBorder : C.border2}`,
                     }}
                   >
@@ -351,7 +351,7 @@ export function NewSessionModal(): React.JSX.Element | null {
                   height: 20,
                   borderRadius: 12,
                   flex: 'none',
-                  background: worktree ? C.accent : 'rgba(214,209,196,0.14)',
+                  background: worktree ? C.accent : ink(0.14),
                   position: 'relative',
                   transition: 'background 0.15s ease',
                 }}
@@ -407,7 +407,7 @@ export function NewSessionModal(): React.JSX.Element | null {
               background: 'transparent',
               border: `1px solid ${C.border3}`,
               borderRadius: 9,
-              color: '#b4afa3',
+              color: C.textBtn,
               font: 'inherit',
               fontSize: 12.5,
               cursor: 'pointer',
@@ -423,7 +423,7 @@ export function NewSessionModal(): React.JSX.Element | null {
               alignItems: 'center',
               gap: 8,
               padding: '10px 20px',
-              background: !folder.trim() || busy ? 'rgba(217,119,87,0.4)' : C.accent,
+              background: !folder.trim() || busy ? accentA(0.4) : C.accent,
               border: 'none',
               borderRadius: 9,
               color: C.accentText,
