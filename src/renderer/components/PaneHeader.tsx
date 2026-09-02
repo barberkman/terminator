@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { Session } from '../../shared/types'
-import { C, STATUS_COLORS, STATUS_LABELS, dotStyle, sz } from '../theme'
+import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 
@@ -14,7 +14,7 @@ function iconBtn(extra?: React.CSSProperties): React.CSSProperties {
     borderRadius: 7,
     border: `1px solid ${C.border2}`,
     background: 'transparent',
-    color: '#9a958a',
+    color: C.textSubtle,
     cursor: 'pointer',
     ...extra,
   }
@@ -24,7 +24,7 @@ function Metric({ label, children }: { label: string; children: React.ReactNode 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <span style={{ fontSize: 9, letterSpacing: 0.6, color: C.dim, fontWeight: 700 }}>{label}</span>
-      <div style={{ fontSize: 12, color: '#d6d1c4', whiteSpace: 'nowrap' }}>{children}</div>
+      <div style={{ fontSize: 12, color: C.textStrong, whiteSpace: 'nowrap' }}>{children}</div>
     </div>
   )
 }
@@ -77,7 +77,7 @@ function MetricPicker({
           borderRadius: 6,
           border: '1px solid transparent',
           background: open ? C.hover : 'transparent',
-          color: '#d6d1c4',
+          color: C.textStrong,
           font: 'inherit',
           fontSize: 12,
           cursor: 'pointer',
@@ -106,7 +106,7 @@ function MetricPicker({
               background: C.panel,
               border: `1px solid ${C.border3}`,
               borderRadius: 10,
-              boxShadow: '0 16px 40px rgba(0,0,0,0.55)',
+              boxShadow: C.shadowMenu,
               animation: 'cc-fade 0.12s ease',
             }}
           >
@@ -187,7 +187,7 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
         gap: 12,
         padding: '11px 14px',
         borderBottom: `1px solid ${C.border}`,
-        background: active ? 'rgba(214,209,196,0.02)' : 'transparent',
+        background: active ? ink(0.02) : 'transparent',
       }}
     >
       <span style={dotStyle(session.status, 9)} />
@@ -205,8 +205,8 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
                 else if (e.key === 'Escape') startEdit(null)
               }}
               style={{
-                background: 'rgba(214,209,196,0.06)',
-                border: `1px solid rgba(217,119,87,0.45)`,
+                background: ink(0.06),
+                border: `1px solid ${accentA(0.45)}`,
                 borderRadius: 5,
                 color: C.textMax,
                 font: 'inherit',
@@ -243,7 +243,7 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
               fontSize: 11,
               fontWeight: 600,
               color: STATUS_COLORS[session.status],
-              background: 'rgba(214,209,196,0.05)',
+              background: ink(0.05),
             }}
           >
             <span style={dotStyle(session.status, 6)} />
@@ -323,10 +323,10 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
                   {m?.contextPct != null ? `${Math.round(m.contextPct)}%` : '—'}
                 </span>
               </div>
-              <span style={{ fontSize: 12, color: '#d6d1c4', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 12, color: C.textStrong, whiteSpace: 'nowrap' }}>
                 {m?.contextTokens != null ? `${(m.contextTokens / 1000).toFixed(1)}k tokens` : '—'}
               </span>
-              <div style={{ height: 3, borderRadius: 2, background: 'rgba(214,209,196,0.1)', overflow: 'hidden' }}>
+              <div style={{ height: 3, borderRadius: 2, background: ink(0.1), overflow: 'hidden' }}>
                 <div
                   style={{
                     height: '100%',
@@ -337,7 +337,7 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
               </div>
             </div>
           </div>
-          <div style={{ width: 1, height: 34, background: 'rgba(214,209,196,0.08)', flex: 'none' }} />
+          <div style={{ width: 1, height: 34, background: ink(0.08), flex: 'none' }} />
         </>
       )}
 
@@ -346,7 +346,7 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
           <button
             onClick={toggleMode}
             title={session.mode === 'readonly' ? 'Read-only — click to allow edits' : 'Switch to read-only'}
-            style={iconBtn({ color: session.mode === 'readonly' ? C.accentSoft : '#9a958a' })}
+            style={iconBtn({ color: session.mode === 'readonly' ? C.accentSoft : C.textSubtle })}
           >
             <Icon name={session.mode === 'readonly' ? 'lock' : 'unlock'} size={15} />
           </button>

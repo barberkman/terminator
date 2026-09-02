@@ -1,7 +1,8 @@
-import { Terminal } from '@xterm/xterm'
+import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { C, FONT } from '../theme'
+import { FONT } from '../theme'
+import { type ThemePalette, themeById } from '../../shared/themes'
 import { useStore } from '../state/store'
 
 // One persistent xterm Terminal per session, alive for the session's lifetime
@@ -23,6 +24,32 @@ let wired = false
 // UI zoom (so the intrinsic xterm size stays fixed and zoom magnifies everything).
 const BASE_FONT_SIZE = 13
 let curFontFamily = FONT
+
+/**
+ * xterm parses colours in JS for its renderer, so unlike the app chrome it can't
+ * read the theme's CSS variables — it needs the literal palette. The selection
+ * stays translucent: an opaque one would hide the text under it on light themes.
+ */
+function xtermTheme(p: ThemePalette): ITheme {
+  return {
+    background: p.bg,
+    foreground: p.text,
+    cursor: p.accent,
+    cursorAccent: p.bg,
+    selectionBackground: `rgba(${p.accentRgb},0.3)`,
+    ...p.ansi,
+  }
+}
+
+let curTheme: ITheme = xtermTheme(themeById(undefined))
+
+/** Repaint every live terminal — including the ones parked offscreen. */
+export function setTheme(p: ThemePalette): void {
+  curTheme = xtermTheme(p)
+  for (const e of entries.values()) {
+    e.term.options.theme = curTheme
+  }
+}
 
 export function setFontFamily(family: string): void {
   curFontFamily = family || FONT
@@ -88,13 +115,7 @@ export function getOrCreate(id: string): Entry {
     cursorBlink: true,
     scrollback: 8000,
     allowProposedApi: true,
-    theme: {
-      background: C.bg,
-      foreground: C.text,
-      cursor: C.accent,
-      cursorAccent: C.bg,
-      selectionBackground: 'rgba(217,119,87,0.3)',
-    },
+    theme: curTheme,
   })
   const fit = new FitAddon()
   term.loadAddon(fit)

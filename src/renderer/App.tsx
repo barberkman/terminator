@@ -12,6 +12,7 @@ import { SettingsView } from './components/SettingsView'
 import { NotesView } from './components/NotesView'
 import { matchesAccelerator } from './shortcuts'
 import { C } from './theme'
+import { applyThemeFromSettings } from './theme-apply'
 
 export function App(): React.JSX.Element {
   const init = useStore((s) => s.init)
@@ -21,6 +22,7 @@ export function App(): React.JSX.Element {
   const fontSize = useStore((s) => s.settings?.fontSize)
   const iconScale = useStore((s) => s.settings?.iconScale)
   const sidebarSide = useStore((s) => s.settings?.sidebarSide)
+  const settings = useStore((s) => s.settings)
 
   useEffect(() => {
     void init()
@@ -38,6 +40,13 @@ export function App(): React.JSX.Element {
       registry.refitVisible()
     }
   }, [fontSize])
+
+  // Theme → CSS variables on the root element, plus the xterm and CodeMirror
+  // palettes. main.tsx has already applied it once before the first paint; this
+  // picks up later changes from Settings.
+  useEffect(() => {
+    if (settings) applyThemeFromSettings(settings)
+  }, [settings?.theme, settings?.customTheme])
 
   // Icon/button size → CSS variable consumed by Icon + button-box styles (via sz()).
   // Independent of the global zoom; multiplies on top of it. No terminal refit needed.

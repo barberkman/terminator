@@ -108,7 +108,40 @@ icon, or on disk):
   `claude-readonly`). The app appends `--session-id` / `--resume` / `--settings`, so a custom
   read-only command must forward appended args (e.g. `exec claude --permission-mode plan "$@"`).
 - `defaultShell`, `gitGuiCommand`, `worktreesRoot`, `projects`.
+- `theme` — the active colour theme (see below), and `customTheme` for per-token overrides.
 - `notifications` — see below.
+
+## Themes
+
+Settings → **THEME** is a grid of swatches, each painted in its own colours. Picking one applies
+it immediately — to the app chrome, the terminal panes (background, cursor, selection **and the
+16 ANSI colours**, so Claude's TUI takes on the theme) and the built-in file editor including
+its syntax colours. Nothing needs a restart, and terminals that are open — even the ones parked
+off-screen — repaint in place.
+
+- **Dark** — Terminator (the default), Darcula, One Dark, Dracula, Gruvbox Dark, Nord,
+  Solarized Dark.
+- **Light** — Solarized Light, GitHub Light.
+- **Reading** — the Apple Books set: Original, Quiet, Paper, Bold, Calm, Focus. *Paper* is the
+  warm cream-and-ink page, with the faint grain behind the chrome (panes stay flat, so nothing
+  interferes with glyph rendering); *Bold* also raises the chrome's font weight.
+
+Themes live in [`src/shared/themes.ts`](src/shared/themes.ts). Each is a compact seed — a
+background, two text anchors, a few accents, and the terminal/editor palettes — from which the
+six surface shades and the eleven-step text ramp are derived, so adding one is about 25 lines.
+The built palette is published as CSS custom properties (`--c-bg`, `--c-ink-rgb`, …) that the
+whole renderer reads, and handed to xterm and CodeMirror as literal colours, which is what those
+two need.
+
+To adjust a single colour without writing a theme, add a `customTheme` block to `settings.json`:
+
+```json
+{ "theme": "nord", "customTheme": { "accent": "#00b0ff", "bg": "#101216" } }
+```
+
+It overrides tokens of the selected theme by name (any surface, ramp step, `accent`,
+`accentSoft`, `accentText`, `danger`, `kindIcon` or `shadow`). Values must be hex; anything else
+is ignored rather than applied, so a typo can't blank the UI.
 
 ## Notifications
 
@@ -132,4 +165,5 @@ optional per-type overrides via `notifications.perType`. A runnable example is i
 Electron + React + Vite (electron-vite), `@xterm/xterm` for the terminals, `@lydell/node-pty`
 for the PTYs. The main process owns session state, PTYs, the hook/statusLine server, settings,
 and persistence; the renderer mirrors session metadata and owns the keep-alive xterm instances.
-The visual design lives in [`design/reference.html`](design/reference.html).
+The visual design lives in [`design/reference.html`](design/reference.html) — a static mockup of
+the default theme, not wired into the build.

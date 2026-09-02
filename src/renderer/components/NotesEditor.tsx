@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { C, FONT, sz } from '../theme'
+import { C, FONT, accentA, sz } from '../theme'
 import { Icon } from '../icons'
 
 /** A fenced code block rendered with a hover-revealed Copy button (top-right). */
@@ -240,7 +240,7 @@ function ToggleButton({ on, label, onClick }: { on: boolean; label: string; onCl
         padding: '6px 14px',
         borderRadius: 7,
         border: `1px solid ${on ? C.accentBorder : C.border2}`,
-        background: on ? 'rgba(217,119,87,0.12)' : 'transparent',
+        background: on ? accentA(0.12) : 'transparent',
         color: on ? C.accentSoft : C.muted,
         font: 'inherit',
         fontSize: 12,
@@ -271,7 +271,7 @@ export function NotesEditor({
         position: 'fixed',
         inset: 0,
         zIndex: 60,
-        background: 'rgba(10,9,8,0.66)',
+        background: C.scrim,
         backdropFilter: 'blur(3px)',
         display: 'flex',
         alignItems: 'center',
@@ -289,7 +289,7 @@ export function NotesEditor({
           background: C.panel,
           border: `1px solid ${C.border3}`,
           borderRadius: 14,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          boxShadow: C.shadowModal,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '16px 20px 14px' }}>
@@ -331,7 +331,7 @@ export function NotesEditor({
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '16px 20px 20px' }}>
-          <button onClick={onClose} style={{ padding: '10px 18px', background: 'transparent', border: `1px solid ${C.border3}`, borderRadius: 9, color: '#b4afa3', font: 'inherit', fontSize: 12.5, cursor: 'pointer' }}>
+          <button onClick={onClose} style={{ padding: '10px 18px', background: 'transparent', border: `1px solid ${C.border3}`, borderRadius: 9, color: C.textBtn, font: 'inherit', fontSize: 12.5, cursor: 'pointer' }}>
             Close
           </button>
           <button onClick={onSave} style={{ padding: '10px 20px', background: C.accent, border: 'none', borderRadius: 9, color: C.accentText, font: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>

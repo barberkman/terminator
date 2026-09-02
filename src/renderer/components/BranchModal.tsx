@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TranscriptPrompt } from '../../shared/types'
-import { C, sz } from '../theme'
+import { C, accentA, ink, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 
@@ -164,7 +164,7 @@ export function BranchModal(): React.JSX.Element | null {
         position: 'fixed',
         inset: 0,
         zIndex: 50,
-        background: 'rgba(10,9,8,0.66)',
+        background: C.scrim,
         backdropFilter: 'blur(3px)',
         display: 'flex',
         alignItems: 'center',
@@ -181,7 +181,7 @@ export function BranchModal(): React.JSX.Element | null {
           background: C.panel,
           border: `1px solid ${C.border3}`,
           borderRadius: 14,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          boxShadow: C.shadowModal,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '18px 20px 14px' }}>
@@ -307,7 +307,7 @@ export function BranchModal(): React.JSX.Element | null {
                   height: 20,
                   borderRadius: 12,
                   flex: 'none',
-                  background: carry ? C.accent : 'rgba(214,209,196,0.14)',
+                  background: carry ? C.accent : ink(0.14),
                   position: 'relative',
                   transition: 'background 0.15s ease',
                 }}
@@ -367,7 +367,7 @@ export function BranchModal(): React.JSX.Element | null {
                   height: 20,
                   borderRadius: 12,
                   flex: 'none',
-                  background: worktree ? C.accent : 'rgba(214,209,196,0.14)',
+                  background: worktree ? C.accent : ink(0.14),
                   position: 'relative',
                   transition: 'background 0.15s ease',
                 }}
@@ -439,7 +439,7 @@ export function BranchModal(): React.JSX.Element | null {
               background: 'transparent',
               border: `1px solid ${C.border3}`,
               borderRadius: 9,
-              color: '#b4afa3',
+              color: C.textBtn,
               font: 'inherit',
               fontSize: 12.5,
               cursor: 'pointer',
@@ -455,7 +455,7 @@ export function BranchModal(): React.JSX.Element | null {
               alignItems: 'center',
               gap: 8,
               padding: '10px 20px',
-              background: canBranch ? C.accent : 'rgba(217,119,87,0.4)',
+              background: canBranch ? C.accent : accentA(0.4),
               border: 'none',
               borderRadius: 9,
               color: C.accentText,

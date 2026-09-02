@@ -1,4 +1,4 @@
-import { C } from '../theme'
+import { C, dangerA } from '../theme'
 import { useStore } from '../state/store'
 
 interface DialogProps {
@@ -18,7 +18,7 @@ function Dialog({ title, body, confirmLabel, cancelLabel, onConfirm, onCancel }:
         position: 'fixed',
         inset: 0,
         zIndex: 55,
-        background: 'rgba(10,9,8,0.66)',
+        background: C.scrim,
         backdropFilter: 'blur(3px)',
         display: 'flex',
         alignItems: 'center',
@@ -34,7 +34,7 @@ function Dialog({ title, body, confirmLabel, cancelLabel, onConfirm, onCancel }:
           background: C.panel,
           border: `1px solid ${C.border3}`,
           borderRadius: 14,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+          boxShadow: C.shadowModal,
           padding: '22px 22px 18px',
         }}
       >
@@ -48,7 +48,7 @@ function Dialog({ title, body, confirmLabel, cancelLabel, onConfirm, onCancel }:
               background: 'transparent',
               border: `1px solid ${C.border3}`,
               borderRadius: 9,
-              color: '#b4afa3',
+              color: C.textBtn,
               font: 'inherit',
               fontSize: 12.5,
               cursor: 'pointer',
@@ -60,8 +60,8 @@ function Dialog({ title, body, confirmLabel, cancelLabel, onConfirm, onCancel }:
             onClick={onConfirm}
             style={{
               padding: '10px 18px',
-              background: 'rgba(207,94,78,0.16)',
-              border: `1px solid rgba(207,94,78,0.4)`,
+              background: dangerA(0.16),
+              border: `1px solid ${dangerA(0.4)}`,
               borderRadius: 9,
               color: C.danger,
               font: 'inherit',

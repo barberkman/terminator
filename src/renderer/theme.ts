@@ -1,42 +1,71 @@
 import type { SessionStatus } from '../shared/types'
 
-/** Color tokens lifted from the imported design (Session Manager.dc.html). */
+/**
+ * Colour tokens. Every value is a reference to a CSS custom property rather than
+ * a literal, so the ~350 inline `style={{}}` sites that read `C` repaint the
+ * moment a theme is applied — no React re-render, no prop drilling. The
+ * properties themselves are written by `applyTheme()` (theme-apply.ts) from the
+ * palettes in shared/themes.ts; `styles.css` carries the default theme as static
+ * `:root` fallbacks so the very first paint is already right.
+ *
+ * Alpha tints are mixed from the `*-rgb` triplets through the helpers below
+ * instead of getting a variable each.
+ */
 export const C = {
-  bg: '#1a1917',
-  sidebar: '#201e1b',
-  footer: '#1d1c19',
-  panel: '#211f1c',
-  panel2: '#242220',
-  input: '#191815',
-  border: 'rgba(214,209,196,0.07)',
-  border2: 'rgba(214,209,196,0.1)',
-  border3: 'rgba(214,209,196,0.13)',
-  hair: 'rgba(214,209,196,0.05)',
-  hover: 'rgba(214,209,196,0.08)',
-  text: '#cbc6b8',
-  textHi: '#e8e4d9',
-  textMax: '#f0ece2',
-  body: '#a8a397',
-  muted: '#807b6f',
-  dim: '#6e6a60',
-  faint: '#5e594f',
-  faint2: '#4d4940',
-  accent: '#d97757',
-  accentSoft: '#e3ad96',
-  accentText: '#1a120c',
-  accentBg: 'rgba(217,119,87,0.1)',
-  accentBgHi: 'rgba(217,119,87,0.16)',
-  accentBorder: 'rgba(217,119,87,0.32)',
-  kindIcon: '#7d8597',
-  danger: '#e08070',
+  bg: 'var(--c-bg)',
+  sidebar: 'var(--c-sidebar)',
+  footer: 'var(--c-footer)',
+  panel: 'var(--c-panel)',
+  panel2: 'var(--c-panel2)',
+  input: 'var(--c-input)',
+  border: 'rgba(var(--c-ink-rgb),0.07)',
+  border2: 'rgba(var(--c-ink-rgb),0.1)',
+  border3: 'rgba(var(--c-ink-rgb),0.13)',
+  hair: 'rgba(var(--c-ink-rgb),0.05)',
+  hover: 'rgba(var(--c-ink-rgb),0.08)',
+  text: 'var(--c-text)',
+  textHi: 'var(--c-text-hi)',
+  textMax: 'var(--c-text-max)',
+  /** Slightly above `text` — pane header titles and other quiet emphasis. */
+  textStrong: 'var(--c-text-strong)',
+  body: 'var(--c-body)',
+  /** Label colour for secondary (Cancel) buttons. */
+  textBtn: 'var(--c-text-btn)',
+  /** Between `body` and `muted` — icon-button glyphs, meta lines. */
+  textSubtle: 'var(--c-text-subtle)',
+  muted: 'var(--c-muted)',
+  dim: 'var(--c-dim)',
+  faint: 'var(--c-faint)',
+  faint2: 'var(--c-faint2)',
+  accent: 'var(--c-accent)',
+  accentSoft: 'var(--c-accent-soft)',
+  accentText: 'var(--c-accent-text)',
+  accentBg: 'rgba(var(--c-accent-rgb),0.1)',
+  accentBgHi: 'rgba(var(--c-accent-rgb),0.16)',
+  accentBorder: 'rgba(var(--c-accent-rgb),0.32)',
+  kindIcon: 'var(--c-kind-icon)',
+  danger: 'var(--c-danger)',
+  /** Backdrop behind modals. */
+  scrim: 'rgba(var(--c-shadow-rgb),0.66)',
+  shadowModal: '0 24px 60px rgba(var(--c-shadow-rgb),0.6)',
+  shadowMenu: '0 16px 40px rgba(var(--c-shadow-rgb),0.55)',
 } as const
 
+/** Hairline/hover tint mixed from the theme's text colour. */
+export const ink = (a: number): string => `rgba(var(--c-ink-rgb),${a})`
+/** Accent wash — selected rows, toggles, primary-button disabled states. */
+export const accentA = (a: number): string => `rgba(var(--c-accent-rgb),${a})`
+/** Error wash — destructive buttons and banners. */
+export const dangerA = (a: number): string => `rgba(var(--c-danger-rgb),${a})`
+/** Background wash — veils drawn over a pane's own background. */
+export const bgA = (a: number): string => `rgba(var(--c-bg-rgb),${a})`
+
 export const STATUS_COLORS: Record<SessionStatus, string> = {
-  busy: '#7a9bbf',
-  waiting: '#d97757',
-  idle: '#80a86f',
-  error: '#cf5e4e',
-  closed: '#6e6a60',
+  busy: 'var(--c-status-busy)',
+  waiting: 'var(--c-status-waiting)',
+  idle: 'var(--c-status-idle)',
+  error: 'var(--c-status-error)',
+  closed: 'var(--c-status-closed)',
 }
 
 export const STATUS_LABELS: Record<SessionStatus, string> = {

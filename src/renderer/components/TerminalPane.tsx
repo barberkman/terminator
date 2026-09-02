@@ -1,5 +1,5 @@
 import { useStore } from '../state/store'
-import { C } from '../theme'
+import { C, accentA, bgA } from '../theme'
 import { Icon } from '../icons'
 import * as registry from '../term/registry'
 import { PaneHeader } from './PaneHeader'
@@ -15,7 +15,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
 
   const frame: React.CSSProperties = multi
     ? {
-        border: `1px solid ${focused ? 'rgba(217,119,87,0.4)' : C.border}`,
+        border: `1px solid ${focused ? accentA(0.4) : C.border}`,
         borderRadius: 8,
       }
     : {}
@@ -123,7 +123,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: 'rgba(26,25,23,0.72)',
+              background: bgA(0.72),
             }}
           >
             <button

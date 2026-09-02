@@ -1,3 +1,5 @@
+import type { ThemeOverrides } from './themes'
+
 // Shared types used across main / preload / renderer.
 
 // ---- PTY (hot path) --------------------------------------------------------
@@ -165,6 +167,10 @@ export interface Settings {
   iconScale: number
   /** Which side of the window the session sidebar sits on. */
   sidebarSide: 'left' | 'right'
+  /** Id of the active colour theme (see shared/themes.ts). Unknown ids fall back to the default. */
+  theme: string
+  /** Optional per-token colour overrides laid over the selected theme. Edited on disk. */
+  customTheme?: ThemeOverrides
   /** Electron accelerator for the global show/hide hotkey. Empty = disabled. */
   globalToggleShortcut: string
   /** Electron accelerator to toggle the Notes overlay (renderer-side). Empty = disabled. */

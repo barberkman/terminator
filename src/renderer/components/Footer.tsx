@@ -1,11 +1,11 @@
-import { C, STATUS_COLORS, STATUS_LABELS, dotStyle } from '../theme'
+import { C, STATUS_COLORS, STATUS_LABELS, ink, dotStyle } from '../theme'
 import { useStore } from '../state/store'
 
 function Meter({ label, pct }: { label: string; pct: number }): React.JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 'none' }}>
       <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>{label}</span>
-      <div style={{ width: 70, height: 4, borderRadius: 2, background: 'rgba(214,209,196,0.1)', overflow: 'hidden', flex: 'none' }}>
+      <div style={{ width: 70, height: 4, borderRadius: 2, background: ink(0.1), overflow: 'hidden', flex: 'none' }}>
         <div
           style={{
             height: '100%',
