@@ -30,7 +30,7 @@ function Metric({ label, children }: { label: string; children: React.ReactNode 
 }
 
 // Slash-command aliases sent into the live Claude session via writePty.
-const MODEL_OPTIONS = ['opus', 'sonnet', 'haiku'] as const
+const MODEL_OPTIONS = ['fable', 'opus', 'sonnet', 'haiku'] as const
 const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
 /**
