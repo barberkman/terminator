@@ -149,6 +149,37 @@ export type AttachResult =
   | { ok: true; items: AttachedItem[]; note?: string }
   | { ok: false; reason: string }
 
+// ---- Links (clickable URLs in terminal output) -----------------------------
+
+/** One browser a link can be opened with. */
+export interface BrowserOption {
+  /** Stable id — what `LinkSettings.defaultBrowserId` points at. */
+  id: string
+  /** Shown in the hover tooltip and the right-click menu ("Chrome incognito"). */
+  name: string
+  /**
+   * The executable itself, never a command line. Kept apart from `args` so a path
+   * with spaces (`C:\Program Files\...`) needs no quoting and is never re-split:
+   * it goes to spawn() as argv[0] verbatim, with no shell in between.
+   */
+  command: string
+  /** Flags passed before the URL, e.g. `["--incognito"]`. */
+  args: string[]
+}
+
+export interface LinkSettings {
+  /** Off = terminal output is inert text again: no underline, no hover, no click. */
+  enabled: boolean
+  browsers: BrowserOption[]
+  /** Which browser a plain click uses. Empty (or unknown) = the OS default handler. */
+  defaultBrowserId: string
+  /** Also linkify file paths, which open in an Editor pane instead of a browser. */
+  openFilePaths: boolean
+}
+
+/** Nothing opens silently: either it launched, or there's a reason to show. */
+export type OpenLinkResult = { ok: true; browser: string } | { ok: false; reason: string }
+
 // ---- Settings --------------------------------------------------------------
 
 export interface ModeConfig {
@@ -219,6 +250,7 @@ export interface Settings {
   /** Single freeform markdown note, edited from Settings → Notes. */
   notes: string
   attachments: AttachmentSettings
+  links: LinkSettings
 }
 
 // ---- Notifications ---------------------------------------------------------
@@ -304,6 +336,8 @@ export interface TerminatorApi {
 
   // dialogs / settings
   pickFolder(): Promise<string | null>
+  /** Pick a single file (used to choose a browser executable). */
+  pickFile(title?: string): Promise<string | null>
   getSettings(): Promise<Settings>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   getGlobalShortcutStatus(): Promise<{ accelerator: string; registered: boolean }>
@@ -317,6 +351,19 @@ export interface TerminatorApi {
   clipboardRead(): string
   /** True when the clipboard holds a bitmap (checked before every Ctrl/Cmd+V). */
   clipboardHasImage(): boolean
+
+  // links (clickable URLs / paths in terminal output)
+  /**
+   * Open a link from terminal output. The URL is re-validated in the main process
+   * (http/https only) before anything is launched — output is never trusted.
+   * `browserId` picks a configured browser; omitted uses the configured default.
+   */
+  openLink(url: string, browserId?: string): Promise<OpenLinkResult>
+  /**
+   * Absolute path for a path-like token printed by a session, or null when it
+   * doesn't resolve to a file inside that session's folder.
+   */
+  resolveOutputPath(sessionId: string, token: string): Promise<string | null>
 
   // attachments
   /** Save the clipboard image to disk and reference it in the session. */

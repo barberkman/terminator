@@ -124,6 +124,39 @@ default, which adds that one folder to `permissions.additionalDirectories` in th
 into that file first — the same treatment your hooks already get — so nothing of yours is
 displaced by ours.
 
+## Links
+
+A URL a session prints is a link: it underlines under the pointer and opens on click, in the
+browser you picked, so a link from Claude no longer needs selecting, copying and a window switch.
+
+- **Which browser** — Settings → **BROWSERS FOR LINKS**. Each entry is a name, the program, and
+  the arguments it launches with; `--incognito` is the case this was built for, but the arguments
+  are free-form so anything the browser takes works. The program and its arguments are stored
+  and passed **separately**, straight to the process with no shell in between, so
+  `C:\Program Files\Google\Chrome\Application\chrome.exe` needs no quoting and is never
+  re-split on its spaces. **Browse…** picks it from disk. With the list empty, links open in your
+  OS default browser.
+- **More than one** — mark one as **Default** for a plain click, and **right-click any link** for
+  the rest: every configured browser, the system default, and Copy link. That's the way to open
+  something in a normal window when your default is incognito, without a trip through Settings.
+- **Before you click** — hovering shows the full URL and which browser will open it. Worth reading
+  when the link came from output you don't control.
+- **Selecting still works** — a click only opens a link if it *was* a click: no drag between press
+  and release, nothing selected. Drag-select a URL to copy it and nothing opens; double-click to
+  select it and nothing opens either (opening waits out the double-click window first).
+  **Ctrl/Cmd+click** opens as well, out of habit; **Shift+click** never does.
+- **Only web links** — `http` and `https`, and nothing else. The URL is re-validated in the main
+  process before anything launches, and reaches the browser as a single argument, so terminal
+  output can't open a `file:`, reach a custom scheme handler, or smuggle in flags of its own.
+  Programs that emit real OSC 8 hyperlinks go through the same check.
+
+**File paths** in output (`src/app.ts`, `src/app.ts:42`) are links too, and open in an **Editor
+pane** for that project rather than a browser — with `:42` putting the cursor on that line. Only
+paths that actually exist inside the session's own folder become links, so ordinary text like
+`and/or` stays text. It needs an editor pane covering that project to open into; if there isn't
+one, it says so. Turn it off in Settings → **FILE PATHS IN OUTPUT**, or turn the whole thing off
+with **LINKS IN TERMINAL OUTPUT**.
+
 ## Keyboard & mouse
 
 In a terminal pane:
@@ -137,6 +170,8 @@ In a terminal pane:
 - **Ctrl/Cmd+C** — copies the selection; with nothing selected it sends `^C` (interrupt).
 - **Ctrl/Cmd+V** — pastes: an image if the clipboard holds one, otherwise text.
 - **Ctrl/Cmd+Shift+V** — pastes text, never the image. The way out when the clipboard holds both.
+- **Click a link** — opens it in your configured browser; **right-click a link** for the other
+  browsers and Copy link. See **Links** above for what stops a selection from opening one.
 - **Drop a file** on a pane to hand it to that session.
 
 Elsewhere in the app: **Ctrl/Cmd+N** new session, **Ctrl/Cmd+B** toggle sidebar, **Alt+1..9**
@@ -155,6 +190,8 @@ icon, or on disk):
 - `theme` — the active colour theme (see below), and `customTheme` for per-token overrides.
 - `notifications` — see below.
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.
+- `links.browsers` (each `{ id, name, command, args }`), `links.defaultBrowserId`,
+  `links.enabled`, `links.openFilePaths` — see **Links** above.
 
 ## Themes
 

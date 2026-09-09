@@ -56,6 +56,7 @@ const api: TerminatorApi = {
   onFsChanged: (cb: (c: FsChange) => void) => on(Channels.fsChanged, cb),
 
   pickFolder: () => ipcRenderer.invoke(Channels.pickFolder),
+  pickFile: (title?: string) => ipcRenderer.invoke(Channels.pickFile, title),
   getSettings: () => ipcRenderer.invoke(Channels.settingsGet),
   updateSettings: (patch: Partial<Settings>) => ipcRenderer.invoke(Channels.settingsUpdate, patch),
   getGlobalShortcutStatus: () => ipcRenderer.invoke(Channels.globalShortcutStatus),
@@ -68,6 +69,11 @@ const api: TerminatorApi = {
   // Synchronous on purpose: the Ctrl/Cmd+V handler has to decide between an image
   // attachment and the plain text paste before it returns.
   clipboardHasImage: () => !clipboard.readImage().isEmpty(),
+
+  openLink: (url: string, browserId?: string) =>
+    ipcRenderer.invoke(Channels.linkOpen, { url, browserId }),
+  resolveOutputPath: (sessionId: string, token: string) =>
+    ipcRenderer.invoke(Channels.linkResolvePath, { sessionId, token }),
 
   attachClipboardImage: (id: string) => ipcRenderer.invoke(Channels.attachClipboard, id),
   attachFiles: (id: string, files: AttachFileInput[]) =>

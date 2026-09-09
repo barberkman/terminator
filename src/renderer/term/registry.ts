@@ -5,6 +5,7 @@ import { FONT } from '../theme'
 import { type ThemePalette, themeById } from '../../shared/themes'
 import { useStore } from '../state/store'
 import { attachClipboardImage } from '../attach'
+import * as links from './links'
 
 // One persistent xterm Terminal per session, alive for the session's lifetime
 // regardless of which pane (if any) currently shows it. Hidden terminals are
@@ -51,6 +52,9 @@ export function setTheme(p: ThemePalette): void {
     e.term.options.theme = curTheme
   }
 }
+
+/** Link behaviour comes from Settings; the provider reads it on every hover. */
+export const setLinkSettings = links.setLinkSettings
 
 export function setFontFamily(family: string): void {
   curFontFamily = family || FONT
@@ -118,6 +122,9 @@ export function getOrCreate(id: string): Entry {
     allowProposedApi: true,
     theme: curTheme,
   })
+  // OSC 8 hyperlinks — text a program explicitly marked as a link. Detection of
+  // plain URLs in output is a link provider, registered in attachLinks below.
+  term.options.linkHandler = links.oscLinkHandler(term)
   const fit = new FitAddon()
   term.loadAddon(fit)
 
@@ -191,19 +198,35 @@ export function getOrCreate(id: string): Entry {
     return true
   })
 
+  // Link detection, and the press tracking that tells a click from a selection.
+  // Registered before the right-click handler below so a press is recorded (and
+  // any open link menu dismissed) before anything else acts on it.
+  links.attachLinks(id, term, host)
+
   // Right-click copies the selection, same as Ctrl/Cmd+C. Capture phase so xterm
   // never sees the button — it would otherwise report it to a mouse-tracking child
   // app or (on macOS) select the word under the cursor. With nothing selected the
-  // event is left untouched so those apps still get their right-click. Stopping
+  // event is left untouched so those apps still get their right-click (unless it
+  // lands on a link, which offers the other browsers instead). Stopping
   // propagation also hides it from React's root listener, so re-apply the focus
   // TerminalView's onMouseDown would have given the terminal.
   host.addEventListener(
     'mousedown',
     (e) => {
-      if (e.button !== 2 || !copySelection()) return
-      e.preventDefault()
-      e.stopPropagation()
-      term.focus()
+      if (e.button !== 2) return
+      if (copySelection()) {
+        e.preventDefault()
+        e.stopPropagation()
+        term.focus()
+        return
+      }
+      // Nothing selected, but the pointer is on a link: offer the browsers that
+      // aren't the default. Everywhere else right-click still falls through to
+      // the program in the pane.
+      if (links.openMenuForHovered(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
     },
     true,
   )
@@ -251,6 +274,9 @@ export function size(id: string): { cols: number; rows: number } {
 export function dispose(id: string): void {
   const e = entries.get(id)
   if (!e) return
+  // The tooltip lives inside the terminal's own element; the menu doesn't.
+  links.closeMenu()
+  links.hideTooltip()
   try {
     e.term.dispose()
   } catch {
