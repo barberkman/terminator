@@ -298,26 +298,3 @@ export function readConversation(sessionId: string, cwd: string, from: number): 
   }
   return { items, outputs, nextOffset: start + chunk.length, reset, exists: true }
 }
-
-/** Fenced blocks are the thing worth copying; this is the closing-fence-aware form. */
-const FENCE_RE = /(?:^|\n)```[^\n]*\n([\s\S]*?)```(?=\n|$)/g
-
-/**
- * The last fenced code block Claude wrote in this session, verbatim — the
- * one-click answer to "give me that snippet" without opening the view. Reads the
- * transcript, so it's the original text, not what the terminal painted.
- */
-export function lastCodeBlock(sessionId: string, cwd: string): string | null {
-  const { items } = readConversation(sessionId, cwd, 0)
-  for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i]
-    if (item.kind !== 'text') continue
-    let found: string | null = null
-    FENCE_RE.lastIndex = 0
-    for (let m = FENCE_RE.exec(item.text); m; m = FENCE_RE.exec(item.text)) {
-      found = m[1].replace(/\n$/, '')
-    }
-    if (found?.trim()) return found
-  }
-  return null
-}

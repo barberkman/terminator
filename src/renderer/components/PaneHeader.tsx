@@ -156,7 +156,6 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
   const openSession = useStore((s) => s.openSession)
   const showTranscript = useStore((s) => !!s.transcripts[session.id])
   const toggleTranscript = useStore((s) => s.toggleTranscript)
-  const pushToast = useStore((s) => s.pushToast)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isClaude = session.kind === 'claude'
@@ -177,29 +176,6 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
   const toggleView = () => {
     toggleTranscript(session.id)
     if (showTranscript) registry.focus(session.id)
-  }
-
-  // The snippet you wanted, without opening anything: read out of the session's
-  // transcript, so it's the text Claude wrote rather than what the terminal drew
-  // (and it works from the terminal view, mid-session, without scrolling back).
-  const copyLastCode = async () => {
-    const text = await window.terminator.lastCodeBlock(session.id)
-    if (!text) {
-      pushToast({
-        tone: 'error',
-        text: 'No code block found',
-        sub: 'this conversation has no fenced code block yet',
-      })
-      return
-    }
-    window.terminator.clipboardWrite(text)
-    const lines = text.split('\n').length
-    pushToast({
-      tone: 'ok',
-      icon: 'copy',
-      text: `Copied ${lines} line${lines === 1 ? '' : 's'}`,
-      sub: text.split('\n')[0].slice(0, 60),
-    })
   }
 
   // Inject a /model|/effort change into the live session and optimistically reflect
@@ -396,15 +372,6 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
             )}
           >
             <Icon name={showTranscript ? 'terminal' : 'note'} size={15} />
-          </button>
-        )}
-        {isClaude && (
-          <button
-            onClick={() => void copyLastCode()}
-            title="Copy the last code block Claude produced"
-            style={iconBtn()}
-          >
-            <Icon name="copy" size={15} />
           </button>
         )}
         {isClaude && (

@@ -18,7 +18,6 @@ export const Channels = {
   sessionListPrompts: 'session:listPrompts',
   sessionBranch: 'session:branch',
   sessionConversation: 'session:conversation',
-  sessionLastCodeBlock: 'session:lastCodeBlock',
   worktreeRemove: 'worktree:remove',
 
   // pty hot path
