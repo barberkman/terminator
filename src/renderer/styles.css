@@ -241,6 +241,22 @@ textarea {
   opacity: 1;
 }
 
+/* Conversation view (a Claude session's transcript, read as a document).
+   Copy controls stay out of the way until the block they belong to is hovered —
+   the same bargain .md-copy makes inside a code block. */
+.cv-copy {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.cv-msg:hover .cv-copy,
+.cv-copy:focus-visible {
+  opacity: 1;
+}
+/* A tool call is one quiet line until you point at it. */
+.cv-tool:hover {
+  background: rgba(var(--c-ink-rgb), 0.05);
+}
+
 /* xterm fills its pane */
 .xterm,
 .xterm .xterm-screen {

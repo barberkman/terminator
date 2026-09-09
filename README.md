@@ -36,6 +36,9 @@ npm run typecheck  # tsc, no emit
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
 - **Mode switch**: one click toggles a Claude session between normal and read-only, **continuing
   the same conversation** (it relaunches with `--resume`).
+- **Read the conversation**: flip a Claude pane from the live terminal to its conversation as
+  a document — Claude's answers rendered as markdown, with a copy button on every code block.
+  See below.
 - **Branch a conversation**: fork a Claude session from any earlier prompt into a sibling
   session. Both keep running, nested in the sidebar. See below.
 - **Images and files**: paste a screenshot straight into a Claude session, or drop files and
@@ -83,6 +86,44 @@ the cut under a new session id and lets the normal launch path resume it. `--for
 would be the obvious alternative, but it mints a random session id, and every hook and
 statusLine payload is matched to a session *by* its id — so the app has to choose the id
 itself. The parent's file is only ever read, never modified.
+
+## Reading a conversation
+
+The **conversation button** in a Claude pane's header (or the pane's own **Terminal** button to
+go back) swaps the live terminal for the same session read as a document: your prompts, Claude's
+replies as rendered markdown, and **a copy button on every fenced code block**. No more
+drag-selecting across wrapped terminal lines and getting the indentation back mangled.
+
+- **The text is the real text.** It comes from the session's transcript — the JSONL Claude keeps
+  per session, the same file the branch picker reads — not from the painted terminal. So a copied
+  block has its original indentation, no wrapping artifacts, and nothing the TUI drew around it.
+  It also means the view doesn't care what theme you're on or which Claude version drew the
+  output.
+- **The whole session, not the visible part.** The transcript goes back to the first message, so
+  code from an hour ago is still there after it has scrolled out of the terminal's scrollback.
+  A session that has exited still has its conversation: this reads back what a session did while
+  you were looking elsewhere, which is most of what it's for.
+- **Copy a whole message too.** Each exchange has **Copy prompt** and **Copy reply** — the reply
+  being everything Claude wrote in prose that turn, as markdown. Inline `code` copies on click,
+  like it does in Notes.
+- **The working is folded away.** Tool calls are one line each — the command, the file, the
+  pattern — opening to what they were given and what came back (long output collapses to its
+  first lines, and copies in full). Thinking is one collapsed line. Subagent traffic stays behind
+  the `Task` row that started it. Nothing is dumped at you raw.
+- **It keeps up.** The view follows the session while it works, without a refresh. Scroll up to
+  read and it stays where you put it, offering a **New messages** jump instead of yanking you to
+  the bottom.
+- **The terminal is still there.** It's an overlay, not a replacement: the pane's terminal stays
+  running, the right size, underneath — switching back is instant and the session never notices.
+  **Esc** from the conversation also returns to it.
+
+The **copy button** beside it copies **the last code block Claude produced**, without opening
+anything — the common case, one click, from wherever you are in the pane.
+
+Only Claude sessions have any of this. Plain terminals and editor panes are unchanged.
+
+The renderer is the one the Notes preview uses (`src/renderer/markdown.tsx`), so a code block
+copies the same way wherever you find it.
 
 ## Images and files
 
@@ -150,12 +191,30 @@ browser you picked, so a link from Claude no longer needs selecting, copying and
   output can't open a `file:`, reach a custom scheme handler, or smuggle in flags of its own.
   Programs that emit real OSC 8 hyperlinks go through the same check.
 
-**File paths** in output (`src/app.ts`, `src/app.ts:42`) are links too, and open in an **Editor
-pane** for that project rather than a browser — with `:42` putting the cursor on that line. Only
-paths that actually exist inside the session's own folder become links, so ordinary text like
-`and/or` stays text. It needs an editor pane covering that project to open into; if there isn't
-one, it says so. Turn it off in Settings → **FILE PATHS IN OUTPUT**, or turn the whole thing off
-with **LINKS IN TERMINAL OUTPUT**.
+**File paths** in output (`src/app.ts`, `src/app.ts:42`) are links too, and open in an editor
+rather than a browser — with `:42` putting the cursor on that line. Only paths that actually
+exist inside the session's own folder become links, so ordinary text like `and/or` stays text.
+Turn it off in Settings → **FILE PATHS IN OUTPUT**, or turn the whole thing off with **LINKS IN
+TERMINAL OUTPUT**.
+
+- **Which editor** — Settings → **EXTERNAL EDITOR**. Set the program and its arguments and a
+  clicked path opens there, in whatever editor you already use. Program and arguments are stored
+  and passed **separately**, straight to the process with no shell in between, so
+  `C:\Program Files\Microsoft VS Code\Code.exe` needs no quoting. **Browse…** picks it from disk.
+- **Jumping to the line** — every editor spells it differently, so the arguments take
+  placeholders: `{path}`, `{line}` and `{column}` are filled in where you put them. VS Code is
+  `-g {path}:{line}`, Sublime and Zed `{path}:{line}`, Notepad++ `-n{line}`, gvim `+{line}`. An
+  argument mentioning `{line}` is dropped when the path had no line number (so `-n{line}` doesn't
+  become a bare `-n`), and if no argument mentions `{path}` the file is added at the end — which
+  is what a plain `editor <file>` wants, so leaving the arguments empty works too.
+- **Or in the app** — leave the program blank and a click opens an **Editor pane** for that
+  project instead, which is what it did before there was a setting. That needs a pane covering
+  the project; if there isn't one it says so, and points here. **Right-click any path** for the
+  other one either way, plus Copy path.
+- **Still only inside the session's folder** — the path is re-resolved in the main process before
+  anything launches, against that session's own directory, and reaches the editor as a single
+  argument. So output can't talk the app into opening something the session couldn't already
+  reach.
 
 ## Keyboard & mouse
 
@@ -172,7 +231,11 @@ In a terminal pane:
 - **Ctrl/Cmd+Shift+V** — pastes text, never the image. The way out when the clipboard holds both.
 - **Click a link** — opens it in your configured browser; **right-click a link** for the other
   browsers and Copy link. See **Links** above for what stops a selection from opening one.
+- **Click a file path** — opens it in your configured external editor (or an Editor pane when
+  none is set); **right-click** for the other one, and Copy path.
 - **Drop a file** on a pane to hand it to that session.
+- **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
+  still reaches the program in the pane, untouched.)
 
 Elsewhere in the app: **Ctrl/Cmd+N** new session, **Ctrl/Cmd+B** toggle sidebar, **Alt+1..9**
 jump to a session, **Esc** closes the top modal. The global show/hide hotkey (default `F12`)
@@ -191,7 +254,8 @@ icon, or on disk):
 - `notifications` — see below.
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.
 - `links.browsers` (each `{ id, name, command, args }`), `links.defaultBrowserId`,
-  `links.enabled`, `links.openFilePaths` — see **Links** above.
+  `links.enabled`, `links.openFilePaths`, `links.editor` (`{ command, args }`) — see **Links**
+  above.
 
 ## Themes
 

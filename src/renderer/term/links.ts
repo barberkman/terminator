@@ -39,13 +39,14 @@ const PATH_RE = /(?:~\/|\.{1,2}\/|\/)?[\w.@+-]+(?:\/[\w.@+-]+)+(?::\d+(?::\d+)?)
 
 export type LinkTarget =
   | { kind: 'web'; url: string }
-  | { kind: 'file'; path: string; line?: number; label: string }
+  | { kind: 'file'; sessionId: string; path: string; line?: number; column?: number; label: string }
 
 let settings: LinkSettings = {
   enabled: true,
   browsers: [],
   defaultBrowserId: '',
   openFilePaths: true,
+  editor: { command: '', args: [] },
 }
 
 export function setLinkSettings(next: LinkSettings): void {
@@ -59,6 +60,17 @@ export function setLinkSettings(next: LinkSettings): void {
 /** The browser a plain click uses, or undefined for the OS default handler. */
 function defaultBrowser(): { id: string; name: string } | undefined {
   return settings.browsers.find((b) => b.id === settings.defaultBrowserId)
+}
+
+/**
+ * The external editor's display name, or '' when none is configured — which is
+ * also the switch between the two ways a clicked path can open.
+ */
+function externalEditor(): string {
+  const command = settings.editor?.command?.trim() ?? ''
+  if (!command) return ''
+  const base = command.split(/[/\\]/).filter(Boolean).pop() ?? ''
+  return base.replace(/\.(exe|cmd|bat|com)$/i, '') || 'your editor'
 }
 
 // ---- reading the buffer ----------------------------------------------------
@@ -176,9 +188,10 @@ export function trimUrl(raw: string): string {
 }
 
 /** Split a `path:line:col` suffix off a candidate. */
-function splitLine(token: string): { path: string; line?: number } {
-  const m = /^(.+?):(\d+)(?::\d+)?$/.exec(token)
-  return m ? { path: m[1], line: Number(m[2]) } : { path: token }
+function splitLine(token: string): { path: string; line?: number; column?: number } {
+  const m = /^(.+?):(\d+)(?::(\d+))?$/.exec(token)
+  if (!m) return { path: token }
+  return { path: m[1], line: Number(m[2]), column: m[3] ? Number(m[3]) : undefined }
 }
 
 /**
@@ -249,12 +262,13 @@ function within(root: string, abs: string): boolean {
 }
 
 /**
- * Open a file the terminal printed in an Editor pane. The editor reads through
- * its session's root-scoped filesystem service, so the pane has to be one whose
- * folder actually contains the file — there's no pane to open it in otherwise,
- * and saying so beats a tab that can't load.
+ * Open a file the terminal printed in an in-app Editor pane. The editor reads
+ * through its session's root-scoped filesystem service, so the pane has to be
+ * one whose folder actually contains the file — there's no pane to open it in
+ * otherwise, and saying so beats a tab that can't load. With an external editor
+ * configured that's the way out, so the message points at it.
  */
-export function openFileTarget(path: string, line?: number): void {
+export function openInPane(path: string, line?: number): void {
   const st = useStore.getState()
   const candidates = Object.values(st.sessions).filter(
     (s) => s.kind === 'editor' && within(rootOf(s), path),
@@ -262,7 +276,10 @@ export function openFileTarget(path: string, line?: number): void {
   // Prefer one that's already on screen, so the file lands where you're looking.
   const target = candidates.find((s) => st.panes.includes(s.id)) ?? candidates[0]
   if (!target) {
-    toastError("Couldn't open that file", 'no editor pane covers it — open one for this project first')
+    toastError(
+      "Couldn't open that file",
+      'no editor pane covers it — open one for this project, or set an external editor in Settings',
+    )
     return
   }
   st.openSession(target.id)
@@ -271,9 +288,30 @@ export function openFileTarget(path: string, line?: number): void {
   })
 }
 
+/** Hand a file to the configured editor; the main process re-checks the path. */
+export async function openExternally(target: Extract<LinkTarget, { kind: 'file' }>): Promise<void> {
+  try {
+    const res = await window.terminator.openFileInEditor({
+      sessionId: target.sessionId,
+      path: target.path,
+      line: target.line,
+      column: target.column,
+    })
+    if (!res.ok) toastError("Couldn't open that file", res.reason)
+  } catch (e) {
+    toastError("Couldn't open that file", String(e).slice(0, 200))
+  }
+}
+
+/** What a plain click does: the configured editor when there is one, else a pane. */
+export function openFileTarget(target: Extract<LinkTarget, { kind: 'file' }>): void {
+  if (externalEditor()) void openExternally(target)
+  else openInPane(target.path, target.line)
+}
+
 function open(target: LinkTarget, browserId?: string): void {
   if (target.kind === 'web') void openWeb(target.url, browserId)
-  else openFileTarget(target.path, target.line)
+  else openFileTarget(target)
 }
 
 // ---- hover tooltip ---------------------------------------------------------
@@ -287,7 +325,13 @@ export function hoveredTarget(): LinkTarget | null {
 
 function describe(target: LinkTarget): { text: string; sub: string } {
   if (target.kind === 'file') {
-    return { text: target.label, sub: 'Click to open in an editor pane' }
+    const editor = externalEditor()
+    return {
+      text: target.label,
+      sub: editor
+        ? `Click to open in ${editor} · right-click for an editor pane`
+        : 'Click to open in an editor pane · right-click for more',
+    }
   }
   const browser = defaultBrowser()
   const where = browser ? browser.name : 'your default browser'
@@ -427,8 +471,14 @@ export function openMenuForHovered(ev: MouseEvent): boolean {
       menuItem('Copy link', undefined, () => window.terminator.clipboardWrite(target.url)),
     )
   } else {
+    const editor = externalEditor()
+    if (editor) {
+      el.appendChild(menuItem(`Open in ${editor}`, 'default', () => void openExternally(target)))
+    }
     el.appendChild(
-      menuItem('Open in editor pane', undefined, () => openFileTarget(target.path, target.line)),
+      menuItem('Open in editor pane', editor ? undefined : 'default', () =>
+        openInPane(target.path, target.line),
+      ),
     )
     el.appendChild(
       menuItem('Copy path', undefined, () => window.terminator.clipboardWrite(target.path)),
@@ -554,11 +604,14 @@ function makeProvider(sessionId: string, term: Terminal): ILinkProvider {
           const c = candidates[i]
           const range = rangeFor(group, c.start, c.end)
           if (!range) return
+          const { line, column } = splitLine(c.token)
           links.push(
             makeLink(term, range, c.token, {
               kind: 'file',
+              sessionId,
               path: abs,
-              line: splitLine(c.token).line,
+              line,
+              column,
               label: c.token,
             }),
           )

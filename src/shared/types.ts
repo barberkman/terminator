@@ -120,6 +120,61 @@ export interface BranchSessionInput {
 
 export type BranchResult = { ok: true; session: Session } | { ok: false; reason: string }
 
+// ---- Conversation view (Claude transcript, rendered as a document) ----------
+
+/** One part of a tool call worth reading when its row is opened. */
+export interface ToolField {
+  label: string
+  text: string
+  /** Render as a code block (monospace, copy button) rather than a plain line. */
+  code: boolean
+  /** True when `text` was cut to keep the payload sane — say so next to it. */
+  clipped: boolean
+}
+
+/** What a tool call returned, keyed to the call by `ConversationItem.toolId`. */
+export interface ToolOutput {
+  text: string
+  isError: boolean
+  clipped: boolean
+}
+
+/**
+ * One thing to show in a session's conversation. Prose and prompts are the
+ * conversation; thinking and tool calls are the working, shown collapsed.
+ */
+export type ConversationItem =
+  | { kind: 'prompt'; id: string; ts: string; text: string }
+  | { kind: 'text'; id: string; ts: string; text: string }
+  | { kind: 'thinking'; id: string; ts: string; text: string }
+  | {
+      kind: 'tool'
+      id: string
+      ts: string
+      /** The `tool_use` id its output is filed under. */
+      toolId: string
+      name: string
+      /** One line standing in for the call — the command, the path, the pattern. */
+      summary: string
+      fields: ToolField[]
+    }
+
+/**
+ * Everything appended to a transcript since a byte offset. Reads are incremental:
+ * hand `nextOffset` back on the following call and only new records come across.
+ */
+export interface ConversationSlice {
+  items: ConversationItem[]
+  /** Tool output that arrived in this slice, keyed by `toolId`. */
+  outputs: Record<string, ToolOutput>
+  /** Byte offset to pass as `from` next time. */
+  nextOffset: number
+  /** The file restarted (shrank or was replaced): discard what you had. */
+  reset: boolean
+  /** False when the session has no saved conversation on disk (yet). */
+  exists: boolean
+}
+
 // ---- Attachments (paste / drag-and-drop) -----------------------------------
 
 /** One thing that was handed to a session — a pasted image or a dropped path. */
@@ -167,18 +222,54 @@ export interface BrowserOption {
   args: string[]
 }
 
+/**
+ * The program a file path printed in terminal output opens in. Same split as
+ * `BrowserOption`: the executable is kept apart from its arguments, so a path
+ * with spaces needs no quoting and is never re-split.
+ */
+export interface EditorOption {
+  /** The executable itself, never a command line. Empty = use an Editor pane. */
+  command: string
+  /**
+   * Arguments placed before the file. `{path}`, `{line}` and `{column}` are
+   * substituted wherever they appear; an argument mentioning `{line}` is dropped
+   * when the path carried no line number, and if no argument mentions `{path}`
+   * the file is appended last. That covers the usual spellings — VS Code
+   * (`-g {path}:{line}`), Notepad++ (`-n{line}`), vim (`+{line}`) — and a bare
+   * command with no arguments at all.
+   */
+  args: string[]
+}
+
 export interface LinkSettings {
   /** Off = terminal output is inert text again: no underline, no hover, no click. */
   enabled: boolean
   browsers: BrowserOption[]
   /** Which browser a plain click uses. Empty (or unknown) = the OS default handler. */
   defaultBrowserId: string
-  /** Also linkify file paths, which open in an Editor pane instead of a browser. */
+  /** Also linkify file paths, which open in an editor instead of a browser. */
   openFilePaths: boolean
+  /**
+   * External editor for clicked file paths. With no command set, a click opens an
+   * in-app Editor pane instead — which needs one covering that project.
+   */
+  editor: EditorOption
 }
 
 /** Nothing opens silently: either it launched, or there's a reason to show. */
 export type OpenLinkResult = { ok: true; browser: string } | { ok: false; reason: string }
+
+/** Same bargain for a file: `editor` names what opened it, for the tooltip's promise. */
+export type OpenFileResult = { ok: true; editor: string } | { ok: false; reason: string }
+
+/** A file path a session printed, as the renderer asks for it to be opened. */
+export interface OpenFileInput {
+  /** Whose folder the path must live in — the main process re-checks it. */
+  sessionId: string
+  path: string
+  line?: number
+  column?: number
+}
 
 // ---- Settings --------------------------------------------------------------
 
@@ -313,6 +404,13 @@ export interface TerminatorApi {
   listPrompts(id: string): Promise<TranscriptPrompt[]>
   /** Fork a Claude session's conversation into a new sibling session. */
   branchSession(input: BranchSessionInput): Promise<BranchResult>
+  /**
+   * A Claude session's conversation, from byte offset `from` to the end of its
+   * transcript. Pass 0 for the whole thing, then the returned `nextOffset`.
+   */
+  readConversation(id: string, from: number): Promise<ConversationSlice>
+  /** The last fenced code block in a Claude session's replies, verbatim. */
+  lastCodeBlock(id: string): Promise<string | null>
 
   // pty hot path
   writePty(id: string, data: string): void
@@ -364,6 +462,12 @@ export interface TerminatorApi {
    * doesn't resolve to a file inside that session's folder.
    */
   resolveOutputPath(sessionId: string, token: string): Promise<string | null>
+  /**
+   * Open a file a session printed in the configured external editor. The path is
+   * re-resolved against that session's folder in the main process, so what was
+   * on screen is a suggestion, not permission to open anything.
+   */
+  openFileInEditor(input: OpenFileInput): Promise<OpenFileResult>
 
   // attachments
   /** Save the clipboard image to disk and reference it in the session. */

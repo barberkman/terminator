@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { BrowserOption, NotifType, Settings } from '../../shared/types'
+import type { BrowserOption, EditorOption, NotifType, Settings } from '../../shared/types'
 import { formatArgs, parseArgs } from '../../shared/args'
 import { C, STATUS_COLORS, accentA, sz } from '../theme'
 import { Icon } from '../icons'
@@ -232,6 +232,71 @@ function BrowserRow({
   )
 }
 
+/** Argument lines that work, for the editors people are most likely to reach for. */
+const EDITOR_EXAMPLES: [string, string][] = [
+  ['VS Code', '-g {path}:{line}'],
+  ['Sublime', '{path}:{line}'],
+  ['Notepad++', '-n{line}'],
+  ['gvim', '+{line}'],
+  ['Zed', '{path}:{line}'],
+]
+
+/**
+ * The one external editor a clicked file path opens in. Same command/args split
+ * as a browser (so `C:\Program Files\…` needs no quoting), plus the placeholders
+ * that let each editor's own way of naming a line work.
+ */
+function EditorRow({
+  editor,
+  onChange,
+}: {
+  editor: EditorOption
+  onChange: (e: EditorOption) => void
+}): React.JSX.Element {
+  const [argsText, setArgsText] = useState(() => formatArgs(editor.args))
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          style={{ ...inputStyle, flex: 1 }}
+          placeholder="/usr/bin/code   or   C:\Program Files\Microsoft VS Code\Code.exe"
+          value={editor.command}
+          onChange={(e) => onChange({ ...editor, command: e.target.value })}
+        />
+        <button
+          onClick={() => {
+            void window.terminator.pickFile('Choose an editor').then((path) => {
+              if (path) onChange({ ...editor, command: path })
+            })
+          }}
+          style={smallBtn}
+        >
+          Browse…
+        </button>
+        {!!editor.command.trim() && (
+          <button
+            onClick={() => onChange({ command: '', args: [] })}
+            title="Go back to opening file paths in an in-app Editor pane"
+            style={{ ...smallBtn, color: C.danger }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      <input
+        style={inputStyle}
+        placeholder="-g {path}:{line}"
+        value={argsText}
+        onChange={(e) => {
+          setArgsText(e.target.value)
+          onChange({ ...editor, args: parseArgs(e.target.value) })
+        }}
+      />
+    </div>
+  )
+}
+
 export function SettingsView(): React.JSX.Element | null {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
@@ -267,6 +332,13 @@ export function SettingsView(): React.JSX.Element | null {
   const defaultBrowserName = draft.links?.browsers.find(
     (b) => b.id === draft.links.defaultBrowserId,
   )?.name
+  // Same name the tooltip and the right-click menu show: the executable's basename.
+  const editorLabel = (draft.links?.editor?.command ?? '')
+    .trim()
+    .split(/[/\\]/)
+    .filter(Boolean)
+    .pop()
+    ?.replace(/\.(exe|cmd|bat|com)$/i, '')
 
   const toggleTrigger = (t: NotifType) => {
     const cur = draft.notifications.triggerOn
@@ -579,7 +651,7 @@ export function SettingsView(): React.JSX.Element | null {
 
           <Field
             label="FILE PATHS IN OUTPUT"
-            hint="Also linkify paths a session prints (src/app.ts:42 jumps to the line). They open in an Editor pane for that project, and only ever paths that exist inside the session's own folder."
+            hint="Also linkify paths a session prints (src/app.ts:42 jumps to the line), and only ever paths that exist inside the session's own folder."
           >
             <Choice
               value={draft.links?.openFilePaths ?? true}
@@ -589,6 +661,30 @@ export function SettingsView(): React.JSX.Element | null {
                 { value: false, label: 'Leave as text' },
               ]}
             />
+          </Field>
+
+          <Field
+            label="EXTERNAL EDITOR"
+            hint="The program a clicked file path opens in. Program and arguments are kept apart and handed straight to the process, so a path with spaces needs no quoting. In the arguments, {path}, {line} and {column} are filled in where you put them — an argument mentioning {line} is dropped when the path had no line number, and with no {path} anywhere the file is added at the end. Leave the program blank to open file paths in an in-app Editor pane instead."
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <EditorRow
+                editor={draft.links?.editor ?? { command: '', args: [] }}
+                onChange={(editor) => patchLinks({ editor })}
+              />
+              <div style={{ fontSize: 10.5, color: C.dim }}>
+                {editorLabel
+                  ? `A clicked path opens ${editorLabel}. Right-click one for an editor pane instead.`
+                  : 'A clicked path opens an in-app Editor pane covering that project.'}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: 10.5, color: C.faint2 }}>
+                {EDITOR_EXAMPLES.map(([name, args]) => (
+                  <span key={name} style={{ whiteSpace: 'nowrap' }}>
+                    {name} <code style={{ color: C.dim }}>{args}</code>
+                  </span>
+                ))}
+              </div>
+            </div>
           </Field>
 
           <Field label="NOTIFICATION COMMAND" hint="Run on each notification, via your shell. Receives the event as JSON on stdin and TERMINATOR_* env vars. Leave blank to disable.">

@@ -143,7 +143,16 @@ export function App(): React.JSX.Element {
       else if (st.showSettings) st.setShowSettings(false)
       else if (st.showNew) st.setShowNew(false)
       else if (st.branchFor) st.setBranchFor(null)
-      else return
+      // No modal open: Esc inside a pane's conversation goes back to its terminal.
+      // Only when the key came from the conversation itself, so a bare Esc typed
+      // at a terminal (or in vim) still reaches the program, as it always did.
+      else {
+        const from = (e.target as HTMLElement | null)?.closest?.('[data-conversation-for]')
+        const id = from?.getAttribute('data-conversation-for')
+        if (!id) return
+        st.toggleTranscript(id)
+        registry.focus(id)
+      }
       e.preventDefault()
     }
     window.addEventListener('keydown', onEscape)

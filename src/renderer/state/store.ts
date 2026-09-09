@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Session, Settings } from '../../shared/types'
+import type { IconName } from '../icons'
 import * as editor from '../editor/registry'
 
 export type LayoutName = 'single' | 'cols2' | 'grid4'
@@ -24,6 +25,8 @@ export interface ToastItem {
   sub?: string
   /** data: URL preview of an attached image. */
   thumb?: string
+  /** Glyph for a toast that isn't about an attachment. Defaults to the paperclip. */
+  icon?: IconName
 }
 
 export interface ProjectGroup {
@@ -57,6 +60,12 @@ interface StoreState {
   showNotes: boolean
   /** Session whose conversation the branch picker is open for. */
   branchFor: string | null
+  /**
+   * Sessions whose pane is showing the conversation instead of the terminal.
+   * Keyed by session id, not pane index, so the choice follows a session when it
+   * moves panes — and the terminal underneath is never torn down either way.
+   */
+  transcripts: Record<string, boolean>
   sidebarHidden: boolean
   editingId: string | null
   confirm: ConfirmState | null
@@ -76,6 +85,7 @@ interface StoreState {
   setShowSettings(v: boolean): void
   setShowNotes(v: boolean): void
   setBranchFor(id: string | null): void
+  toggleTranscript(id: string): void
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
@@ -101,6 +111,7 @@ export const useStore = create<StoreState>((set, get) => ({
   showSettings: false,
   showNotes: false,
   branchFor: null,
+  transcripts: {},
   sidebarHidden: false,
   editingId: null,
   confirm: null,
@@ -154,10 +165,13 @@ export const useStore = create<StoreState>((set, get) => ({
         if (next) shown.add(next)
         return next
       })
+      const transcripts = { ...st.transcripts }
+      delete transcripts[id]
       return {
         sessions,
         order,
         panes,
+        transcripts,
         focused: Math.min(st.focused, Math.max(0, panes.length - 1)),
         confirm: st.confirm?.id === id ? null : st.confirm,
         editingId: st.editingId === id ? null : st.editingId,
@@ -257,6 +271,9 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   setBranchFor(id) {
     set({ branchFor: id })
+  },
+  toggleTranscript(id) {
+    set((st) => ({ transcripts: { ...st.transcripts, [id]: !st.transcripts[id] } }))
   },
   toggleSidebar() {
     set((s) => ({ sidebarHidden: !s.sidebarHidden }))

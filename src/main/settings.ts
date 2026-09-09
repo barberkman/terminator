@@ -40,7 +40,15 @@ export function defaultSettings(): Settings {
     attachments: { allowClaudeRead: true, keepDays: 7 },
     // No browser configured means the OS default opens links — the same thing
     // that happens today when you copy one out by hand, just without the copying.
-    links: { enabled: true, browsers: [], defaultBrowserId: '', openFilePaths: true },
+    links: {
+      enabled: true,
+      browsers: [],
+      defaultBrowserId: '',
+      openFilePaths: true,
+      // No editor configured keeps the original behaviour: a clicked path opens
+      // in an in-app Editor pane covering that project.
+      editor: { command: '', args: [] },
+    },
   }
 }
 

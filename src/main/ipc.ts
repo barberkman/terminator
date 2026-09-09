@@ -4,13 +4,15 @@ import type {
   AttachFileInput,
   BranchResult,
   BranchSessionInput,
+  ConversationSlice,
   CreateSessionInput,
+  OpenFileInput,
   SessionMode,
   TaskCommand,
   TranscriptPrompt,
 } from '../shared/types'
 import { attachClipboardImage, attachFiles } from './attachments'
-import { openLink, resolveOutputPath } from './links'
+import { openInEditor, openLink, resolveOutputPath } from './links'
 import * as ptyMgr from './pty-manager'
 import * as fsService from './fs-service'
 import * as state from './state'
@@ -18,6 +20,7 @@ import { runTaskCommand, startSession, switchMode } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
 import { forkTranscript, listPrompts } from './transcript'
+import { lastCodeBlock, readConversation } from './conversation'
 import { setPendingPrompt } from './prefill'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 
@@ -81,6 +84,24 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const s = state.getSession(id)
     if (!s || s.kind !== 'claude') return []
     return listPrompts(s.id, s.worktreePath || s.projectPath)
+  })
+
+  // ---- conversation view ----
+  // Same transcript, read as a document. The cwd is resolved here from the
+  // session id, like every other path in this file — never taken from the renderer.
+  ipcMain.handle(
+    Channels.sessionConversation,
+    (_e, { id, from }: { id: string; from: number }): ConversationSlice => {
+      const s = state.getSession(id)
+      const empty = { items: [], outputs: {}, nextOffset: 0, reset: false, exists: false }
+      if (!s || s.kind !== 'claude') return empty
+      return readConversation(s.id, s.worktreePath || s.projectPath, Math.max(0, from | 0))
+    },
+  )
+  ipcMain.handle(Channels.sessionLastCodeBlock, (_e, id: string): string | null => {
+    const s = state.getSession(id)
+    if (!s || s.kind !== 'claude') return null
+    return lastCodeBlock(s.id, s.worktreePath || s.projectPath)
   })
   ipcMain.handle(
     Channels.sessionBranch,
@@ -172,6 +193,9 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     (_e, { sessionId, token }: { sessionId: string; token: string }) =>
       resolveOutputPath(sessionId, token),
   )
+  // Same posture as linkOpen: the path is re-resolved against the session's own
+  // folder inside openInEditor before anything is launched.
+  ipcMain.handle(Channels.linkOpenFile, (_e, input: OpenFileInput) => openInEditor(input))
 
   // ---- filesystem (editor sessions) ----
   // Root is resolved here from the session id — never trusted from the renderer.

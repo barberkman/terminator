@@ -17,6 +17,8 @@ export const Channels = {
   sessionReorder: 'session:reorder',
   sessionListPrompts: 'session:listPrompts',
   sessionBranch: 'session:branch',
+  sessionConversation: 'session:conversation',
+  sessionLastCodeBlock: 'session:lastCodeBlock',
   worktreeRemove: 'worktree:remove',
 
   // pty hot path
@@ -39,6 +41,7 @@ export const Channels = {
   // links (clickable URLs / paths in terminal output)
   linkOpen: 'link:open',
   linkResolvePath: 'link:resolvePath',
+  linkOpenFile: 'link:openFile',
 
   // filesystem (editor sessions)
   fsList: 'fs:list',

@@ -24,7 +24,8 @@ import { join } from 'node:path'
 import type { TranscriptPrompt } from '../shared/types'
 import { expandHome } from './pty-manager'
 
-type Record_ = Record<string, unknown>
+/** One parsed transcript line. The format is Claude's, so nothing is assumed. */
+export type Record_ = Record<string, unknown>
 
 /** The directory Claude keeps a working directory's transcripts in. */
 function transcriptDir(cwd: string): string {
@@ -58,7 +59,7 @@ function parseLines(raw: string): (Record_ | null)[] {
 }
 
 /** The plain text of a user record, or '' if it isn't plain text. */
-function promptText(rec: Record_): string {
+export function promptText(rec: Record_): string {
   const msg = rec.message as { role?: string; content?: unknown } | undefined
   if (!msg || msg.role !== 'user') return ''
   const c = msg.content
@@ -81,7 +82,7 @@ function promptText(rec: Record_): string {
  * writes for slash commands. `origin.kind` is the reliable marker in current
  * versions; the shape checks keep this working if that field ever moves.
  */
-function isHumanPrompt(rec: Record_): boolean {
+export function isHumanPrompt(rec: Record_): boolean {
   if (rec.type !== 'user' || rec.isSidechain === true || rec.isMeta === true) return false
   if (rec.toolUseResult !== undefined) return false
   const origin = rec.origin as { kind?: string } | undefined

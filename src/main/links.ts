@@ -11,12 +11,17 @@
 //     the chain, so quoting, redirection and word-splitting have no meaning.
 //   • The browser is the user's configured executable path, never a command line
 //     to be re-split — which is what makes C:\Program Files\… work untouched.
+//
+// A clicked *file path* gets the same treatment: the token is re-resolved against
+// its own session's folder here, so a path on screen can only ever open something
+// that session could already reach, and the editor is launched with the file as
+// its own argv element.
 
 import { spawn } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { isAbsolute, resolve, sep } from 'node:path'
 import { shell } from 'electron'
-import type { BrowserOption, OpenLinkResult } from '../shared/types'
+import type { BrowserOption, OpenFileInput, OpenFileResult, OpenLinkResult } from '../shared/types'
 import { loadSettings } from './settings'
 import { expandHome } from './pty-manager'
 import { getSession } from './state'
@@ -119,4 +124,55 @@ export function resolveOutputPath(sessionId: string, token: string): string | nu
   } catch {
     return null
   }
+}
+
+/** A configured editor's display name: the executable's basename, no extension. */
+export function editorName(command: string): string {
+  const base = command.trim().split(/[/\\]/).filter(Boolean).pop() ?? ''
+  return base.replace(/\.(exe|cmd|bat|com)$/i, '') || 'your editor'
+}
+
+/**
+ * Build the editor's argv. `{path}`, `{line}` and `{column}` are substituted
+ * wherever they appear; an argument that mentions `{line}` (or `{column}`) is
+ * dropped when there is no line number, so `-n{line}` doesn't become a bare
+ * `-n`; and with no `{path}` anywhere the file is appended last, which is what
+ * an editor invoked as `editor <file>` wants.
+ */
+export function editorArgv(args: string[], path: string, line?: number, column?: number): string[] {
+  const out: string[] = []
+  let placed = false
+  for (const arg of args) {
+    if (line === undefined && /\{(line|column)\}/.test(arg)) continue
+    if (arg.includes('{path}')) placed = true
+    out.push(
+      arg
+        .replaceAll('{path}', path)
+        .replaceAll('{line}', String(line ?? ''))
+        .replaceAll('{column}', String(column ?? 1)),
+    )
+  }
+  if (!placed) out.push(path)
+  return out
+}
+
+/**
+ * Open a file a session printed, in the user's configured editor. The path is
+ * re-resolved through `resolveOutputPath` rather than trusted: the renderer saw
+ * it in someone else's program's output, which is a suggestion, not permission.
+ */
+export async function openInEditor(input: OpenFileInput): Promise<OpenFileResult> {
+  const abs = resolveOutputPath(input.sessionId, input.path)
+  if (!abs) {
+    return { ok: false, reason: "that file isn't inside the session's folder any more" }
+  }
+  const { editor } = loadSettings().links
+  const command = editor?.command?.trim()
+  if (!command) return { ok: false, reason: 'no external editor is set in Settings' }
+
+  const exe = expandHome(command) || command
+  const name = editorName(command)
+  const error = await launch(exe, editorArgv(editor.args ?? [], abs, input.line, input.column))
+  if (error) return { ok: false, reason: `${name} wouldn't start: ${error.slice(0, 140)}` }
+  return { ok: true, editor: name }
 }
