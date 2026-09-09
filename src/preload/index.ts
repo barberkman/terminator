@@ -36,6 +36,8 @@ const api: TerminatorApi = {
   reorderSessions: (ids) => ipcRenderer.send(Channels.sessionReorder, ids),
   listPrompts: (id) => ipcRenderer.invoke(Channels.sessionListPrompts, id),
   branchSession: (input: BranchSessionInput) => ipcRenderer.invoke(Channels.sessionBranch, input),
+  readConversation: (id, from) => ipcRenderer.invoke(Channels.sessionConversation, { id, from }),
+  lastCodeBlock: (id) => ipcRenderer.invoke(Channels.sessionLastCodeBlock, id),
 
   writePty: (id, data) => ipcRenderer.send(Channels.ptyWrite, { id, data }),
   resizePty: (id, cols, rows) => ipcRenderer.send(Channels.ptyResize, { id, cols, rows }),

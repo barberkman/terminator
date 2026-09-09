@@ -5,7 +5,9 @@ import { Icon } from '../icons'
 
 // The app's only transient message surface. Attachments need one in both
 // directions: a terminal can't show you the screenshot you just pasted, and a
-// drop that couldn't be attached has nowhere else to say why.
+// drop that couldn't be attached has nowhere else to say why. Copying a code
+// block out of a conversation is the same shape of thing: it happened somewhere
+// the result isn't visible.
 
 const TTL = { ok: 5000, error: 11000 }
 
@@ -51,7 +53,7 @@ function Toast({ toast }: { toast: ToastItem }): React.JSX.Element {
         />
       ) : (
         <span style={{ display: 'flex', flex: 'none', color: bad ? C.danger : C.accent }}>
-          <Icon name={bad ? 'close' : 'paperclip'} size={15} />
+          <Icon name={bad ? 'close' : (toast.icon ?? 'paperclip')} size={15} />
         </span>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>

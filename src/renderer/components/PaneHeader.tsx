@@ -3,6 +3,7 @@ import type { Session } from '../../shared/types'
 import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
+import * as registry from '../term/registry'
 
 function iconBtn(extra?: React.CSSProperties): React.CSSProperties {
   return {
@@ -153,6 +154,9 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
   const setConfirm = useStore((s) => s.setConfirm)
   const setBranchFor = useStore((s) => s.setBranchFor)
   const openSession = useStore((s) => s.openSession)
+  const showTranscript = useStore((s) => !!s.transcripts[session.id])
+  const toggleTranscript = useStore((s) => s.toggleTranscript)
+  const pushToast = useStore((s) => s.pushToast)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isClaude = session.kind === 'claude'
@@ -166,6 +170,36 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
 
   const toggleMode = () => {
     void window.terminator.setMode(session.id, session.mode === 'readonly' ? 'normal' : 'readonly')
+  }
+
+  // Leaving the conversation hands the keyboard back to the terminal, which the
+  // view had taken it from so nothing could be typed into a covered pane.
+  const toggleView = () => {
+    toggleTranscript(session.id)
+    if (showTranscript) registry.focus(session.id)
+  }
+
+  // The snippet you wanted, without opening anything: read out of the session's
+  // transcript, so it's the text Claude wrote rather than what the terminal drew
+  // (and it works from the terminal view, mid-session, without scrolling back).
+  const copyLastCode = async () => {
+    const text = await window.terminator.lastCodeBlock(session.id)
+    if (!text) {
+      pushToast({
+        tone: 'error',
+        text: 'No code block found',
+        sub: 'this conversation has no fenced code block yet',
+      })
+      return
+    }
+    window.terminator.clipboardWrite(text)
+    const lines = text.split('\n').length
+    pushToast({
+      tone: 'ok',
+      icon: 'copy',
+      text: `Copied ${lines} line${lines === 1 ? '' : 's'}`,
+      sub: text.split('\n')[0].slice(0, 60),
+    })
   }
 
   // Inject a /model|/effort change into the live session and optimistically reflect
@@ -349,6 +383,28 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
             style={iconBtn({ color: session.mode === 'readonly' ? C.accentSoft : C.textSubtle })}
           >
             <Icon name={session.mode === 'readonly' ? 'lock' : 'unlock'} size={15} />
+          </button>
+        )}
+        {isClaude && (
+          <button
+            onClick={toggleView}
+            title={showTranscript ? 'Back to the live terminal' : 'Read this conversation, with copy buttons on every code block'}
+            style={iconBtn(
+              showTranscript
+                ? { color: C.accentSoft, borderColor: C.accentBorder, background: C.accentBg }
+                : undefined,
+            )}
+          >
+            <Icon name={showTranscript ? 'terminal' : 'note'} size={15} />
+          </button>
+        )}
+        {isClaude && (
+          <button
+            onClick={() => void copyLastCode()}
+            title="Copy the last code block Claude produced"
+            style={iconBtn()}
+          >
+            <Icon name="copy" size={15} />
           </button>
         )}
         {isClaude && (

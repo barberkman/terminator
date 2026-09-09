@@ -8,6 +8,7 @@ import { attachDrop } from '../attach'
 import { PaneHeader } from './PaneHeader'
 import { TerminalView } from './TerminalView'
 import { EditorPaneBody } from './EditorPaneBody'
+import { ConversationView } from './ConversationView'
 
 /** True for a drag carrying files — a sidebar session drag carries text/plain. */
 function hasFiles(e: React.DragEvent): boolean {
@@ -117,6 +118,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
   const multi = useStore((s) => s.panes.length > 1)
   const focusPane = useStore((s) => s.focusPane)
   const setShowNew = useStore((s) => s.setShowNew)
+  const showTranscript = useStore((s) => (id ? !!s.transcripts[id] : false))
   const { over, dropProps } = useFileDrop(session, index)
 
   const frame: React.CSSProperties = multi
@@ -238,7 +240,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
       <PaneHeader session={session} active={focused} />
       <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <TerminalView id={id} active={focused} />
-        {needsRelaunch && (
+        {needsRelaunch && !showTranscript && (
           <div
             style={{
               position: 'absolute',
@@ -271,6 +273,10 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
             </button>
           </div>
         )}
+        {/* Over the terminal, never instead of it: the xterm stays mounted and
+            the right size underneath, so switching back costs nothing and a
+            closed session's conversation is still readable. */}
+        {session.kind === 'claude' && showTranscript && <ConversationView session={session} />}
       </div>
     </div>
   )

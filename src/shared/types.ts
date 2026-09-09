@@ -120,6 +120,61 @@ export interface BranchSessionInput {
 
 export type BranchResult = { ok: true; session: Session } | { ok: false; reason: string }
 
+// ---- Conversation view (Claude transcript, rendered as a document) ----------
+
+/** One part of a tool call worth reading when its row is opened. */
+export interface ToolField {
+  label: string
+  text: string
+  /** Render as a code block (monospace, copy button) rather than a plain line. */
+  code: boolean
+  /** True when `text` was cut to keep the payload sane — say so next to it. */
+  clipped: boolean
+}
+
+/** What a tool call returned, keyed to the call by `ConversationItem.toolId`. */
+export interface ToolOutput {
+  text: string
+  isError: boolean
+  clipped: boolean
+}
+
+/**
+ * One thing to show in a session's conversation. Prose and prompts are the
+ * conversation; thinking and tool calls are the working, shown collapsed.
+ */
+export type ConversationItem =
+  | { kind: 'prompt'; id: string; ts: string; text: string }
+  | { kind: 'text'; id: string; ts: string; text: string }
+  | { kind: 'thinking'; id: string; ts: string; text: string }
+  | {
+      kind: 'tool'
+      id: string
+      ts: string
+      /** The `tool_use` id its output is filed under. */
+      toolId: string
+      name: string
+      /** One line standing in for the call — the command, the path, the pattern. */
+      summary: string
+      fields: ToolField[]
+    }
+
+/**
+ * Everything appended to a transcript since a byte offset. Reads are incremental:
+ * hand `nextOffset` back on the following call and only new records come across.
+ */
+export interface ConversationSlice {
+  items: ConversationItem[]
+  /** Tool output that arrived in this slice, keyed by `toolId`. */
+  outputs: Record<string, ToolOutput>
+  /** Byte offset to pass as `from` next time. */
+  nextOffset: number
+  /** The file restarted (shrank or was replaced): discard what you had. */
+  reset: boolean
+  /** False when the session has no saved conversation on disk (yet). */
+  exists: boolean
+}
+
 // ---- Attachments (paste / drag-and-drop) -----------------------------------
 
 /** One thing that was handed to a session — a pasted image or a dropped path. */
@@ -313,6 +368,13 @@ export interface TerminatorApi {
   listPrompts(id: string): Promise<TranscriptPrompt[]>
   /** Fork a Claude session's conversation into a new sibling session. */
   branchSession(input: BranchSessionInput): Promise<BranchResult>
+  /**
+   * A Claude session's conversation, from byte offset `from` to the end of its
+   * transcript. Pass 0 for the whole thing, then the returned `nextOffset`.
+   */
+  readConversation(id: string, from: number): Promise<ConversationSlice>
+  /** The last fenced code block in a Claude session's replies, verbatim. */
+  lastCodeBlock(id: string): Promise<string | null>
 
   // pty hot path
   writePty(id: string, data: string): void
