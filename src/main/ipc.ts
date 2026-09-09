@@ -10,6 +10,7 @@ import type {
   TranscriptPrompt,
 } from '../shared/types'
 import { attachClipboardImage, attachFiles } from './attachments'
+import { openLink, resolveOutputPath } from './links'
 import * as ptyMgr from './pty-manager'
 import * as fsService from './fs-service'
 import * as state from './state'
@@ -159,6 +160,19 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     (_e, { id, files }: { id: string; files: AttachFileInput[] }) => attachFiles(id, files),
   )
 
+  // ---- links (clickable URLs / paths in terminal output) ----
+  // The URL is re-validated inside openLink: what the renderer saw on screen is
+  // a suggestion, not permission to launch anything.
+  ipcMain.handle(
+    Channels.linkOpen,
+    (_e, { url, browserId }: { url: string; browserId?: string }) => openLink(url, browserId),
+  )
+  ipcMain.handle(
+    Channels.linkResolvePath,
+    (_e, { sessionId, token }: { sessionId: string; token: string }) =>
+      resolveOutputPath(sessionId, token),
+  )
+
   // ---- filesystem (editor sessions) ----
   // Root is resolved here from the session id — never trusted from the renderer.
   const editorRoot = (sessionId: string): string | null => {
@@ -197,6 +211,13 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   ipcMain.handle(Channels.pickFolder, async () => {
     const r = await dialog.showOpenDialog(getWin(), {
       properties: ['openDirectory', 'createDirectory'],
+    })
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
+  })
+  ipcMain.handle(Channels.pickFile, async (_e, title?: string) => {
+    const r = await dialog.showOpenDialog(getWin(), {
+      title: title || 'Choose a program',
+      properties: ['openFile'],
     })
     return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
   })

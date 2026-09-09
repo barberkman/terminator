@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { NotifType, Settings } from '../../shared/types'
+import type { BrowserOption, NotifType, Settings } from '../../shared/types'
+import { formatArgs, parseArgs } from '../../shared/args'
 import { C, STATUS_COLORS, accentA, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
@@ -29,6 +30,11 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       {hint && <div style={{ fontSize: 10.5, color: C.dim, marginTop: 5 }}>{hint}</div>}
     </div>
   )
+}
+
+/** Ids only have to be unique within the list and stable across edits. */
+function newBrowserId(): string {
+  return `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta'])
@@ -90,6 +96,142 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (accel
   )
 }
 
+const smallBtn: React.CSSProperties = {
+  padding: '5px 10px',
+  borderRadius: 7,
+  border: `1px solid ${C.border2}`,
+  background: 'transparent',
+  color: C.muted,
+  font: 'inherit',
+  fontSize: 11,
+  cursor: 'pointer',
+  flex: 'none',
+}
+
+/** A two-option toggle, the shape Settings already uses for its either/ors. */
+function Choice<T extends string | boolean>({
+  options,
+  value,
+  onPick,
+}: {
+  options: { value: T; label: string }[]
+  value: T
+  onPick: (v: T) => void
+}): React.JSX.Element {
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      {options.map((o) => {
+        const on = value === o.value
+        return (
+          <button
+            key={String(o.value)}
+            onClick={() => onPick(o.value)}
+            style={{
+              flex: 1,
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: `1px solid ${on ? C.accentBorder : C.border2}`,
+              background: on ? accentA(0.12) : 'transparent',
+              color: on ? C.accentSoft : C.muted,
+              font: 'inherit',
+              fontSize: 12.5,
+              cursor: 'pointer',
+            }}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * One configured browser. The arguments box is free text while you type and is
+ * parsed into a real argv array on the way into settings, so quoting behaves the
+ * way a shell trains you to expect without a shell ever being involved.
+ */
+function BrowserRow({
+  browser,
+  isDefault,
+  onChange,
+  onMakeDefault,
+  onRemove,
+}: {
+  browser: BrowserOption
+  isDefault: boolean
+  onChange: (b: BrowserOption) => void
+  onMakeDefault: () => void
+  onRemove: () => void
+}): React.JSX.Element {
+  const [argsText, setArgsText] = useState(() => formatArgs(browser.args))
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        padding: 10,
+        borderRadius: 9,
+        border: `1px solid ${isDefault ? C.accentBorder : C.border2}`,
+        background: isDefault ? accentA(0.05) : 'transparent',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          style={{ ...inputStyle, flex: 1 }}
+          placeholder="Chrome incognito"
+          value={browser.name}
+          onChange={(e) => onChange({ ...browser, name: e.target.value })}
+        />
+        <button
+          onClick={onMakeDefault}
+          title={isDefault ? 'Clicked links use this one' : 'Use this one for a plain click'}
+          style={{
+            ...smallBtn,
+            border: `1px solid ${isDefault ? C.accentBorder : C.border2}`,
+            background: isDefault ? accentA(0.12) : 'transparent',
+            color: isDefault ? C.accentSoft : C.muted,
+          }}
+        >
+          {isDefault ? '✓ Default' : 'Make default'}
+        </button>
+        <button onClick={onRemove} title="Remove this browser" style={{ ...smallBtn, color: C.danger }}>
+          Remove
+        </button>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          style={{ ...inputStyle, flex: 1 }}
+          placeholder="/usr/bin/google-chrome   or   C:\Program Files\Google\Chrome\Application\chrome.exe"
+          value={browser.command}
+          onChange={(e) => onChange({ ...browser, command: e.target.value })}
+        />
+        <button
+          onClick={() => {
+            void window.terminator.pickFile('Choose a browser').then((path) => {
+              if (path) onChange({ ...browser, command: path })
+            })
+          }}
+          style={smallBtn}
+        >
+          Browse…
+        </button>
+      </div>
+      <input
+        style={inputStyle}
+        placeholder="--incognito"
+        value={argsText}
+        onChange={(e) => {
+          setArgsText(e.target.value)
+          onChange({ ...browser, args: parseArgs(e.target.value) })
+        }}
+      />
+    </div>
+  )
+}
+
 export function SettingsView(): React.JSX.Element | null {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
@@ -120,6 +262,11 @@ export function SettingsView(): React.JSX.Element | null {
     setSettings(result)
     setShow(false)
   }
+
+  const patchLinks = (p: Partial<Settings['links']>) => patch({ links: { ...draft.links, ...p } })
+  const defaultBrowserName = draft.links?.browsers.find(
+    (b) => b.id === draft.links.defaultBrowserId,
+  )?.name
 
   const toggleTrigger = (t: NotifType) => {
     const cur = draft.notifications.triggerOn
@@ -350,6 +497,97 @@ export function SettingsView(): React.JSX.Element | null {
               onChange={(e) =>
                 patch({ attachments: { ...draft.attachments, keepDays: Math.max(0, Number(e.target.value) || 0) } })
               }
+            />
+          </Field>
+
+          <div style={{ height: 1, background: C.hair, margin: '2px 0' }} />
+
+          <Field
+            label="LINKS IN TERMINAL OUTPUT"
+            hint="Underlines http and https links in a pane and opens them on click. Hovering one shows where it goes; selecting text over a link never opens it. Only http and https are ever opened — terminal output can't launch anything else."
+          >
+            <Choice
+              value={draft.links?.enabled ?? true}
+              onPick={(enabled) => patchLinks({ enabled })}
+              options={[
+                { value: true, label: 'Clickable' },
+                { value: false, label: 'Plain text' },
+              ]}
+            />
+          </Field>
+
+          <Field
+            label="BROWSERS FOR LINKS"
+            hint="The program and its arguments are kept apart and handed straight to the process, so a path with spaces (Program Files) needs no quoting. A plain click uses the default; right-click a link for the rest. With no browser here, links open in your OS default."
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {(draft.links?.browsers ?? []).map((b, i) => (
+                <BrowserRow
+                  key={b.id}
+                  browser={b}
+                  isDefault={draft.links.defaultBrowserId === b.id}
+                  onChange={(next) => {
+                    const browsers = draft.links.browsers.slice()
+                    browsers[i] = next
+                    patchLinks({ browsers })
+                  }}
+                  onMakeDefault={() =>
+                    patchLinks({
+                      // Clicking the default again hands links back to the OS.
+                      defaultBrowserId: draft.links.defaultBrowserId === b.id ? '' : b.id,
+                    })
+                  }
+                  onRemove={() => {
+                    const browsers = draft.links.browsers.filter((x) => x.id !== b.id)
+                    patchLinks({
+                      browsers,
+                      defaultBrowserId:
+                        draft.links.defaultBrowserId === b.id ? '' : draft.links.defaultBrowserId,
+                    })
+                  }}
+                />
+              ))}
+              <button
+                onClick={() =>
+                  patchLinks({
+                    browsers: [
+                      ...(draft.links?.browsers ?? []),
+                      { id: newBrowserId(), name: 'New browser', command: '', args: [] },
+                    ],
+                  })
+                }
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  border: `1px dashed ${C.border3}`,
+                  background: 'transparent',
+                  color: C.muted,
+                  font: 'inherit',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                + Add browser
+              </button>
+              <div style={{ fontSize: 10.5, color: C.dim }}>
+                {defaultBrowserName
+                  ? `A plain click opens ${defaultBrowserName}.`
+                  : 'A plain click opens your OS default browser.'}
+              </div>
+            </div>
+          </Field>
+
+          <Field
+            label="FILE PATHS IN OUTPUT"
+            hint="Also linkify paths a session prints (src/app.ts:42 jumps to the line). They open in an Editor pane for that project, and only ever paths that exist inside the session's own folder."
+          >
+            <Choice
+              value={draft.links?.openFilePaths ?? true}
+              onPick={(openFilePaths) => patchLinks({ openFilePaths })}
+              options={[
+                { value: true, label: 'Open in editor' },
+                { value: false, label: 'Leave as text' },
+              ]}
             />
           </Field>
 

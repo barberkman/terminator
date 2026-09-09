@@ -38,6 +38,9 @@ export function defaultSettings(): Settings {
     notesShortcut: 'CommandOrControl+Shift+N',
     notes: '',
     attachments: { allowClaudeRead: true, keepDays: 7 },
+    // No browser configured means the OS default opens links — the same thing
+    // that happens today when you copy one out by hand, just without the copying.
+    links: { enabled: true, browsers: [], defaultBrowserId: '', openFilePaths: true },
   }
 }
 
@@ -53,6 +56,9 @@ function merge(base: Settings, patch: Partial<Settings>): Settings {
     modes: { ...base.modes, ...(patch.modes ?? {}) },
     notifications: { ...base.notifications, ...(patch.notifications ?? {}) },
     attachments: { ...base.attachments, ...(patch.attachments ?? {}) },
+    // browsers[] is replaced wholesale (it's a list, not a set of fields), which
+    // is what makes removing one in Settings actually remove it.
+    links: { ...base.links, ...(patch.links ?? {}) },
     // Replaced wholesale rather than deep-merged, so deleting a token from
     // settings.json actually removes that override.
     customTheme: 'customTheme' in patch ? patch.customTheme : base.customTheme,

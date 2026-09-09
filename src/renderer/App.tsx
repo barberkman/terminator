@@ -23,6 +23,7 @@ export function App(): React.JSX.Element {
   const fontSize = useStore((s) => s.settings?.fontSize)
   const iconScale = useStore((s) => s.settings?.iconScale)
   const sidebarSide = useStore((s) => s.settings?.sidebarSide)
+  const linkSettings = useStore((s) => s.settings?.links)
   const settings = useStore((s) => s.settings)
 
   useEffect(() => {
@@ -33,6 +34,11 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (termFont) registry.setFontFamily(termFont)
   }, [termFont])
+
+  // Link behaviour → the terminal panes' link provider (browsers, on/off).
+  useEffect(() => {
+    if (linkSettings) registry.setLinkSettings(linkSettings)
+  }, [linkSettings])
 
   // Global UI size → zoom the whole interface (chrome + terminals).
   useEffect(() => {

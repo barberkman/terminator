@@ -36,6 +36,10 @@ export const Channels = {
   attachClipboard: 'attach:clipboard',
   attachFiles: 'attach:files',
 
+  // links (clickable URLs / paths in terminal output)
+  linkOpen: 'link:open',
+  linkResolvePath: 'link:resolvePath',
+
   // filesystem (editor sessions)
   fsList: 'fs:list',
   fsRead: 'fs:read',
@@ -46,6 +50,7 @@ export const Channels = {
 
   // dialogs / settings
   pickFolder: 'dialog:pickFolder',
+  pickFile: 'dialog:pickFile',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
   globalShortcutStatus: 'globalShortcut:status',
