@@ -409,8 +409,6 @@ export interface TerminatorApi {
    * transcript. Pass 0 for the whole thing, then the returned `nextOffset`.
    */
   readConversation(id: string, from: number): Promise<ConversationSlice>
-  /** The last fenced code block in a Claude session's replies, verbatim. */
-  lastCodeBlock(id: string): Promise<string | null>
 
   // pty hot path
   writePty(id: string, data: string): void

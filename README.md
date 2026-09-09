@@ -117,9 +117,6 @@ drag-selecting across wrapped terminal lines and getting the indentation back ma
   running, the right size, underneath — switching back is instant and the session never notices.
   **Esc** from the conversation also returns to it.
 
-The **copy button** beside it copies **the last code block Claude produced**, without opening
-anything — the common case, one click, from wherever you are in the pane.
-
 Only Claude sessions have any of this. Plain terminals and editor panes are unchanged.
 
 The renderer is the one the Notes preview uses (`src/renderer/markdown.tsx`), so a code block

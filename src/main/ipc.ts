@@ -20,7 +20,7 @@ import { runTaskCommand, startSession, switchMode } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
 import { forkTranscript, listPrompts } from './transcript'
-import { lastCodeBlock, readConversation } from './conversation'
+import { readConversation } from './conversation'
 import { setPendingPrompt } from './prefill'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 
@@ -98,11 +98,6 @@ export function registerIpc(getWin: () => BrowserWindow): void {
       return readConversation(s.id, s.worktreePath || s.projectPath, Math.max(0, from | 0))
     },
   )
-  ipcMain.handle(Channels.sessionLastCodeBlock, (_e, id: string): string | null => {
-    const s = state.getSession(id)
-    if (!s || s.kind !== 'claude') return null
-    return lastCodeBlock(s.id, s.worktreePath || s.projectPath)
-  })
   ipcMain.handle(
     Channels.sessionBranch,
     async (_e, input: BranchSessionInput): Promise<BranchResult> => {
