@@ -1,6 +1,7 @@
-import { clipboard, contextBridge, ipcRenderer, webFrame } from 'electron'
+import { clipboard, contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import { Channels } from '../shared/channels'
 import type {
+  AttachFileInput,
   BranchSessionInput,
   CreateSessionInput,
   FsChange,
@@ -64,6 +65,22 @@ const api: TerminatorApi = {
 
   clipboardWrite: (text: string) => clipboard.writeText(text),
   clipboardRead: () => clipboard.readText(),
+  // Synchronous on purpose: the Ctrl/Cmd+V handler has to decide between an image
+  // attachment and the plain text paste before it returns.
+  clipboardHasImage: () => !clipboard.readImage().isEmpty(),
+
+  attachClipboardImage: (id: string) => ipcRenderer.invoke(Channels.attachClipboard, id),
+  attachFiles: (id: string, files: AttachFileInput[]) =>
+    ipcRenderer.invoke(Channels.attachFiles, { id, files }),
+  // Electron 32 removed File.path; this is the supported replacement. Returns ''
+  // for anything that isn't a real file on disk (e.g. dragged out of a browser).
+  pathForFile: (file: File) => {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
+    }
+  },
 }
 
 contextBridge.exposeInMainWorld('terminator', api)

@@ -311,6 +311,48 @@ export function SettingsView(): React.JSX.Element | null {
             />
           </Field>
 
+          <Field
+            label="ATTACHMENT READS"
+            hint="Pasted images are saved in the app's own folder, outside your repos — which puts them outside Claude's working directory. Pre-approved adds that one folder to each Claude session's allowed directories, so reading a pasted screenshot never stops to ask. Dropped files are read from where they live and follow your normal permission rules either way."
+          >
+            <div style={{ display: 'flex', gap: 8 }}>
+              {([true, false] as const).map((val) => {
+                const on = (draft.attachments?.allowClaudeRead ?? true) === val
+                return (
+                  <button
+                    key={String(val)}
+                    onClick={() => patch({ attachments: { ...draft.attachments, allowClaudeRead: val } })}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: `1px solid ${on ? C.accentBorder : C.border2}`,
+                      background: on ? accentA(0.12) : 'transparent',
+                      color: on ? C.accentSoft : C.muted,
+                      font: 'inherit',
+                      fontSize: 12.5,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {val ? 'Pre-approved' : 'Ask each time'}
+                  </button>
+                )
+              })}
+            </div>
+          </Field>
+          <Field label="KEEP PASTED IMAGES FOR" hint="Days before a saved paste is deleted, checked at startup. 0 keeps them forever. Dropped files are never touched.">
+            <input
+              type="number"
+              min={0}
+              max={365}
+              style={{ ...inputStyle, width: 90 }}
+              value={draft.attachments?.keepDays ?? 7}
+              onChange={(e) =>
+                patch({ attachments: { ...draft.attachments, keepDays: Math.max(0, Number(e.target.value) || 0) } })
+              }
+            />
+          </Field>
+
           <Field label="NOTIFICATION COMMAND" hint="Run on each notification, via your shell. Receives the event as JSON on stdin and TERMINATOR_* env vars. Leave blank to disable.">
             <input style={inputStyle} placeholder="python3 ~/notify.py" value={draft.notifications.command} onChange={(e) => patch({ notifications: { ...draft.notifications, command: e.target.value } })} />
           </Field>

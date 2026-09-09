@@ -37,6 +37,7 @@ export function defaultSettings(): Settings {
     globalToggleShortcut: 'F12',
     notesShortcut: 'CommandOrControl+Shift+N',
     notes: '',
+    attachments: { allowClaudeRead: true, keepDays: 7 },
   }
 }
 
@@ -51,6 +52,7 @@ function merge(base: Settings, patch: Partial<Settings>): Settings {
     ...patch,
     modes: { ...base.modes, ...(patch.modes ?? {}) },
     notifications: { ...base.notifications, ...(patch.notifications ?? {}) },
+    attachments: { ...base.attachments, ...(patch.attachments ?? {}) },
     // Replaced wholesale rather than deep-merged, so deleting a token from
     // settings.json actually removes that override.
     customTheme: 'customTheme' in patch ? patch.customTheme : base.customTheme,

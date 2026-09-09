@@ -32,6 +32,10 @@ export const Channels = {
   notify: 'session:notify',
   navJump: 'nav:jump',
 
+  // attachments (paste / drag-and-drop into a session)
+  attachClipboard: 'attach:clipboard',
+  attachFiles: 'attach:files',
+
   // filesystem (editor sessions)
   fsList: 'fs:list',
   fsRead: 'fs:read',

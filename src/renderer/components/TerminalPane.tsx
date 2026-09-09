@@ -1,10 +1,115 @@
+import { useRef, useState } from 'react'
+import type { Session } from '../../shared/types'
 import { useStore } from '../state/store'
-import { C, accentA, bgA } from '../theme'
+import { C, accentA, bgA, dangerA } from '../theme'
 import { Icon } from '../icons'
 import * as registry from '../term/registry'
+import { attachDrop } from '../attach'
 import { PaneHeader } from './PaneHeader'
 import { TerminalView } from './TerminalView'
 import { EditorPaneBody } from './EditorPaneBody'
+
+/** True for a drag carrying files — a sidebar session drag carries text/plain. */
+function hasFiles(e: React.DragEvent): boolean {
+  return Array.from(e.dataTransfer.types).includes('Files')
+}
+
+/**
+ * Makes a pane a drop target for files.
+ *
+ * What a drop means depends on the pane: a Claude session gets the paths in its
+ * prompt (it reads them itself), a shell gets them shell-quoted at its prompt —
+ * the same thing every other terminal does with a dropped file. Panes that can
+ * take neither still light up and say so, rather than swallowing the drop.
+ *
+ * dragenter/dragleave fire for every child the pointer crosses (xterm nests
+ * several), so the highlight is driven by a depth count, not a boolean.
+ */
+function useFileDrop(session: Session | undefined, index: number) {
+  const [over, setOver] = useState(false)
+  const depth = useRef(0)
+  const focusPane = useStore((s) => s.focusPane)
+  const pushToast = useStore((s) => s.pushToast)
+
+  const clear = () => {
+    depth.current = 0
+    setOver(false)
+  }
+
+  const dropProps = {
+    onDragEnter: (e: React.DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth.current += 1
+      setOver(true)
+    },
+    onDragOver: (e: React.DragEvent) => {
+      if (!hasFiles(e)) return
+      // Both this and the drop must preventDefault, or Electron follows the file
+      // and navigates the window away from the app.
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!hasFiles(e)) return
+      depth.current -= 1
+      if (depth.current <= 0) clear()
+    },
+    onDrop: (e: React.DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+      clear()
+      focusPane(index)
+      if (!session) {
+        pushToast({
+          tone: 'error',
+          text: "Couldn't attach",
+          sub: 'this pane has no session — open one first',
+        })
+        return
+      }
+      const { id: sid, kind } = session
+      void attachDrop(sid, e.dataTransfer).then(() => {
+        if (kind !== 'editor') registry.focus(sid)
+      })
+    },
+  }
+
+  return { over, dropProps }
+}
+
+/**
+ * The "yes, this pane will take it" affordance during a drag. Pointer-events off:
+ * a veil that could receive the drag would flip dragenter/dragleave endlessly.
+ */
+function DropVeil({ label, bad }: { label: string; bad?: boolean }): React.JSX.Element {
+  const tint = bad ? dangerA : accentA
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 4,
+        zIndex: 3,
+        pointerEvents: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        border: `2px dashed ${tint(0.55)}`,
+        borderRadius: 10,
+        background: bgA(0.66),
+        color: bad ? C.danger : C.accentSoft,
+        fontSize: 12.5,
+        fontWeight: 600,
+        animation: 'cc-fade 0.12s ease',
+      }}
+    >
+      <Icon name="paperclip" size={16} />
+      {label}
+    </div>
+  )
+}
 
 export function TerminalPane({ id, index }: { id: string; index: number }): React.JSX.Element {
   const session = useStore((s) => (id ? s.sessions[id] : undefined))
@@ -12,6 +117,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
   const multi = useStore((s) => s.panes.length > 1)
   const focusPane = useStore((s) => s.focusPane)
   const setShowNew = useStore((s) => s.setShowNew)
+  const { over, dropProps } = useFileDrop(session, index)
 
   const frame: React.CSSProperties = multi
     ? {
@@ -27,7 +133,9 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
         data-pane-focused={focused ? 1 : 0}
         data-pane-session=""
         onMouseDownCapture={() => focusPane(index)}
+        {...dropProps}
         style={{
+          position: 'relative',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -40,6 +148,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
           ...frame,
         }}
       >
+        {over && <DropVeil bad label="No session in this pane" />}
         <span style={{ opacity: 0.4 }}>
           <Icon name="bigplus" size={26} />
         </span>
@@ -72,7 +181,9 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
         data-pane-focused={focused ? 1 : 0}
         data-pane-session={session.name}
         onMouseDownCapture={() => focusPane(index)}
+        {...dropProps}
         style={{
+          position: 'relative',
           display: 'flex',
           flexDirection: 'column',
           minWidth: 0,
@@ -82,6 +193,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
           ...frame,
         }}
       >
+        {over && <DropVeil bad label="Editor panes can't take attachments" />}
         <PaneHeader session={session} active={focused} />
         <EditorPaneBody session={session} />
       </div>
@@ -102,7 +214,9 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
       data-pane-focused={focused ? 1 : 0}
       data-pane-session={session.name}
       onMouseDownCapture={() => focusPane(index)}
+      {...dropProps}
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         minWidth: 0,
@@ -112,6 +226,15 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
         ...frame,
       }}
     >
+      {over && (
+        <DropVeil
+          label={
+            session.kind === 'claude'
+              ? `Drop to attach to ${session.name}`
+              : 'Drop to paste the path'
+          }
+        />
+      )}
       <PaneHeader session={session} active={focused} />
       <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <TerminalView id={id} active={focused} />
