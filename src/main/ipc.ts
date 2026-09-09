@@ -6,12 +6,13 @@ import type {
   BranchSessionInput,
   ConversationSlice,
   CreateSessionInput,
+  OpenFileInput,
   SessionMode,
   TaskCommand,
   TranscriptPrompt,
 } from '../shared/types'
 import { attachClipboardImage, attachFiles } from './attachments'
-import { openLink, resolveOutputPath } from './links'
+import { openInEditor, openLink, resolveOutputPath } from './links'
 import * as ptyMgr from './pty-manager'
 import * as fsService from './fs-service'
 import * as state from './state'
@@ -192,6 +193,9 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     (_e, { sessionId, token }: { sessionId: string; token: string }) =>
       resolveOutputPath(sessionId, token),
   )
+  // Same posture as linkOpen: the path is re-resolved against the session's own
+  // folder inside openInEditor before anything is launched.
+  ipcMain.handle(Channels.linkOpenFile, (_e, input: OpenFileInput) => openInEditor(input))
 
   // ---- filesystem (editor sessions) ----
   // Root is resolved here from the session id — never trusted from the renderer.

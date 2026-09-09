@@ -41,6 +41,7 @@ export const Channels = {
   // links (clickable URLs / paths in terminal output)
   linkOpen: 'link:open',
   linkResolvePath: 'link:resolvePath',
+  linkOpenFile: 'link:openFile',
 
   // filesystem (editor sessions)
   fsList: 'fs:list',

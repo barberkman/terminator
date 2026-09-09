@@ -222,18 +222,54 @@ export interface BrowserOption {
   args: string[]
 }
 
+/**
+ * The program a file path printed in terminal output opens in. Same split as
+ * `BrowserOption`: the executable is kept apart from its arguments, so a path
+ * with spaces needs no quoting and is never re-split.
+ */
+export interface EditorOption {
+  /** The executable itself, never a command line. Empty = use an Editor pane. */
+  command: string
+  /**
+   * Arguments placed before the file. `{path}`, `{line}` and `{column}` are
+   * substituted wherever they appear; an argument mentioning `{line}` is dropped
+   * when the path carried no line number, and if no argument mentions `{path}`
+   * the file is appended last. That covers the usual spellings — VS Code
+   * (`-g {path}:{line}`), Notepad++ (`-n{line}`), vim (`+{line}`) — and a bare
+   * command with no arguments at all.
+   */
+  args: string[]
+}
+
 export interface LinkSettings {
   /** Off = terminal output is inert text again: no underline, no hover, no click. */
   enabled: boolean
   browsers: BrowserOption[]
   /** Which browser a plain click uses. Empty (or unknown) = the OS default handler. */
   defaultBrowserId: string
-  /** Also linkify file paths, which open in an Editor pane instead of a browser. */
+  /** Also linkify file paths, which open in an editor instead of a browser. */
   openFilePaths: boolean
+  /**
+   * External editor for clicked file paths. With no command set, a click opens an
+   * in-app Editor pane instead — which needs one covering that project.
+   */
+  editor: EditorOption
 }
 
 /** Nothing opens silently: either it launched, or there's a reason to show. */
 export type OpenLinkResult = { ok: true; browser: string } | { ok: false; reason: string }
+
+/** Same bargain for a file: `editor` names what opened it, for the tooltip's promise. */
+export type OpenFileResult = { ok: true; editor: string } | { ok: false; reason: string }
+
+/** A file path a session printed, as the renderer asks for it to be opened. */
+export interface OpenFileInput {
+  /** Whose folder the path must live in — the main process re-checks it. */
+  sessionId: string
+  path: string
+  line?: number
+  column?: number
+}
 
 // ---- Settings --------------------------------------------------------------
 
@@ -426,6 +462,12 @@ export interface TerminatorApi {
    * doesn't resolve to a file inside that session's folder.
    */
   resolveOutputPath(sessionId: string, token: string): Promise<string | null>
+  /**
+   * Open a file a session printed in the configured external editor. The path is
+   * re-resolved against that session's folder in the main process, so what was
+   * on screen is a suggestion, not permission to open anything.
+   */
+  openFileInEditor(input: OpenFileInput): Promise<OpenFileResult>
 
   // attachments
   /** Save the clipboard image to disk and reference it in the session. */

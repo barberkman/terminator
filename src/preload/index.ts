@@ -5,6 +5,7 @@ import type {
   BranchSessionInput,
   CreateSessionInput,
   FsChange,
+  OpenFileInput,
   PtyData,
   PtyExit,
   Session,
@@ -76,6 +77,7 @@ const api: TerminatorApi = {
     ipcRenderer.invoke(Channels.linkOpen, { url, browserId }),
   resolveOutputPath: (sessionId: string, token: string) =>
     ipcRenderer.invoke(Channels.linkResolvePath, { sessionId, token }),
+  openFileInEditor: (input: OpenFileInput) => ipcRenderer.invoke(Channels.linkOpenFile, input),
 
   attachClipboardImage: (id: string) => ipcRenderer.invoke(Channels.attachClipboard, id),
   attachFiles: (id: string, files: AttachFileInput[]) =>

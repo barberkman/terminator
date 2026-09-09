@@ -191,12 +191,30 @@ browser you picked, so a link from Claude no longer needs selecting, copying and
   output can't open a `file:`, reach a custom scheme handler, or smuggle in flags of its own.
   Programs that emit real OSC 8 hyperlinks go through the same check.
 
-**File paths** in output (`src/app.ts`, `src/app.ts:42`) are links too, and open in an **Editor
-pane** for that project rather than a browser — with `:42` putting the cursor on that line. Only
-paths that actually exist inside the session's own folder become links, so ordinary text like
-`and/or` stays text. It needs an editor pane covering that project to open into; if there isn't
-one, it says so. Turn it off in Settings → **FILE PATHS IN OUTPUT**, or turn the whole thing off
-with **LINKS IN TERMINAL OUTPUT**.
+**File paths** in output (`src/app.ts`, `src/app.ts:42`) are links too, and open in an editor
+rather than a browser — with `:42` putting the cursor on that line. Only paths that actually
+exist inside the session's own folder become links, so ordinary text like `and/or` stays text.
+Turn it off in Settings → **FILE PATHS IN OUTPUT**, or turn the whole thing off with **LINKS IN
+TERMINAL OUTPUT**.
+
+- **Which editor** — Settings → **EXTERNAL EDITOR**. Set the program and its arguments and a
+  clicked path opens there, in whatever editor you already use. Program and arguments are stored
+  and passed **separately**, straight to the process with no shell in between, so
+  `C:\Program Files\Microsoft VS Code\Code.exe` needs no quoting. **Browse…** picks it from disk.
+- **Jumping to the line** — every editor spells it differently, so the arguments take
+  placeholders: `{path}`, `{line}` and `{column}` are filled in where you put them. VS Code is
+  `-g {path}:{line}`, Sublime and Zed `{path}:{line}`, Notepad++ `-n{line}`, gvim `+{line}`. An
+  argument mentioning `{line}` is dropped when the path had no line number (so `-n{line}` doesn't
+  become a bare `-n`), and if no argument mentions `{path}` the file is added at the end — which
+  is what a plain `editor <file>` wants, so leaving the arguments empty works too.
+- **Or in the app** — leave the program blank and a click opens an **Editor pane** for that
+  project instead, which is what it did before there was a setting. That needs a pane covering
+  the project; if there isn't one it says so, and points here. **Right-click any path** for the
+  other one either way, plus Copy path.
+- **Still only inside the session's folder** — the path is re-resolved in the main process before
+  anything launches, against that session's own directory, and reaches the editor as a single
+  argument. So output can't talk the app into opening something the session couldn't already
+  reach.
 
 ## Keyboard & mouse
 
@@ -213,6 +231,8 @@ In a terminal pane:
 - **Ctrl/Cmd+Shift+V** — pastes text, never the image. The way out when the clipboard holds both.
 - **Click a link** — opens it in your configured browser; **right-click a link** for the other
   browsers and Copy link. See **Links** above for what stops a selection from opening one.
+- **Click a file path** — opens it in your configured external editor (or an Editor pane when
+  none is set); **right-click** for the other one, and Copy path.
 - **Drop a file** on a pane to hand it to that session.
 - **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
   still reaches the program in the pane, untouched.)
@@ -234,7 +254,8 @@ icon, or on disk):
 - `notifications` — see below.
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.
 - `links.browsers` (each `{ id, name, command, args }`), `links.defaultBrowserId`,
-  `links.enabled`, `links.openFilePaths` — see **Links** above.
+  `links.enabled`, `links.openFilePaths`, `links.editor` (`{ command, args }`) — see **Links**
+  above.
 
 ## Themes
 
