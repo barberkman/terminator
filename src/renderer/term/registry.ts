@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css'
 import { FONT } from '../theme'
 import { type ThemePalette, themeById } from '../../shared/themes'
 import { useStore } from '../state/store'
+import { attachClipboardImage } from '../attach'
 
 // One persistent xterm Terminal per session, alive for the session's lifetime
 // regardless of which pane (if any) currently shows it. Hidden terminals are
@@ -153,7 +154,11 @@ export function getOrCreate(id: string): Entry {
   // what Claude's /terminal-setup makes other terminals send for Shift+Enter.
   // Shell sessions keep the default, where Shift+Enter runs the command.
   // Copy/paste: Ctrl/Cmd+C copies the selection (and otherwise passes ^C through
-  // as SIGINT); Ctrl/Cmd+V pastes. Returning false stops xterm from sending the key.
+  // as SIGINT); Ctrl/Cmd+V pastes — an image if the clipboard holds one (a
+  // screenshot is the common case), otherwise text exactly as before. Add Shift to
+  // force the text side of that fork: Ctrl/Cmd+Shift+V never attaches, which is
+  // the way out when the clipboard carries both (copying from a spreadsheet, say).
+  // Returning false stops xterm from sending the key.
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== 'keydown') return true
     if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -175,6 +180,10 @@ export function getOrCreate(id: string): Entry {
       // preventDefault stops the browser's native paste into xterm's textarea;
       // without it both that and the manual paste below fire (pasting twice).
       e.preventDefault()
+      if (!e.shiftKey && window.terminator.clipboardHasImage()) {
+        void attachClipboardImage(id)
+        return false
+      }
       const text = window.terminator.clipboardRead()
       if (text) term.paste(text)
       return false

@@ -13,6 +13,19 @@ export interface ConfirmState {
   removeAfter?: boolean
 }
 
+/**
+ * A transient message in the bottom-right corner. The only place the app can tell
+ * you an attachment landed (a terminal can't show a thumbnail) — or why it didn't.
+ */
+export interface ToastItem {
+  id: number
+  tone: 'ok' | 'error'
+  text: string
+  sub?: string
+  /** data: URL preview of an attached image. */
+  thumb?: string
+}
+
 export interface ProjectGroup {
   name: string
   sessions: Session[]
@@ -48,6 +61,7 @@ interface StoreState {
   editingId: string | null
   confirm: ConfirmState | null
   settings: Settings | null
+  toasts: ToastItem[]
 
   init(): Promise<void>
   upsert(s: Session): void
@@ -65,6 +79,8 @@ interface StoreState {
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
+  pushToast(t: Omit<ToastItem, 'id'>): void
+  dismissToast(id: number): void
 }
 
 function emptyPanes(count: number): string[] {
@@ -72,6 +88,7 @@ function emptyPanes(count: number): string[] {
 }
 
 let initialized = false
+let nextToastId = 1
 
 export const useStore = create<StoreState>((set, get) => ({
   sessions: {},
@@ -88,6 +105,7 @@ export const useStore = create<StoreState>((set, get) => ({
   editingId: null,
   confirm: null,
   settings: null,
+  toasts: [],
 
   async init() {
     if (initialized) return
@@ -248,6 +266,13 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   setSettings(s) {
     set({ settings: s })
+  },
+  pushToast(t) {
+    // Newest first, and never more than a few on screen at once.
+    set((st) => ({ toasts: [{ ...t, id: nextToastId++ }, ...st.toasts].slice(0, 4) }))
+  },
+  dismissToast(id) {
+    set((st) => ({ toasts: st.toasts.filter((t) => t.id !== id) }))
   },
 }))
 

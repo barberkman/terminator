@@ -25,6 +25,7 @@ export type IconName =
   | 'sidebar'
   | 'editor'
   | 'file'
+  | 'paperclip'
 
 export function Icon({ name, size = 15 }: { name: IconName; size?: number }): React.JSX.Element {
   const common = {
@@ -202,6 +203,12 @@ export function Icon({ name, size = 15 }: { name: IconName; size?: number }): Re
         <svg {...common}>
           <path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9z" />
           <path d="M13 3v6h6" />
+        </svg>
+      )
+    case 'paperclip':
+      return (
+        <svg {...common}>
+          <path d="M20 11.5l-8.2 8.2a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.3-2.3l7.8-7.8" />
         </svg>
       )
   }

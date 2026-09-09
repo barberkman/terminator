@@ -1,6 +1,7 @@
 import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
 import type {
+  AttachFileInput,
   BranchResult,
   BranchSessionInput,
   CreateSessionInput,
@@ -8,6 +9,7 @@ import type {
   TaskCommand,
   TranscriptPrompt,
 } from '../shared/types'
+import { attachClipboardImage, attachFiles } from './attachments'
 import * as ptyMgr from './pty-manager'
 import * as fsService from './fs-service'
 import * as state from './state'
@@ -148,6 +150,13 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     Channels.ptyResize,
     (_e, { id, cols, rows }: { id: string; cols: number; rows: number }) =>
       ptyMgr.resizePty(id, cols, rows),
+  )
+
+  // ---- attachments (paste / drag-and-drop) ----
+  ipcMain.handle(Channels.attachClipboard, (_e, id: string) => attachClipboardImage(id))
+  ipcMain.handle(
+    Channels.attachFiles,
+    (_e, { id, files }: { id: string; files: AttachFileInput[] }) => attachFiles(id, files),
   )
 
   // ---- filesystem (editor sessions) ----

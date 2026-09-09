@@ -10,6 +10,7 @@ import { NewSessionModal } from './components/NewSessionModal'
 import { BranchModal } from './components/BranchModal'
 import { SettingsView } from './components/SettingsView'
 import { NotesView } from './components/NotesView'
+import { Toasts } from './components/Toasts'
 import { matchesAccelerator } from './shortcuts'
 import { C } from './theme'
 import { applyThemeFromSettings } from './theme-apply'
@@ -54,6 +55,33 @@ export function App(): React.JSX.Element {
     const scale = (iconScale ?? UI_BASE_ICON_SCALE) / UI_BASE_ICON_SCALE
     document.documentElement.style.setProperty('--icon-scale', String(scale))
   }, [iconScale])
+
+  // A file dropped anywhere Electron doesn't expect it makes the window navigate
+  // to that file — the app effectively disappears. Panes handle their own drops and
+  // stop propagation, so anything reaching here landed on the chrome: swallow it,
+  // and say where it should have gone instead of eating it silently.
+  useEffect(() => {
+    const isFileDrag = (e: DragEvent) =>
+      !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
+    const onDragOver = (e: DragEvent) => {
+      if (isFileDrag(e)) e.preventDefault()
+    }
+    const onDrop = (e: DragEvent) => {
+      if (!isFileDrag(e)) return
+      e.preventDefault()
+      useStore.getState().pushToast({
+        tone: 'error',
+        text: 'Nothing attached',
+        sub: 'drop onto a session pane to hand the file to that session',
+      })
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -164,6 +192,7 @@ export function App(): React.JSX.Element {
       <BranchModal />
       <SettingsView />
       <NotesView />
+      <Toasts />
     </div>
   )
 }

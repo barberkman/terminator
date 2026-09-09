@@ -120,6 +120,35 @@ export interface BranchSessionInput {
 
 export type BranchResult = { ok: true; session: Session } | { ok: false; reason: string }
 
+// ---- Attachments (paste / drag-and-drop) -----------------------------------
+
+/** One thing that was handed to a session — a pasted image or a dropped path. */
+export interface AttachedItem {
+  /** Basename, for the confirmation toast. */
+  name: string
+  /** Absolute path that was typed into the session. */
+  path: string
+  kind: 'image' | 'file' | 'dir'
+  /** Small data: URL preview — images only, and only when one could be rendered. */
+  thumb?: string
+}
+
+/**
+ * A file to attach. Dropped files carry a `path` and are referenced where they
+ * lie; a file with no path (dragged out of a browser, say) exists only as bytes,
+ * so it has to be written to the attachments folder before it can be referenced.
+ */
+export interface AttachFileInput {
+  path?: string
+  name?: string
+  bytes?: Uint8Array
+}
+
+/** Attaching is all-or-nothing per drop/paste: on failure nothing was typed. */
+export type AttachResult =
+  | { ok: true; items: AttachedItem[]; note?: string }
+  | { ok: false; reason: string }
+
 // ---- Settings --------------------------------------------------------------
 
 export interface ModeConfig {
@@ -146,6 +175,18 @@ export interface ProjectConfig {
   runCommand?: string
   /** Command typed into this project's Run terminal by the Stop button. Empty/unset = disabled. */
   stopCommand?: string
+}
+
+/** Where pasted images land, and who is allowed to read them. */
+export interface AttachmentSettings {
+  /**
+   * Add the attachments folder to each Claude session's allowed directories (via
+   * the per-session --settings file), so reading a pasted image never needs a
+   * permission prompt. Off = Claude asks the first time it reads one.
+   */
+  allowClaudeRead: boolean
+  /** Pasted images older than this are deleted at startup. 0 disables pruning. */
+  keepDays: number
 }
 
 export interface Settings {
@@ -177,6 +218,7 @@ export interface Settings {
   notesShortcut: string
   /** Single freeform markdown note, edited from Settings → Notes. */
   notes: string
+  attachments: AttachmentSettings
 }
 
 // ---- Notifications ---------------------------------------------------------
@@ -273,6 +315,16 @@ export interface TerminatorApi {
   // clipboard (terminal copy/paste)
   clipboardWrite(text: string): void
   clipboardRead(): string
+  /** True when the clipboard holds a bitmap (checked before every Ctrl/Cmd+V). */
+  clipboardHasImage(): boolean
+
+  // attachments
+  /** Save the clipboard image to disk and reference it in the session. */
+  attachClipboardImage(id: string): Promise<AttachResult>
+  /** Reference dropped files in the session. Files on disk are never copied. */
+  attachFiles(id: string, files: AttachFileInput[]): Promise<AttachResult>
+  /** Absolute path of a dropped File ('' when it has none, e.g. a browser drag). */
+  pathForFile(file: File): string
 }
 
 /** `fontSize` value that corresponds to 100% zoom (the as-designed sizing). */

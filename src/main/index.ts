@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
+import { pruneAttachments } from './attachments'
 import { registerIpc } from './ipc'
 import { killAll } from './pty-manager'
 import { closeAll as closeFsWatchers, setWindow as setFsWindow } from './fs-service'
@@ -53,6 +54,9 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   await startReportServer()
   loadPersisted()
+  // Pasted images are the only files the app leaves lying around; clear out the
+  // stale ones before anything can add more.
+  pruneAttachments()
   wireProcessEvents()
   registerIpc(() => win as BrowserWindow)
   createWindow()
