@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { USAGE_REFRESH_DEFAULT, type UsageWindow } from '../../shared/types'
+import { USAGE_REFRESH_DEFAULT, type UsageSnapshot, type UsageWindow } from '../../shared/types'
 import { C, STATUS_COLORS, STATUS_LABELS, ink, dotStyle } from '../theme'
 import { useStore } from '../state/store'
 
@@ -10,15 +10,13 @@ function Meter({
   label,
   pct,
   note,
-  title,
 }: {
   label: string
   pct: number
   note?: string
-  title?: string
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 'none' }} title={title}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 'none' }}>
       <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>{label}</span>
       <div style={{ width: 70, height: 4, borderRadius: 2, background: ink(0.1), overflow: 'hidden', flex: 'none' }}>
         <div
@@ -35,13 +33,17 @@ function Meter({
   )
 }
 
-/** "4h 58m", "12m", "<1m" — minute granularity, which is all the tick can honour. */
+/**
+ * "3d 2h", "4h 58m", "12m", "<1m" — minute granularity, which is all the tick can
+ * honour. Past two days it switches to days, so the weekly window reads as a span
+ * rather than as "72h 0m".
+ */
 function until(ms: number): string {
   const mins = Math.floor(ms / 60_000)
   if (mins < 1) return '<1m'
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return h ? `${h}h ${m}m` : `${m}m`
+  const hours = Math.floor(mins / 60)
+  if (hours >= 48) return `${Math.floor(hours / 24)}d ${hours % 24}h`
+  return hours ? `${hours}h ${mins % 60}m` : `${mins}m`
 }
 
 /** "Thu 09:00" — a countdown spanning days is unreadable, so the week gets a date. */
@@ -63,7 +65,6 @@ function agoText(ms: number): string {
 interface MeterView {
   pct: number
   note: string
-  title: string
   expired: boolean
 }
 
@@ -75,15 +76,45 @@ interface MeterView {
 function meterView(w: UsageWindow | undefined, now: number, weekly: boolean): MeterView | null {
   if (!w) return null
   const at = w.resetsAt
-  if (at === undefined) {
-    return { pct: w.usedPct, note: '', title: 'No reset time reported', expired: false }
-  }
-  if (now >= at) {
-    return { pct: 0, note: 'reset', title: `Window rolled over ${dayTime(at)}`, expired: true }
-  }
+  if (at === undefined) return { pct: w.usedPct, note: '', expired: false }
+  if (now >= at) return { pct: 0, note: 'reset', expired: true }
   return weekly
-    ? { pct: w.usedPct, note: `resets ${dayTime(at)}`, title: `${until(at - now)} left`, expired: false }
-    : { pct: w.usedPct, note: `resets in ${until(at - now)}`, title: `Resets ${dayTime(at)}`, expired: false }
+    ? { pct: w.usedPct, note: `resets ${dayTime(at)}`, expired: false }
+    : { pct: w.usedPct, note: `resets in ${until(at - now)}`, expired: false }
+}
+
+/**
+ * The whole picture on hover, including the bit the row has no room for: each window
+ * in both forms, and when these numbers last arrived. On an idle app that last line
+ * is the answer to "is this thing live or stuck?", which a slow-moving percentage and
+ * a minute-granularity countdown can't give on their own.
+ */
+function summaryText(usage: UsageSnapshot | null, now: number): string {
+  if (!usage || (!usage.fiveHour && !usage.weekly)) {
+    return [
+      'No usage reported yet.',
+      'Claude sends these figures when a session finishes a turn; from then on they',
+      'are shared by every session and kept across restarts.',
+    ].join('\n')
+  }
+  const lines: string[] = []
+  const add = (label: string, w: UsageWindow | undefined): void => {
+    if (!w) return
+    const pct = `${Math.round(w.usedPct)}% used`
+    if (w.resetsAt === undefined) lines.push(`${label}: ${pct} (no reset time reported)`)
+    else if (now >= w.resetsAt) lines.push(`${label}: 0% used — the window reset ${dayTime(w.resetsAt)}`)
+    else lines.push(`${label}: ${pct}, resets ${dayTime(w.resetsAt)} — ${until(w.resetsAt - now)} left`)
+  }
+  add('5-hour', usage.fiveHour)
+  add('Weekly', usage.weekly)
+  // Spelled out both ways: the elapsed time is what says whether this is live, and
+  // the clock time disambiguates it once "2d ago" stops being precise enough.
+  lines.push(
+    usage.updatedAt
+      ? `Last reported by a session ${agoText(now - usage.updatedAt)} ago, at ${dayTime(usage.updatedAt)}`
+      : 'Never reported by a session',
+  )
+  return lines.join('\n')
 }
 
 /**
@@ -119,19 +150,17 @@ function UsageCluster(): React.JSX.Element {
   const stale = anyLive && age >= STALE_AFTER_MS
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 'none' }}>
+    <div
+      style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 'none' }}
+      title={summaryText(usage, now)}
+    >
       <span style={{ fontSize: 9.5, letterSpacing: 0.6, color: C.dim, fontWeight: 700 }}>USAGE</span>
       {five || week ? (
         <>
-          {five ? <Meter label="5-hour" pct={five.pct} note={five.note} title={five.title} /> : null}
-          {week ? <Meter label="weekly" pct={week.pct} note={week.note} title={week.title} /> : null}
+          {five ? <Meter label="5-hour" pct={five.pct} note={five.note} /> : null}
+          {week ? <Meter label="weekly" pct={week.pct} note={week.note} /> : null}
           {stale ? (
-            <span
-              style={{ color: C.faint, whiteSpace: 'nowrap' }}
-              title="Claude reports these when a session finishes a turn, so they only move then."
-            >
-              as of {agoText(age)} ago
-            </span>
+            <span style={{ color: C.faint, whiteSpace: 'nowrap' }}>as of {agoText(age)} ago</span>
           ) : null}
         </>
       ) : (
