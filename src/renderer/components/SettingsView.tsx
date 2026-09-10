@@ -19,7 +19,7 @@ import { applyThemeFromSettings } from '../theme-apply'
 import { freeName, upsert, writeThemes } from '../themeActions'
 import { eventToAccelerator } from '../shortcuts'
 
-const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited']
+const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited', 'idle']
 
 /**
  * The settings this panel is the editor of. Save posts these and nothing else:

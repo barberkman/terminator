@@ -175,6 +175,10 @@ export function setStatus(id: string, status: SessionStatus, activity?: string):
   if (!s) return
   s.status = status
   if (activity !== undefined) s.activity = activity
+  // The "needs me" flag belongs to the state that raised it: leaving waiting or error
+  // clears it, so the pulsing dot never outlives the reason for it. Clicking the row
+  // (clearNotified) is then a way to dismiss it early, not the only way out.
+  if (status !== 'waiting' && status !== 'error') s.notified = false
   emit(Channels.sessionUpdated, s)
 }
 
@@ -287,6 +291,7 @@ export function wireProcessEvents(): void {
       stopping.delete(id)
       s.status = 'closed'
       s.activity = 'stopped'
+      s.notified = false
       emit(Channels.sessionUpdated, s)
       return
     }
@@ -298,6 +303,7 @@ export function wireProcessEvents(): void {
     } else {
       s.status = 'closed'
       s.activity = 'exited'
+      s.notified = false
       emit(Channels.sessionUpdated, s)
     }
   })
