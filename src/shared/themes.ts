@@ -12,7 +12,11 @@ import type { SessionStatus } from './types'
 // `C` tokens in renderer/theme.ts) and as literal values (xterm parses colours in
 // JS for its renderer and cannot take a `var()`).
 
-export type ThemeGroup = 'dark' | 'light' | 'reading'
+/**
+ * Which shelf of the picker a theme sits on. `custom` is the user's own set —
+ * copies made in the theme editor, stored in their own file rather than here.
+ */
+export type ThemeGroup = 'dark' | 'light' | 'reading' | 'custom'
 
 /** The 16 ANSI slots xterm paints program output with. */
 export interface AnsiPalette {
@@ -62,7 +66,16 @@ export type RampKey =
   | 'faint'
   | 'faint2'
 
-type Surfaces = { sidebar: string; footer: string; panel: string; panel2: string; input: string }
+export type Surfaces = { sidebar: string; footer: string; panel: string; panel2: string; input: string }
+
+/** The five derived surfaces, in the order the editor lists them. */
+export const SURFACE_KEYS = ['sidebar', 'footer', 'panel', 'panel2', 'input'] as const
+
+/** The eleven ramp steps, brightest first — `RampKey` as an iterable. */
+export const RAMP_KEYS: RampKey[] = [
+  'textMax', 'textHi', 'textStrong', 'text', 'textBtn', 'body',
+  'textSubtle', 'muted', 'dim', 'faint', 'faint2',
+]
 
 export interface ThemeSeed {
   id: string
@@ -96,6 +109,18 @@ export interface ThemeSeed {
   kindIcon: string
   /** Base for modal scrims and drop shadows. */
   shadow: string
+  /** The terminal's cursor block. Derived from `accent` when unset. */
+  cursor?: string
+  /** The glyph drawn *under* a block cursor. Derived from `bg` when unset. */
+  cursorText?: string
+  /** The terminal's selection wash. Derived from `accent` when unset. */
+  selection?: string
+  /**
+   * How opaque that wash is. Translucent on purpose — an opaque selection hides
+   * the text under it on light themes — so a published palette's selection colour
+   * is laid on at the same 0.3 the derived default uses unless this says otherwise.
+   */
+  selectionAlpha?: number
   status: Record<SessionStatus, string>
   ansi: AnsiPalette
   syntax: SyntaxPalette
@@ -121,6 +146,13 @@ export interface ThemePalette extends Record<RampKey, string> {
   accentText: string
   danger: string
   kindIcon: string
+  cursor: string
+  cursorText: string
+  /** The selection's own colour, before its alpha — what the editor edits. */
+  selectionHex: string
+  selectionAlpha: number
+  /** `selectionHex` at `selectionAlpha`, ready for xterm and `--c-selection`. */
+  selection: string
   /** "r,g,b" triplets — every alpha tint in the app is mixed from one of these. */
   bgRgb: string
   inkRgb: string
@@ -136,7 +168,15 @@ export interface ThemePalette extends Record<RampKey, string> {
 
 // ---- colour helpers --------------------------------------------------------
 
+/** The only colour syntax any theme value may use. */
+export const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
+
 function parse(hex: string): [number, number, number] {
+  // Anything that isn't a hex colour reads as black rather than as three NaNs.
+  // Every path into the palette validates first, so this is only ever reached by
+  // a value that slipped past one — and a wrong colour beats `#NaNNaNNaN`, which
+  // no CSS property would accept at all.
+  if (!COLOR_RE.test(hex)) return [0, 0, 0]
   const h = hex.replace('#', '')
   const full = h.length === 3 ? h.replace(/./g, (c) => c + c) : h
   return [
@@ -226,14 +266,22 @@ export function buildPalette(seed: ThemeSeed): ThemePalette {
     accentText: seed.accentText,
     danger: seed.danger,
     kindIcon: seed.kindIcon,
+    cursor: seed.cursor ?? seed.accent,
+    cursorText: seed.cursorText ?? seed.bg,
+    selectionHex: seed.selection ?? seed.accent,
+    selectionAlpha: seed.selectionAlpha ?? 0.3,
+    selection: `rgba(${rgbTriplet(seed.selection ?? seed.accent)},${seed.selectionAlpha ?? 0.3})`,
     bgRgb: rgbTriplet(seed.bg),
     inkRgb: rgbTriplet(seed.fg),
     accentRgb: rgbTriplet(seed.accent),
     dangerRgb: rgbTriplet(seed.danger),
     shadowRgb: rgbTriplet(seed.shadow),
-    status: seed.status,
-    ansi: seed.ansi,
-    syntax: seed.syntax,
+    // Copied, not shared: a live draft in the theme editor is rebuilt from a seed
+    // on every keystroke, and handing out the seed's own objects would let a
+    // palette move underneath whoever is holding it.
+    status: { ...seed.status },
+    ansi: { ...seed.ansi },
+    syntax: { ...seed.syntax },
     uiWeight: seed.uiWeight ?? 400,
     texture: seed.texture ?? 'none',
   }
@@ -677,8 +725,17 @@ export const THEMES: ThemePalette[] = THEME_SEEDS.map(buildPalette)
 
 const BY_ID = new Map(THEMES.map((t) => [t.id, t]))
 
+/** The user's own themes, published by `setCustomThemes()` below. */
+let CUSTOM: CustomTheme[] = []
+let CUSTOM_BY_ID = new Map<string, ThemePalette>()
+
+/**
+ * The palette for an id — a built-in, then one of the user's own, then the
+ * default. Unknown ids fall through rather than throwing, which is what keeps a
+ * deleted or mistyped theme from ever leaving the app without colours.
+ */
 export function themeById(id: string | undefined): ThemePalette {
-  return BY_ID.get(id ?? '') ?? BY_ID.get(DEFAULT_THEME_ID)!
+  return BY_ID.get(id ?? '') ?? CUSTOM_BY_ID.get(id ?? '') ?? BY_ID.get(DEFAULT_THEME_ID)!
 }
 
 /** Colour tokens a `customTheme` block may override (the flat, string-valued ones). */
@@ -690,23 +747,36 @@ export type ThemeOverrides = Partial<
   >
 >
 
-const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
-
 /**
  * Resolve the palette a set of settings asks for: the named theme (falling back
  * to the default on an unknown id), with any `customTheme` colours laid over the
  * *derived* palette so an override beats the ramp. Values that aren't hex are
  * dropped rather than applied, so a hand-edited settings.json can't blank the UI.
+ *
+ * One of the user's own themes takes no overrides. Duplicating bakes whatever
+ * `customTheme` was in force into the copy, so laying the same block on again
+ * would count it twice — and, worse, would silently swallow every edit the theme
+ * editor made to an overridden token. The block keeps its documented meaning:
+ * a way to nudge a *built-in* from settings.json.
  */
 export function resolveTheme(theme: string | undefined, custom?: ThemeOverrides): ThemePalette {
   const base = themeById(theme)
-  if (!custom) return base
+  if (!custom || base.group === 'custom') return base
   const out: ThemePalette = { ...base }
   for (const [key, value] of Object.entries(custom)) {
     if (typeof value !== 'string' || !COLOR_RE.test(value)) continue
     if (key === 'shadow') out.shadowRgb = rgbTriplet(value)
     else if (key in out) (out as unknown as Record<string, string>)[key] = value
   }
+  // Cursor and selection are derived from `accent` and `bg` unless the theme
+  // pinned them, so an override of the source colour has to carry them along —
+  // otherwise recolouring the accent leaves the caret painted the old one. A
+  // pinned value differs from what derivation would have produced, which is what
+  // this comparison detects.
+  if (base.cursor === base.accent) out.cursor = out.accent
+  if (base.cursorText === base.bg) out.cursorText = out.bg
+  if (base.selectionHex === base.accent) out.selectionHex = out.accent
+  out.selection = `rgba(${rgbTriplet(out.selectionHex)},${out.selectionAlpha})`
   // Keep the triplets in step with any overridden source colour.
   out.bgRgb = rgbTriplet(out.bg)
   out.inkRgb = rgbTriplet(out.text)
@@ -744,6 +814,10 @@ export function cssVars(p: ThemePalette): Record<string, string> {
     '--c-accent-text': p.accentText,
     '--c-danger': p.danger,
     '--c-kind-icon': p.kindIcon,
+    '--c-cursor': p.cursor,
+    '--c-cursor-text': p.cursorText,
+    '--c-selection': p.selection,
+    '--c-selection-hex': p.selectionHex,
     '--c-bg-rgb': p.bgRgb,
     '--c-ink-rgb': p.inkRgb,
     '--c-accent-rgb': p.accentRgb,
@@ -756,4 +830,355 @@ export function cssVars(p: ThemePalette): Record<string, string> {
   for (const [key, value] of Object.entries(p.status)) vars[`--c-status-${key}`] = value
   for (const [key, value] of Object.entries(p.syntax)) vars[`--c-syn-${key}`] = value
   return vars
+}
+
+// ---- the user's own themes -------------------------------------------------
+//
+// A custom theme is a seed like any other — the same twenty-odd authored values,
+// run through the same derivation. What makes it "custom" is only where it lives
+// (its own file, not this one) and that it carries a `custom` group so the picker
+// can shelve it separately. Built-ins are never edited in place; you copy one.
+
+export interface CustomTheme extends ThemeSeed {
+  group: 'custom'
+  /** Name of the theme this was copied from — a label, never a live link. */
+  from?: string
+  createdAt: number
+}
+
+/** Ids only have to be unique and stable; the shape mirrors `newBrowserId()`. */
+export function newThemeId(): string {
+  return `custom-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+}
+
+/**
+ * Publish the user's themes to the lookup. Called at boot in both processes (the
+ * main one needs it for the window's background colour, the renderer before its
+ * first paint) and again on every change — the theme editor re-publishes its
+ * draft on each keystroke, which is what makes editing repaint live.
+ *
+ * Built-ins win an id collision, so a hand-written `themes.json` can't shadow
+ * one out of existence.
+ */
+export function setCustomThemes(list: CustomTheme[]): void {
+  const seen = new Set<string>()
+  const kept: CustomTheme[] = []
+  for (const seed of list) {
+    if (BY_ID.has(seed.id) || seen.has(seed.id)) continue
+    seen.add(seed.id)
+    kept.push(seed)
+  }
+  CUSTOM = kept
+  CUSTOM_BY_ID = new Map(kept.map((s) => [s.id, buildPalette(s)]))
+}
+
+export function customThemes(): CustomTheme[] {
+  return CUSTOM
+}
+
+export function customPalettes(): ThemePalette[] {
+  return CUSTOM.map((s) => CUSTOM_BY_ID.get(s.id)!).filter(Boolean)
+}
+
+/** Every palette the picker can offer, the user's own first. */
+export function allPalettes(): ThemePalette[] {
+  return [...customPalettes(), ...THEMES]
+}
+
+export function isBuiltIn(id: string): boolean {
+  return BY_ID.has(id)
+}
+
+/** The authored seed behind an id — a built-in's, or one of the user's. */
+export function seedById(id: string): ThemeSeed | undefined {
+  return THEME_SEEDS.find((s) => s.id === id) ?? CUSTOM.find((s) => s.id === id)
+}
+
+/**
+ * Freeze what's on screen into a theme of the user's own.
+ *
+ * Two things have to be true at once. The copy must render *exactly* what they
+ * were looking at, `customTheme` overrides included, and must never move again
+ * when the built-in it came from does — but `elev` and the `bg`/`hi`/`fg` anchors
+ * have to stay live, or the group controls in the editor would have nothing to
+ * drive.
+ *
+ * So: fold the overrides into the seed's *authored* slots (which keeps derivation
+ * tracking them), then pin whatever derivation no longer reproduces. That second
+ * pass is what makes the copy exact — `resolveTheme` lays overrides over the
+ * *built* palette, so folding `bg` into the seed re-derives all five surfaces and
+ * folding an anchor re-derives the ramp. Every pin it leaves behind is one the
+ * editor can take back off again.
+ */
+export function snapshotSeed(
+  sourceId: string,
+  overrides: ThemeOverrides | undefined,
+  name: string,
+  id: string = newThemeId(),
+): CustomTheme {
+  const base = seedById(sourceId) ?? THEME_SEEDS[0]
+  const target = resolveTheme(sourceId, overrides)
+  const seed: CustomTheme = {
+    ...base,
+    surfaces: { ...base.surfaces },
+    ramp: { ...base.ramp },
+    status: { ...base.status },
+    ansi: { ...base.ansi },
+    syntax: { ...base.syntax },
+    id,
+    name,
+    group: 'custom',
+    from: base.name,
+    createdAt: Date.now(),
+  }
+
+  for (const [key, value] of Object.entries(overrides ?? {})) {
+    if (typeof value !== 'string' || !COLOR_RE.test(value)) continue
+    if (key === 'textMax') seed.hi = value
+    else if (key === 'text') seed.fg = value
+    else if ((SURFACE_KEYS as readonly string[]).includes(key)) {
+      seed.surfaces![key as keyof Surfaces] = value
+    } else if ((RAMP_KEYS as string[]).includes(key)) {
+      seed.ramp![key as RampKey] = value
+    } else if (key in seed) {
+      ;(seed as unknown as Record<string, string>)[key] = value
+    }
+  }
+
+  const built = buildPalette(seed)
+  for (const k of SURFACE_KEYS) if (built[k] !== target[k]) seed.surfaces![k] = target[k]
+  for (const k of RAMP_KEYS) if (built[k] !== target[k]) seed.ramp![k] = target[k]
+  if (Object.keys(seed.surfaces!).length === 0) delete seed.surfaces
+  if (Object.keys(seed.ramp!).length === 0) delete seed.ramp
+  return seed
+}
+
+// ---- readability -----------------------------------------------------------
+
+function channelLuminance(c: number): number {
+  const s = c / 255
+  return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+}
+
+/** WCAG 2.1 relative luminance. */
+function luminance(hex: string): number {
+  const [r, g, b] = parse(hex)
+  return 0.2126 * channelLuminance(r) + 0.7152 * channelLuminance(g) + 0.0722 * channelLuminance(b)
+}
+
+/** WCAG 2.1 contrast ratio: 1 for two identical colours, 21 for black on white. */
+export function contrastRatio(a: string, b: string): number {
+  const la = luminance(a)
+  const lb = luminance(b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
+export interface ContrastWarning {
+  /** Which editor section the offending pair lives in, so it can be shown there. */
+  section: 'base' | 'terminal' | 'details'
+  label: string
+  ratio: number
+  need: number
+}
+
+/**
+ * The readability problems in a palette, worst first.
+ *
+ * The bar is "can you read this", not a WCAG audit: every one of the fifteen
+ * built-ins is a well-regarded palette, and a warning all fifteen raise is one
+ * nobody reads. So body text is held to WCAG's 4.5:1, and everything that is
+ * *meant* to recede — indicators, terminal output, the accent's own label — to
+ * 2.5:1, which is roughly where a colour stops being distinguishable from the
+ * ground rather than merely quiet.
+ *
+ * Two exemptions for the same reason. `closed` is a deliberately dimmed status
+ * (`dotStyle` fades it further still), and each ANSI polarity has two slots that
+ * are the ground by convention — `black`/`brightBlack` on a dark theme,
+ * `white`/`brightWhite` on a light one. The ramp's `muted`, `body` and `faint`
+ * steps aren't checked at all: being low-contrast is what they are for.
+ *
+ * All fifteen built-ins come back clean, so anything this reports is something
+ * the user did.
+ */
+export function contrastWarnings(p: ThemePalette): ContrastWarning[] {
+  const out: ContrastWarning[] = []
+  const check = (
+    section: ContrastWarning['section'],
+    label: string,
+    fg: string,
+    bg: string,
+    need: number,
+  ): void => {
+    const ratio = contrastRatio(fg, bg)
+    if (ratio < need) out.push({ section, label, ratio, need })
+  }
+  check('base', 'Body text on the background', p.text, p.bg, 4.5)
+  check('base', 'Headings on the background', p.textMax, p.bg, 4.5)
+  check('base', 'Body text on a panel', p.text, p.panel, 4.5)
+  check('base', 'Text in an input', p.textMax, p.input, 4.5)
+  check('base', 'Button text on the accent', p.accentText, p.accent, 2.5)
+  check('base', 'The danger colour on the background', p.danger, p.bg, 2.5)
+  for (const [key, value] of Object.entries(p.status)) {
+    if (key === 'closed') continue
+    check('details', `The ${key} status colour`, value, p.bg, 2.5)
+  }
+  const ground = p.dark ? ['black', 'brightBlack'] : ['white', 'brightWhite']
+  for (const [key, value] of Object.entries(p.ansi)) {
+    if (ground.includes(key)) continue
+    check('terminal', `Terminal ${key}`, value, p.bg, 2.5)
+  }
+  check('terminal', 'The cursor on the background', p.cursor, p.bg, 2.5)
+  return out.sort((a, b) => a.ratio - b.ratio)
+}
+
+// ---- sanitising, export, import --------------------------------------------
+
+const UI_WEIGHTS = [400, 500, 600] as const
+
+function hexOr(value: unknown, fallback: string): string {
+  return typeof value === 'string' && COLOR_RE.test(value) ? value.toLowerCase() : fallback
+}
+
+function optHex(value: unknown): string | undefined {
+  return typeof value === 'string' && COLOR_RE.test(value) ? value.toLowerCase() : undefined
+}
+
+function partialHex<K extends string>(
+  value: unknown,
+  keys: readonly K[],
+): Partial<Record<K, string>> | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const src = value as Record<string, unknown>
+  const out: Partial<Record<K, string>> = {}
+  for (const key of keys) {
+    const hex = optHex(src[key])
+    if (hex) out[key] = hex
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/** Rebuild a fully-populated colour block, falling back key by key. */
+function fullHex<T extends object>(value: unknown, fallback: T): T {
+  const src = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
+  const out: Record<string, string> = {}
+  for (const [key, val] of Object.entries(fallback)) out[key] = hexOr(src[key], val as string)
+  return out as T
+}
+
+function safeText(value: unknown, fallback: string, max: number): string {
+  const text = typeof value === 'string' ? value.trim().slice(0, max) : ''
+  return text || fallback
+}
+
+function safeId(value: unknown): string | null {
+  const slug = (typeof value === 'string' ? value : '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
+  return slug ? slug.slice(0, 64) : null
+}
+
+/**
+ * A texture is a raw CSS `background-image`, and an imported theme is text
+ * somebody pasted — so only the gradient functions get through. `url()` and
+ * `image-set()` would let a shared palette make the app fetch a remote image.
+ */
+function safeTexture(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const text = value.trim()
+  if (!text || text === 'none') return 'none'
+  if (text.length > 2000) return fallback
+  if (/url\(|image-set\(|["'\;]|@import|expression\(/i.test(text)) return fallback
+  if (!/^[a-z-]*gradient\(/i.test(text)) return fallback
+  return text
+}
+
+/**
+ * Turn something that claims to be a theme into one that definitely is. Every
+ * value that fails validation falls back on its own rather than taking the whole
+ * theme down with it, so a file with one bad colour loses that colour and keeps
+ * the rest. Used on everything arriving from disk, an import, or a paste.
+ */
+export function sanitizeSeed(input: unknown, fallback: ThemeSeed = THEME_SEEDS[0]): CustomTheme | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null
+  const src = input as Record<string, unknown>
+  const elev = Number(src.elev)
+  const seed: CustomTheme = {
+    id: safeId(src.id) ?? newThemeId(),
+    name: safeText(src.name, 'Custom theme', 60),
+    group: 'custom',
+    dark: typeof src.dark === 'boolean' ? src.dark : fallback.dark,
+    bg: hexOr(src.bg, fallback.bg),
+    elev: Number.isFinite(elev) ? Math.max(-40, Math.min(40, Math.round(elev))) : fallback.elev,
+    hi: hexOr(src.hi, fallback.hi),
+    fg: hexOr(src.fg, fallback.fg),
+    accent: hexOr(src.accent, fallback.accent),
+    accentSoft: hexOr(src.accentSoft, fallback.accentSoft),
+    accentText: hexOr(src.accentText, fallback.accentText),
+    danger: hexOr(src.danger, fallback.danger),
+    kindIcon: hexOr(src.kindIcon, fallback.kindIcon),
+    shadow: hexOr(src.shadow, fallback.shadow),
+    status: fullHex(src.status, fallback.status),
+    ansi: fullHex(src.ansi, fallback.ansi),
+    syntax: fullHex(src.syntax, fallback.syntax),
+    texture: safeTexture(src.texture, fallback.texture ?? 'none'),
+    createdAt: Number.isFinite(Number(src.createdAt)) ? Number(src.createdAt) : Date.now(),
+  }
+  const surfaces = partialHex(src.surfaces, SURFACE_KEYS)
+  if (surfaces) seed.surfaces = surfaces
+  const ramp = partialHex(src.ramp, RAMP_KEYS)
+  if (ramp) seed.ramp = ramp
+  const cursor = optHex(src.cursor)
+  if (cursor) seed.cursor = cursor
+  const cursorText = optHex(src.cursorText)
+  if (cursorText) seed.cursorText = cursorText
+  const selection = optHex(src.selection)
+  if (selection) seed.selection = selection
+  const alpha = Number(src.selectionAlpha)
+  if (Number.isFinite(alpha)) seed.selectionAlpha = Math.max(0.05, Math.min(0.9, alpha))
+  const weight = UI_WEIGHTS.find((w) => w === Number(src.uiWeight))
+  if (weight) seed.uiWeight = weight
+  if (typeof src.from === 'string') seed.from = src.from.trim().slice(0, 60)
+  return seed
+}
+
+/** The keys that make a pasted object recognisable as a theme. */
+const THEME_KEYS = new Set([
+  'name', 'dark', 'bg', 'elev', 'surfaces', 'hi', 'fg', 'ramp', 'accent', 'accentSoft',
+  'accentText', 'danger', 'kindIcon', 'shadow', 'cursor', 'cursorText', 'selection',
+  'selectionAlpha', 'status', 'ansi', 'syntax', 'uiWeight', 'texture',
+])
+
+/**
+ * A theme as shareable text. The identity fields are left out: what's worth
+ * sending someone is the palette, and an import always lands as a new theme of
+ * their own rather than claiming an id in their file.
+ */
+export function exportTheme(seed: ThemeSeed): string {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(seed)) {
+    if (THEME_KEYS.has(key)) out[key] = value
+  }
+  return JSON.stringify(out, null, 2)
+}
+
+/**
+ * Read a theme back. Tolerates a *partial* object on purpose — pasting just the
+ * `ansi` block out of a published palette fills everything else from the default
+ * theme, which is the common way one of these arrives.
+ */
+export function importTheme(
+  text: string,
+): { ok: true; seed: CustomTheme } | { ok: false; reason: string } {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return { ok: false, reason: "That isn't valid JSON." }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, reason: 'A theme has to be a JSON object.' }
+  }
+  if (!Object.keys(parsed).some((key) => THEME_KEYS.has(key))) {
+    return { ok: false, reason: "That object doesn't carry any theme colours." }
+  }
+  const seed = sanitizeSeed({ ...parsed, id: undefined, createdAt: undefined })
+  return seed ? { ok: true, seed } : { ok: false, reason: "That object doesn't carry any theme colours." }
 }

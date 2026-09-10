@@ -8,7 +8,8 @@ import { loadPersisted, setWindow, wireProcessEvents } from './state'
 import { startReportServer, stopReportServer } from './report-server'
 import { applyGlobalShortcut, disposeGlobalShortcut } from './window-toggle'
 import { loadSettings } from './settings'
-import { resolveTheme } from '../shared/themes'
+import { resolveTheme, setCustomThemes } from '../shared/themes'
+import { loadCustomThemes } from './theme-store'
 
 let win: BrowserWindow | null = null
 
@@ -20,6 +21,9 @@ function createWindow(): void {
     : join(__dirname, '../../build/icon.png')
 
   const settings = loadSettings()
+  // Publish the user's own themes before resolving, so a window on a custom theme
+  // still opens on its real background rather than falling back to the default.
+  setCustomThemes(loadCustomThemes())
   const theme = resolveTheme(settings.theme, settings.customTheme)
 
   win = new BrowserWindow({

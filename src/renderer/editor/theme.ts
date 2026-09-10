@@ -15,15 +15,17 @@ function chrome(dark: boolean): Extension {
     {
       '&': { color: C.text, backgroundColor: C.bg, height: '100%', fontSize: '13px' },
       '.cm-scroller': { fontFamily: FONT, lineHeight: '1.55' },
-      '.cm-content': { caretColor: C.accent },
-      '.cm-cursor, .cm-dropCursor': { borderLeftColor: C.accent },
-      '&.cm-focused .cm-cursor': { borderLeftColor: C.accent },
+      '.cm-content': { caretColor: C.cursor },
+      '.cm-cursor, .cm-dropCursor': { borderLeftColor: C.cursor },
+      '&.cm-focused .cm-cursor': { borderLeftColor: C.cursor },
       '.cm-gutters': { backgroundColor: C.bg, color: C.dim, border: 'none' },
       '.cm-activeLine': { backgroundColor: C.hover },
       '.cm-activeLineGutter': { backgroundColor: C.hover, color: C.muted },
       '.cm-foldPlaceholder': { backgroundColor: C.panel2, color: C.muted, border: 'none' },
+      // The theme's own selection colour, so a pane and an editor tab agree. The
+      // search and match highlights stay accent-mixed: those are a different idea.
       '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-        backgroundColor: accentA(0.3),
+        backgroundColor: C.selection,
       },
       '.cm-selectionMatch': { backgroundColor: accentA(0.18) },
       '.cm-panels': { backgroundColor: C.panel, color: C.text },

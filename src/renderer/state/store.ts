@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Session, Settings } from '../../shared/types'
+import { type CustomTheme, setCustomThemes as publishThemes } from '../../shared/themes'
 import type { IconName } from '../icons'
 import * as editor from '../editor/registry'
 
@@ -95,6 +96,8 @@ interface StoreState {
   showNew: boolean
   showSettings: boolean
   showNotes: boolean
+  /** Id of the custom theme the theme editor is open on, if any. */
+  themeEditorFor: string | null
   /** Session whose conversation the branch picker is open for. */
   branchFor: string | null
   /**
@@ -110,6 +113,8 @@ interface StoreState {
   contextMenu: ContextMenuState | null
   newPrefill: NewPrefill | null
   settings: Settings | null
+  /** The user's own themes. Mirrored into shared/themes.ts by `setCustomThemes`. */
+  customThemes: CustomTheme[]
   toasts: ToastItem[]
 
   init(): Promise<void>
@@ -127,11 +132,13 @@ interface StoreState {
   closeContextMenu(): void
   setShowSettings(v: boolean): void
   setShowNotes(v: boolean): void
+  setThemeEditorFor(id: string | null): void
   setBranchFor(id: string | null): void
   toggleTranscript(id: string): void
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
+  setCustomThemes(list: CustomTheme[]): void
   pushToast(t: Omit<ToastItem, 'id'>): void
   dismissToast(id: number): void
 }
@@ -153,6 +160,7 @@ export const useStore = create<StoreState>((set, get) => ({
   showNew: false,
   showSettings: false,
   showNotes: false,
+  themeEditorFor: null,
   branchFor: null,
   transcripts: {},
   sidebarHidden: false,
@@ -162,15 +170,20 @@ export const useStore = create<StoreState>((set, get) => ({
   contextMenu: null,
   newPrefill: null,
   settings: null,
+  customThemes: [],
   toasts: [],
 
   async init() {
     if (initialized) return
     initialized = true
-    const [list, settings] = await Promise.all([
+    const [list, settings, themes] = await Promise.all([
       window.terminator.listSessions(),
       window.terminator.getSettings(),
+      window.terminator.getCustomThemes(),
     ])
+    // main.tsx already published these before the first paint; doing it again is
+    // idempotent and keeps the one code path that owns the mirror.
+    get().setCustomThemes(themes)
     const sessions: Record<string, Session> = {}
     const order: string[] = []
     for (const s of list) {
@@ -349,6 +362,9 @@ export const useStore = create<StoreState>((set, get) => ({
   setShowNotes(v) {
     set({ showNotes: v })
   },
+  setThemeEditorFor(id) {
+    set({ themeEditorFor: id })
+  },
   setBranchFor(id) {
     set({ branchFor: id })
   },
@@ -363,6 +379,15 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   setSettings(s) {
     set({ settings: s })
+  },
+  /**
+   * The store holds the themes so React re-renders on a change; shared/themes.ts
+   * holds them so `resolveTheme` can find one by id. Both are set here, so the
+   * lookup can never be a step behind what the picker is showing.
+   */
+  setCustomThemes(list) {
+    publishThemes(list)
+    set({ customThemes: list })
   },
   pushToast(t) {
     // Newest first, and never more than a few on screen at once.

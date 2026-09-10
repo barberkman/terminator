@@ -1,4 +1,4 @@
-import type { ThemeOverrides } from './themes'
+import type { CustomTheme, ThemeOverrides } from './themes'
 
 // Shared types used across main / preload / renderer.
 
@@ -342,8 +342,14 @@ export interface Settings {
   sidebarSide: 'left' | 'right'
   /** Id of the active colour theme (see shared/themes.ts). Unknown ids fall back to the default. */
   theme: string
-  /** Optional per-token colour overrides laid over the selected theme. Edited on disk. */
+  /**
+   * Optional per-token colour overrides laid over the selected theme. Edited on
+   * disk, and a way to nudge a *built-in*: one of the user's own themes already
+   * carries whatever was in force when it was copied, so it takes no overrides.
+   */
   customTheme?: ThemeOverrides
+  /** Which Settings sections are expanded. A missing key means collapsed. */
+  settingsOpen?: Record<string, boolean>
   /** Electron accelerator for the global show/hide hotkey. Empty = disabled. */
   globalToggleShortcut: string
   /** Electron accelerator to toggle the Notes overlay (renderer-side). Empty = disabled. */
@@ -453,6 +459,14 @@ export interface TerminatorApi {
   getSettings(): Promise<Settings>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   getGlobalShortcutStatus(): Promise<{ accelerator: string; registered: boolean }>
+
+  // the user's own themes (themes.json)
+  getCustomThemes(): Promise<CustomTheme[]>
+  /**
+   * Replace the whole set. Comes back with the settings too, because dropping the
+   * theme you were using has to move the selection as well as the list.
+   */
+  saveCustomThemes(list: CustomTheme[]): Promise<{ themes: CustomTheme[]; settings: Settings }>
 
   // UI zoom (global font scaling)
   setZoom(factor: number): void

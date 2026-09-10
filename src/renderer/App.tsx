@@ -10,6 +10,7 @@ import { NewSessionModal } from './components/NewSessionModal'
 import { BranchModal } from './components/BranchModal'
 import { SessionContextMenu } from './components/SessionContextMenu'
 import { SettingsView } from './components/SettingsView'
+import { ThemeEditorView } from './components/ThemeEditorView'
 import { NotesView } from './components/NotesView'
 import { Toasts } from './components/Toasts'
 import { matchesAccelerator } from './shortcuts'
@@ -120,7 +121,7 @@ export function App(): React.JSX.Element {
       const m = /^Digit([1-9])$/.exec(e.code)
       if (!m) return
       const st = useStore.getState()
-      if (st.showNew || st.showSettings || st.branchFor || st.contextMenu) return // don't switch underneath a modal
+      if (st.showNew || st.showSettings || st.themeEditorFor || st.branchFor || st.contextMenu) return // don't switch underneath a modal
       const list = buildGroups(st.order, st.sessions).flatMap((g) => g.sessions)
       const target = list[Number(m[1]) - 1]
       if (!target) return
@@ -141,12 +142,15 @@ export function App(): React.JSX.Element {
       if (e.key !== 'Escape') return
       const st = useStore.getState()
       // Close the highest-stacked overlay by zIndex: ContextMenu(78) > Notes(60) >
-      // Confirm(55) > Settings/New/Branch(50). The menu normally handles its own
-      // Escape (capture phase, so it runs before this and stops propagation);
-      // this branch is the fallback for when focus has drifted off the panel.
+      // Confirm(55) > ThemeEditor(52) > Settings/New/Branch(50). The menu normally
+      // handles its own Escape (capture phase, so it runs before this and stops
+      // propagation); this branch is the fallback for when focus has drifted off
+      // the panel. The theme editor sits above Settings, which stays open with its
+      // draft intact underneath — so Esc out of it lands you back where you were.
       if (st.contextMenu) st.closeContextMenu()
       else if (st.showNotes) st.setShowNotes(false)
       else if (st.confirm) st.setConfirm(null)
+      else if (st.themeEditorFor) st.setThemeEditorFor(null)
       else if (st.showSettings) st.setShowSettings(false)
       else if (st.showNew) st.setShowNew(false)
       else if (st.branchFor) st.setBranchFor(null)
@@ -174,7 +178,7 @@ export function App(): React.JSX.Element {
       const st = useStore.getState()
       const accel = st.settings?.notesShortcut ?? ''
       if (!accel || !matchesAccelerator(e, accel)) return
-      if (st.showNew || st.showSettings || st.confirm || st.branchFor || st.contextMenu) return // don't toggle underneath another modal
+      if (st.showNew || st.showSettings || st.themeEditorFor || st.confirm || st.branchFor || st.contextMenu) return // don't toggle underneath another modal
       e.preventDefault()
       e.stopPropagation()
       st.setShowNotes(!st.showNotes)
@@ -214,6 +218,7 @@ export function App(): React.JSX.Element {
       <NewSessionModal />
       <BranchModal />
       <SettingsView />
+      <ThemeEditorView />
       <NotesView />
       <Toasts />
     </div>
