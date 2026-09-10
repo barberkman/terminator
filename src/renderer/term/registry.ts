@@ -97,14 +97,18 @@ function wireGlobalStreams(): void {
   window.terminator.onPtyExit((p) => {
     entries.get(p.id)?.term.write('\r\n\x1b[2m── process exited ──\x1b[0m\r\n')
   })
-  // Mode switch relaunches the pty; clear the terminal so the resumed Claude TUI
-  // draws into a clean buffer, and return keyboard focus to it (the click was on
-  // the lock button) so the user can type immediately.
+  // A relaunch (mode switch, or Relaunch from a context menu) restarts the pty;
+  // clear the terminal so the resumed Claude TUI draws into a clean buffer, and
+  // return keyboard focus to it so the user can type immediately. Only when it's
+  // actually on screen: a session relaunched from the sidebar may be parked in
+  // the offscreen holder, and focusing that would take the keyboard nowhere.
   window.terminator.onPtyReset((id) => {
     const e = entries.get(id)
     if (!e) return
     e.term.reset()
-    requestAnimationFrame(() => e.term.focus())
+    if (e.host.parentElement && e.host.parentElement !== holder) {
+      requestAnimationFrame(() => e.term.focus())
+    }
   })
 }
 

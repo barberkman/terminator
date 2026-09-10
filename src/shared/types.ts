@@ -23,6 +23,16 @@ export type SessionMode = 'normal' | 'readonly'
 /** Unified status. Claude uses all five; plain shells use busy(=running)/idle/closed. */
 export type SessionStatus = 'busy' | 'waiting' | 'idle' | 'error' | 'closed'
 
+/**
+ * Which of a session's two folders an action means. A session with a git worktree
+ * points at both the worktree and the repo it was cut from, and they are not
+ * interchangeable: a second Claude in the worktree is two agents on one working
+ * copy, while a terminal there is exactly how you test what the first one wrote.
+ * 'session' is the app's long-standing `worktreePath || projectPath` idiom and
+ * stays the default, so callers that never cared keep their behaviour.
+ */
+export type FolderChoice = 'session' | 'project'
+
 /** Notification categories — passed to the configurable notification command. */
 export type NotifType = 'waiting' | 'finished' | 'error' | 'exited'
 
@@ -388,14 +398,20 @@ export interface TerminatorApi {
   // sessions
   listSessions(): Promise<Session[]>
   createSession(input: CreateSessionInput): Promise<Session>
-  startSession(id: string, cols: number, rows: number): Promise<void>
+  /** Size is optional: a start from the sidebar has no pane to measure, and the
+   *  launcher falls back to the session's last known terminal size. */
+  startSession(id: string, cols?: number, rows?: number): Promise<void>
   removeSession(id: string): Promise<void>
   renameSession(id: string, name: string): Promise<void>
   setMode(id: string, mode: SessionMode): Promise<void>
+  /** End a session's process on purpose, keeping the session. Lands 'closed', never 'error'. */
+  stopSession(id: string): Promise<void>
+  /** Kill and start the same session again in place, reusing its terminal size. */
+  relaunchSession(id: string): Promise<void>
   /** Type the Build/Run/Stop command into the task's terminal (starting it if needed). */
   runTaskCommand(id: string, task: TaskCommand): Promise<void>
-  openGitGui(id: string): Promise<void>
-  openInFolder(id: string): Promise<void>
+  openGitGui(id: string, which?: FolderChoice): Promise<void>
+  openInFolder(id: string, which?: FolderChoice): Promise<void>
   removeWorktree(id: string): Promise<void>
   clearNotified(id: string): void
   /** Persist a new full session order (used by sidebar drag-reorder). */

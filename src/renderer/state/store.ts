@@ -6,6 +6,43 @@ import * as editor from '../editor/registry'
 export type LayoutName = 'single' | 'cols2' | 'grid4'
 export const LAYOUT_COUNT: Record<LayoutName, number> = { single: 1, cols2: 2, grid4: 4 }
 
+/** Human name per split, index-aligned with `panes`. */
+export const PANE_LABELS: Record<LayoutName, string[]> = {
+  single: ['Pane'],
+  cols2: ['Left', 'Right'],
+  grid4: ['Top left', 'Top right', 'Bottom left', 'Bottom right'],
+}
+
+/**
+ * What a context menu was opened on. Sessions are a *list* from the start, even
+ * though every call site passes exactly one id today: selecting several rows and
+ * acting on them together is a wanted future, and this is the shape that makes it
+ * new state feeding the menu rather than a rewrite of every action in it.
+ */
+export type MenuTarget =
+  | { kind: 'sessions'; ids: string[] }
+  | { kind: 'project'; name: string; path: string }
+
+export interface ContextMenuState {
+  target: MenuTarget
+  /** Viewport coordinates of the click that opened it. */
+  x: number
+  y: number
+}
+
+/** Seed values for the New Session dialog when it's opened from a menu. */
+export interface NewPrefill {
+  projectPath: string
+  projectName?: string
+}
+
+/**
+ * Which surface owns the rename input. `editingId` is global, so without this a
+ * session that is both open in a pane and visible in the sidebar would render two
+ * autofocused inputs fighting over one name.
+ */
+export type EditSurface = 'pane' | 'sidebar'
+
 export interface ConfirmState {
   kind: 'close' | 'remove' | 'worktree'
   id: string
@@ -68,7 +105,10 @@ interface StoreState {
   transcripts: Record<string, boolean>
   sidebarHidden: boolean
   editingId: string | null
+  editingWhere: EditSurface
   confirm: ConfirmState | null
+  contextMenu: ContextMenuState | null
+  newPrefill: NewPrefill | null
   settings: Settings | null
   toasts: ToastItem[]
 
@@ -77,11 +117,14 @@ interface StoreState {
   remove(id: string): void
   setLayout(name: LayoutName): void
   openSession(id: string): void
+  openInPane(id: string, index: number): void
   reorderWithinGroup(draggedId: string, targetId: string): void
   focusPane(i: number): void
   toggleGroup(name: string): void
-  startEdit(id: string | null): void
-  setShowNew(v: boolean): void
+  startEdit(id: string | null, where?: EditSurface): void
+  setShowNew(v: boolean, prefill?: NewPrefill): void
+  openContextMenu(m: ContextMenuState): void
+  closeContextMenu(): void
   setShowSettings(v: boolean): void
   setShowNotes(v: boolean): void
   setBranchFor(id: string | null): void
@@ -114,7 +157,10 @@ export const useStore = create<StoreState>((set, get) => ({
   transcripts: {},
   sidebarHidden: false,
   editingId: null,
+  editingWhere: 'pane',
   confirm: null,
+  contextMenu: null,
+  newPrefill: null,
   settings: null,
   toasts: [],
 
@@ -174,6 +220,10 @@ export const useStore = create<StoreState>((set, get) => ({
         transcripts,
         focused: Math.min(st.focused, Math.max(0, panes.length - 1)),
         confirm: st.confirm?.id === id ? null : st.confirm,
+        contextMenu:
+          st.contextMenu?.target.kind === 'sessions' && st.contextMenu.target.ids.includes(id)
+            ? null
+            : st.contextMenu,
         editingId: st.editingId === id ? null : st.editingId,
       }
     })
@@ -231,6 +281,27 @@ export const useStore = create<StoreState>((set, get) => ({
     })
   },
 
+  /**
+   * Put a session in one named split, rather than letting openSession choose. It
+   * vacates any other pane holding it first: `remove()`'s backfill assumes a
+   * session appears in `panes` at most once, and one xterm host element can only
+   * live in one pane anyway.
+   */
+  openInPane(id, index) {
+    set((st) => {
+      if (index < 0 || index >= st.panes.length) return {}
+      const panes = st.panes.slice()
+      const prev = panes.indexOf(id)
+      if (prev >= 0 && prev !== index) panes[prev] = ''
+      panes[index] = id
+      const cur = st.sessions[id]
+      if (cur?.notified) window.terminator.clearNotified(id)
+      const sessions =
+        cur && cur.notified ? { ...st.sessions, [id]: { ...cur, notified: false } } : st.sessions
+      return { panes, focused: index, sessions, editingId: null }
+    })
+  },
+
   reorderWithinGroup(draggedId, targetId) {
     if (draggedId === targetId) return
     set((st) => {
@@ -256,12 +327,21 @@ export const useStore = create<StoreState>((set, get) => ({
     set((st) => ({ collapsed: { ...st.collapsed, [name]: !st.collapsed[name] } }))
   },
 
-  startEdit(id) {
-    set({ editingId: id })
+  startEdit(id, where = 'pane') {
+    set({ editingId: id, editingWhere: where })
   },
 
-  setShowNew(v) {
-    set({ showNew: v })
+  setShowNew(v, prefill) {
+    set({ showNew: v, newPrefill: v ? (prefill ?? null) : null })
+  },
+
+  openContextMenu(m) {
+    // Deliberately touches nothing else: a right-click is not an open, so panes,
+    // focus, `notified` and any in-progress rename are all left alone.
+    set({ contextMenu: m })
+  },
+  closeContextMenu() {
+    set({ contextMenu: null })
   },
   setShowSettings(v) {
     set({ showSettings: v })

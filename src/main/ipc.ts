@@ -6,6 +6,7 @@ import type {
   BranchSessionInput,
   ConversationSlice,
   CreateSessionInput,
+  FolderChoice,
   OpenFileInput,
   SessionMode,
   TaskCommand,
@@ -16,7 +17,13 @@ import { openInEditor, openLink, resolveOutputPath } from './links'
 import * as ptyMgr from './pty-manager'
 import * as fsService from './fs-service'
 import * as state from './state'
-import { runTaskCommand, startSession, switchMode } from './session-launcher'
+import {
+  relaunchSession,
+  runTaskCommand,
+  startSession,
+  stopSession,
+  switchMode,
+} from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
 import { forkTranscript, listPrompts } from './transcript'
@@ -34,7 +41,12 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const session = state.createSession(input)
     // A Build/Run terminal reuses its project's path; that project is already in
     // recents from its first non-task session, so only remember on real sessions.
-    if (!input.task) rememberProject(input.projectPath, input.projectName)
+    // A session started *in* someone's worktree is the same story: the worktree
+    // is that session's folder, not a project of its own, so keep it out of recents.
+    const inKnownWorktree = state
+      .listSessions()
+      .some((x) => !!x.worktreePath && x.worktreePath === session.projectPath)
+    if (!input.task && !inKnownWorktree) rememberProject(input.projectPath, input.projectName)
     // Create the worktree before returning so the PTY launches in it (any kind).
     if (input.worktree) {
       try {
@@ -51,7 +63,7 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   })
   ipcMain.handle(
     Channels.sessionStart,
-    (_e, { id, cols, rows }: { id: string; cols: number; rows: number }) => {
+    (_e, { id, cols, rows }: { id: string; cols?: number; rows?: number }) => {
       startSession(getWin(), id, { cols, rows })
     },
   )
@@ -68,13 +80,23 @@ export function registerIpc(getWin: () => BrowserWindow): void {
       switchMode(getWin(), id, mode)
     },
   )
+  ipcMain.handle(Channels.sessionStop, (_e, id: string) => stopSession(id))
+  ipcMain.handle(Channels.sessionRelaunch, (_e, id: string) => relaunchSession(getWin(), id))
   ipcMain.handle(
     Channels.runTaskCommand,
     (_e, { id, task }: { id: string; task: TaskCommand }) =>
       runTaskCommand(getWin(), id, task),
   )
-  ipcMain.handle(Channels.sessionOpenGitGui, (_e, id: string) => openGitGui(id))
-  ipcMain.handle(Channels.sessionOpenInFolder, (_e, id: string) => openInFolder(id))
+  // `which` names one of the session's two folders; the path itself is still
+  // resolved main-side from the session id.
+  ipcMain.handle(
+    Channels.sessionOpenGitGui,
+    (_e, { id, which }: { id: string; which?: FolderChoice }) => openGitGui(id, which),
+  )
+  ipcMain.handle(
+    Channels.sessionOpenInFolder,
+    (_e, { id, which }: { id: string; which?: FolderChoice }) => openInFolder(id, which),
+  )
   ipcMain.handle(Channels.worktreeRemove, (_e, id: string) => removeWorktree(id))
   ipcMain.on(Channels.sessionClearNotified, (_e, id: string) => state.clearNotified(id))
   ipcMain.on(Channels.sessionReorder, (_e, ids: string[]) => state.reorderSessions(ids))

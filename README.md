@@ -28,6 +28,8 @@ npm run typecheck  # tsc, no emit
 ## What it does
 
 - **Sidebar** lists every session grouped by project, each with a live status dot.
+  **Right-click** a session for everything you can do to it — open, rename, start/stop,
+  branch, folders — whether or not it's open in a pane. See below.
 - **Main area** shows open sessions as live terminal panes, with a layout switcher for viewing
   **1 / 2 / 4** sessions at once. Off-screen sessions keep running.
 - **New session**: pick a folder, name it, choose a type — **Claude**, **Claude (read-only)**,
@@ -62,6 +64,48 @@ file injects **hooks** and a **statusLine** that report back to a loopback HTTP 
 Because the app forces `--session-id`, every hook payload's `session_id` maps back to the exact
 session — so two Claude sessions in the *same folder* are tracked independently. Your own
 `~/.claude` and project hooks are read and merged in, so they keep firing.
+
+## Session menus
+
+**Right-click a session row** for the actions that apply to it. Everything in the pane header
+is here too, so it reaches a session you haven't opened — including **Rename**, which used to
+mean opening the session in a pane and double-clicking its title.
+
+The menu is built per session rather than fixed and greyed out, so what you see is what you can
+do. Claude-only entries (mode switch, branch) are absent on a terminal row; **Start** and
+**Stop** are never both there; worktree entries only exist when there's a worktree; an editor
+session — which has no process at all — has no Start/Stop/Relaunch. A terminal row's menu is
+visibly shorter than a Claude row's, and whole groups disappear together rather than leaving
+gaps.
+
+- **Stop** ends a session's process and leaves the row alone — the one thing the app couldn't
+  do before, where the only way out of a running session was deleting it. **Start** brings it
+  back (resuming the conversation, for Claude), and **Relaunch** does both. Starting a session
+  that isn't in a pane is fine: it runs off-screen and its output is waiting when you open it.
+- **New session here** starts one of the four types on the same project immediately — no dialog,
+  no re-picking the folder. **More options…** opens the normal New Session dialog with the
+  project already filled in, for when you want a name, a worktree or a branch.
+- **Open in split** picks which pane it lands in, rather than the app choosing. It only appears
+  when there's more than one split to choose between.
+- Destructive actions sit last, separated, and keep their confirmation. There's no **Close**:
+  it only ever meant Remove, and now that Stop exists the pair that means something is **Stop**
+  and **Remove**.
+
+**When a session has a worktree** it points at two folders that are not interchangeable — the
+worktree and the project it was cut from. Starting another Claude in the worktree means two
+agents editing one working copy; starting a *terminal* there is exactly what you want, to run
+tests on what Claude just wrote. So the menu never guesses: **New session here**, **Copy path**,
+**Open folder** and **Open in git tool** each name the two folders and let you pick. With no
+worktree that level isn't there and they're plain entries.
+
+The same menu is on the **session tabs of the collapsed rail**, and **project group headers**
+get a per-project one: a new session in that project, its Build/Run/Stop commands (only the ones
+you've configured), the project folder, and collapse.
+
+It's an in-app menu, not an OS one, so it follows your theme like everything else. Arrows and
+Enter work, `→`/`←` open and leave submenus, typing jumps to an entry, and **Esc** closes one
+level at a time — ahead of anything else Esc would have closed. Left-click-to-open and
+drag-to-reorder are untouched.
 
 ## Branching a conversation
 
@@ -233,6 +277,9 @@ In a terminal pane:
 - **Drop a file** on a pane to hand it to that session.
 - **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
   still reaches the program in the pane, untouched.)
+
+In the sidebar: **right-click** a session row, a collapsed-rail tab or a project header for its
+menu (see **Session menus** above); arrows and Enter move and pick, **Esc** closes one level.
 
 Elsewhere in the app: **Ctrl/Cmd+N** new session, **Ctrl/Cmd+B** toggle sidebar, **Alt+1..9**
 jump to a session, **Esc** closes the top modal. The global show/hide hotkey (default `F12`)

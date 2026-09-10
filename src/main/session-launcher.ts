@@ -8,6 +8,7 @@ import {
   resetTerminal,
   setRestarting,
   setStatus,
+  setStopping,
   updateSession,
 } from './state'
 import { buildSettingsFile } from './hooks-config'
@@ -29,8 +30,11 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
   if (s.kind === 'editor') return
   const settings = loadSettings()
   const cwd = s.worktreePath || s.projectPath
-  const cols = opts.cols ?? 80
-  const rows = opts.rows ?? 24
+  // A start from the sidebar has no pane to measure; lastSizeOf remembers the
+  // size from the previous run (and falls back to 80x24 itself).
+  const last = ptyMgr.lastSizeOf(id)
+  const cols = opts.cols ?? last.cols
+  const rows = opts.rows ?? last.rows
 
   if (s.kind === 'shell') {
     // Plain interactive shell. Build/Run dedicated terminals (s.task set) use this
@@ -107,6 +111,22 @@ export function runTaskCommand(win: BrowserWindow, id: string, task: TaskCommand
 }
 
 /**
+ * Kill a running session's pty and start it again in the same terminal, at the
+ * same size. Safe because pty-manager runs its exit listeners (which clear
+ * `alive`) before the killPtyThen callback, so startSession's `s.alive` guard
+ * doesn't reject the relaunch.
+ */
+function restartInPlace(win: BrowserWindow, id: string, activity: string): void {
+  const { cols, rows } = ptyMgr.lastSizeOf(id)
+  setRestarting(id, true)
+  setStatus(id, 'busy', activity)
+  ptyMgr.killPtyThen(id, () => {
+    resetTerminal(id)
+    startSession(win, id, { cols, rows })
+  })
+}
+
+/**
  * Switch a Claude session between normal and read-only in one click, continuing
  * the same conversation: kill the current pty and relaunch the other mode command
  * with `--resume <same id>`. Re-uses the same terminal (cleared first).
@@ -116,12 +136,30 @@ export function switchMode(win: BrowserWindow, id: string, newMode: SessionMode)
   if (!s || s.kind !== 'claude' || s.mode === newMode) return
   updateSession(id, { mode: newMode })
   if (!s.alive) return // not running; the new mode applies when it next starts
+  restartInPlace(win, id, `switching to ${newMode === 'readonly' ? 'read-only' : 'normal'}…`)
+}
 
-  const { cols, rows } = ptyMgr.lastSizeOf(id)
-  setRestarting(id, true)
-  setStatus(id, 'busy', `switching to ${newMode === 'readonly' ? 'read-only' : 'normal'}…`)
-  ptyMgr.killPtyThen(id, () => {
+/**
+ * End a session's process without touching the session itself — the row stays in
+ * the sidebar and Start brings it back. `setStopping` is what keeps the exit from
+ * being reported as an error (see state.ts); the exit handler does the rest.
+ */
+export function stopSession(id: string): void {
+  const s = getSession(id)
+  if (!s || !s.alive) return
+  setStopping(id, true)
+  setStatus(id, 'busy', 'stopping…')
+  ptyMgr.killPty(id)
+}
+
+/** Restart a session's process. Starts it if it isn't running. Editors have none. */
+export function relaunchSession(win: BrowserWindow, id: string): void {
+  const s = getSession(id)
+  if (!s || s.kind === 'editor') return
+  if (!s.alive) {
     resetTerminal(id)
-    startSession(win, id, { cols, rows })
-  })
+    startSession(win, id, ptyMgr.lastSizeOf(id))
+    return
+  }
+  restartInPlace(win, id, 'relaunching…')
 }
