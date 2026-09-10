@@ -78,14 +78,18 @@ export function ThemeEditorView(): React.JSX.Element | null {
   // Read by the flush below, which must not close over a stale draft.
   const latest = useRef<CustomTheme | null>(null)
 
-  /** Land whatever the debounce is still holding. */
-  const flush = (): void => {
+  /**
+   * Land whatever the debounce is still holding. Awaitable, because a write that
+   * replaces the whole set has to finish before the next one reads the list back —
+   * otherwise the second write is composed from a list that predates the first.
+   */
+  const flush = async (): Promise<void> => {
     if (pending.current !== null) {
       window.clearTimeout(pending.current)
       pending.current = null
     }
     const seed = latest.current
-    if (seed) void writeThemes(upsert(useStore.getState().customThemes, seed))
+    if (seed) await writeThemes(upsert(useStore.getState().customThemes, seed))
   }
 
   const stored = customThemes.find((t) => t.id === id) ?? null
@@ -97,7 +101,7 @@ export function ThemeEditorView(): React.JSX.Element | null {
     // The cleanup runs before the next theme is seeded, so leaving the editor —
     // by Done, by Esc, or by opening a different theme — always lands the last
     // few hundred milliseconds rather than leaving them to a stray timer.
-    return () => flush()
+    return () => void flush()
     // Only when the editor moves to a different theme: re-seeding on every change
     // to the stored list would fight the draft the moment autosave lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -151,22 +155,25 @@ export function ThemeEditorView(): React.JSX.Element | null {
   }
 
   const duplicate = () => {
-    // Copied from the draft rather than the stored seed, so duplicating mid-edit
-    // forks what is on screen — which is what it looks like it should do.
-    const copy: CustomTheme = {
-      ...draft,
-      surfaces: draft.surfaces && { ...draft.surfaces },
-      ramp: draft.ramp && { ...draft.ramp },
-      status: { ...draft.status },
-      ansi: { ...draft.ansi },
-      syntax: { ...draft.syntax },
-      id: newThemeId(),
-      name: freeName(draft.name, customThemes.map((t) => t.name)),
-      from: draft.name,
-      createdAt: Date.now(),
-    }
-    flush()
     void (async () => {
+      // Awaited: everything below reads the list back, and this write replaces the
+      // whole set — so an unfinished flush would drop the edits it was carrying.
+      await flush()
+      const list = useStore.getState().customThemes
+      // Copied from the draft rather than the stored seed, so duplicating mid-edit
+      // forks what is on screen — which is what it looks like it should do.
+      const copy: CustomTheme = {
+        ...draft,
+        surfaces: draft.surfaces && { ...draft.surfaces },
+        ramp: draft.ramp && { ...draft.ramp },
+        status: { ...draft.status },
+        ansi: { ...draft.ansi },
+        syntax: { ...draft.syntax },
+        id: newThemeId(),
+        name: freeName(draft.name, list.map((t) => t.name)),
+        from: draft.name,
+        createdAt: Date.now(),
+      }
       await writeThemes(upsert(useStore.getState().customThemes, copy))
       const settings = await window.terminator.updateSettings({ theme: copy.id })
       useStore.getState().setSettings(settings)
@@ -181,11 +188,13 @@ export function ThemeEditorView(): React.JSX.Element | null {
     setId(null)
     // The main process moves the selection to the default when the theme that
     // just vanished was the one in use, and hands the repaired settings back.
-    void writeThemes(customThemes.filter((t) => t.id !== draft.id))
+    // Read from the store rather than this render's list: an autosave for another
+    // theme may have landed since, and this write replaces the whole set.
+    void writeThemes(useStore.getState().customThemes.filter((t) => t.id !== draft.id))
   }
 
   const close = () => {
-    flush()
+    void flush()
     setId(null)
   }
 

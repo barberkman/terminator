@@ -13,6 +13,19 @@ import { eventToAccelerator } from '../shortcuts'
 
 const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited']
 
+/**
+ * The settings this panel is the editor of. Save posts these and nothing else:
+ * `notes` belongs to the Notes overlay, `projects` to the sidebar, `customTheme`
+ * to whoever edits the file by hand, and `theme` is persisted the moment you pick
+ * one. Posting a whole draft would revert any of them that moved while the panel
+ * was open — including the main process's repair when a theme in use is deleted.
+ */
+const OWNED = [
+  'modes', 'defaultShell', 'gitGuiCommand', 'worktreesRoot', 'notifications', 'terminalFont',
+  'fontSize', 'iconScale', 'sidebarSide', 'globalToggleShortcut', 'notesShortcut', 'attachments',
+  'links', 'settingsOpen',
+] as const satisfies readonly (keyof Settings)[]
+
 /** Ids only have to be unique within the list and stable across edits. */
 function newBrowserId(): string {
   return `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -255,21 +268,13 @@ export function SettingsView(): React.JSX.Element | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show])
 
-  // Picking a theme applies it immediately so the swatch grid is a real preview;
-  // closing without saving puts the saved one back. Anything that makes a theme
-  // of the user's own persists the selection as it goes, so there is nothing of
-  // theirs for this to revert.
-  useEffect(() => {
-    if (show || !settings) return
-    applyThemeFromSettings(settings)
-  }, [show, settings])
-
   if (!show || !draft) return null
 
   const patch = (p: Partial<Settings>) => setDraft({ ...draft, ...p })
   const save = async () => {
-    const result = await window.terminator.updateSettings(draft)
-    setSettings(result)
+    const patch: Partial<Settings> = {}
+    for (const key of OWNED) Object.assign(patch, { [key]: draft[key] })
+    setSettings(await window.terminator.updateSettings(patch))
     setShow(false)
   }
 
@@ -308,20 +313,17 @@ export function SettingsView(): React.JSX.Element | null {
   )
 
   // ---- themes ----
-  const active = resolveTheme(draft.theme, draft.customTheme)
-  const pickTheme = (theme: string) => {
-    patch({ theme })
-    applyThemeFromSettings({ theme, customTheme: draft.customTheme })
+  // Read from the saved settings, never the draft: the theme editor and the
+  // delete repair both write it while this panel is open.
+  const activeId = settings?.theme ?? draft.theme
+  const active = resolveTheme(activeId, settings?.customTheme)
+  /** Applied for the eye, persisted for real — picking a theme is not a preview. */
+  const pickTheme = async (theme: string) => {
+    applyThemeFromSettings({ theme, customTheme: settings?.customTheme })
+    setSettings(await window.terminator.updateSettings({ theme }))
   }
-  /**
-   * Selecting one of the user's own themes is persisted rather than left in the
-   * draft: they've just made or opened a theme, and having Cancel quietly put the
-   * old one back would read as losing the work rather than discarding a preview.
-   */
   const selectAndEdit = async (id: string) => {
-    patch({ theme: id })
-    applyThemeFromSettings({ theme: id, customTheme: draft.customTheme })
-    setSettings(await window.terminator.updateSettings({ theme: id }))
+    await pickTheme(id)
     setThemeEditorFor(id)
   }
   const addTheme = async (seed: Parameters<typeof upsert>[1]) => {
@@ -331,8 +333,8 @@ export function SettingsView(): React.JSX.Element | null {
   const duplicate = () =>
     void addTheme(
       snapshotSeed(
-        draft.theme,
-        draft.customTheme,
+        activeId,
+        settings?.customTheme,
         freeName(active.name, customThemes.map((t) => t.name)),
         newThemeId(),
       ),
@@ -406,7 +408,7 @@ export function SettingsView(): React.JSX.Element | null {
             </span>,
             <>
               <Field hint="Applies to the app, the terminal panes (including ANSI colours) and the file editor. Duplicate one to get a theme of your own — copies are editable, the built-ins are not." label="PICK A THEME">
-                <ThemePicker value={draft.theme} onPick={pickTheme} onEdit={(id) => void selectAndEdit(id)} />
+                <ThemePicker value={activeId} onPick={(id) => void pickTheme(id)} onEdit={(id) => void selectAndEdit(id)} />
               </Field>
               {importText !== null && (
                 <Field label="PASTE A THEME" hint="Our own export, or any JSON object of theme colours — a published palette's ansi block on its own is enough. It always lands as a new theme of yours.">

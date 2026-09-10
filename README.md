@@ -311,7 +311,8 @@ Settings → **THEME** is a grid of swatches, each painted in its own colours. P
 it immediately — to the app chrome, the terminal panes (background, cursor, selection **and the
 16 ANSI colours**, so Claude's TUI takes on the theme) and the built-in file editor including
 its syntax colours. Nothing needs a restart, and terminals that are open — even the ones parked
-off-screen — repaint in place.
+off-screen — repaint in place. The choice is saved as you make it; it doesn't wait for **Save
+settings**, and **Cancel** doesn't take it back.
 
 - **Yours** — anything you've made. See *Making your own* below.
 - **Dark** — Terminator (the default), Darcula, One Dark, Dracula, Gruvbox Dark, Nord,
