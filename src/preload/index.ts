@@ -4,6 +4,7 @@ import type {
   AttachFileInput,
   BranchSessionInput,
   CreateSessionInput,
+  FolderChoice,
   FsChange,
   OpenFileInput,
   PtyData,
@@ -29,9 +30,13 @@ const api: TerminatorApi = {
   removeSession: (id) => ipcRenderer.invoke(Channels.sessionRemove, id),
   renameSession: (id, name) => ipcRenderer.invoke(Channels.sessionRename, { id, name }),
   setMode: (id, mode: SessionMode) => ipcRenderer.invoke(Channels.sessionSetMode, { id, mode }),
+  stopSession: (id) => ipcRenderer.invoke(Channels.sessionStop, id),
+  relaunchSession: (id) => ipcRenderer.invoke(Channels.sessionRelaunch, id),
   runTaskCommand: (id, task) => ipcRenderer.invoke(Channels.runTaskCommand, { id, task }),
-  openGitGui: (id) => ipcRenderer.invoke(Channels.sessionOpenGitGui, id),
-  openInFolder: (id) => ipcRenderer.invoke(Channels.sessionOpenInFolder, id),
+  openGitGui: (id, which?: FolderChoice) =>
+    ipcRenderer.invoke(Channels.sessionOpenGitGui, { id, which }),
+  openInFolder: (id, which?: FolderChoice) =>
+    ipcRenderer.invoke(Channels.sessionOpenInFolder, { id, which }),
   removeWorktree: (id) => ipcRenderer.invoke(Channels.worktreeRemove, id),
   clearNotified: (id) => ipcRenderer.send(Channels.sessionClearNotified, id),
   reorderSessions: (ids) => ipcRenderer.send(Channels.sessionReorder, ids),

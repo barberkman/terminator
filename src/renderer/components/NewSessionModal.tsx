@@ -1,24 +1,8 @@
-import { useMemo, useState } from 'react'
-import type { CreateSessionInput } from '../../shared/types'
+import { useEffect, useMemo, useState } from 'react'
 import { C, accentA, ink, sz } from '../theme'
-import { Icon, type IconName } from '../icons'
+import { Icon } from '../icons'
+import { TYPES, TYPE_MAP, type TypeKey } from '../sessionTypes'
 import { useStore } from '../state/store'
-
-type TypeKey = 'claude' | 'claude-ro' | 'shell' | 'editor'
-
-const TYPES: { key: TypeKey; icon: IconName; color: string; label: string; desc: string }[] = [
-  { key: 'claude', icon: 'sparkle', color: C.accent, label: 'Claude', desc: 'Normal Claude Code session' },
-  { key: 'claude-ro', icon: 'lock', color: C.muted, label: 'Claude · read-only', desc: 'Runs the read-only command' },
-  { key: 'shell', icon: 'terminal', color: C.kindIcon, label: 'Terminal', desc: 'Plain shell — no Claude features' },
-  { key: 'editor', icon: 'editor', color: C.kindIcon, label: 'Editor', desc: 'Browse and edit files — no Claude, no shell' },
-]
-
-const TYPE_MAP: Record<TypeKey, Pick<CreateSessionInput, 'kind' | 'mode'>> = {
-  claude: { kind: 'claude', mode: 'normal' },
-  'claude-ro': { kind: 'claude', mode: 'readonly' },
-  shell: { kind: 'shell', mode: 'normal' },
-  editor: { kind: 'editor', mode: 'normal' },
-}
 
 function basename(p: string): string {
   return p.split(/[/\\]/).filter(Boolean).pop() ?? ''
@@ -46,6 +30,7 @@ const inputStyle: React.CSSProperties = {
 
 export function NewSessionModal(): React.JSX.Element | null {
   const show = useStore((s) => s.showNew)
+  const prefill = useStore((s) => s.newPrefill)
   const setShowNew = useStore((s) => s.setShowNew)
   const settings = useStore((s) => s.settings)
   const setSettings = useStore((s) => s.setSettings)
@@ -86,6 +71,19 @@ export function NewSessionModal(): React.JSX.Element | null {
     if (kind === 'shell') return 'shell'
     return basename(folder) || 'session'
   }, [kind, folder])
+
+  // Opened from a sidebar menu's "More options…": start on that project, with
+  // name / type / worktree / branch still to choose. Seeding on open (rather than
+  // trusting the previous close to have reset) makes the open authoritative.
+  // Above the early return below — a hook must not sit under one.
+  useEffect(() => {
+    if (!show) return
+    setFolder(prefill?.projectPath ?? '')
+    setName('')
+    setKind('claude')
+    setWorktree(false)
+    setBranch('')
+  }, [show, prefill])
 
   if (!show) return null
 

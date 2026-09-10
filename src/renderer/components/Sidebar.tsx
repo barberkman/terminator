@@ -1,10 +1,12 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import type { ProjectConfig, Session } from '../../shared/types'
 import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
+import { runProjectTask, stopProjectTask } from '../menus'
 import {
   LAYOUT_COUNT,
   type LayoutName,
+  type MenuTarget,
   type ProjectGroup,
   type SidebarRow,
   branchKey,
@@ -53,6 +55,23 @@ const LAYOUTS: { name: LayoutName; icon: IconName; label: string }[] = [
 /** Id of the session row currently being dragged (sidebar reorder). */
 let draggedId: string | null = null
 
+/**
+ * Open a context menu from a right-click. Right-click never fires `click` and
+ * never starts an HTML5 drag, so this is purely additive — opening on left-click
+ * and drag-to-reorder are untouched. Falls back to the element's own box for a
+ * keyboard-invoked menu (Shift+F10), where the coordinates are 0.
+ */
+function menuOpener(target: MenuTarget) {
+  return (e: React.MouseEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    const { clientX, clientY } = e
+    const r = e.currentTarget.getBoundingClientRect()
+    const at = clientX || clientY ? { x: clientX, y: clientY } : { x: r.left + 8, y: r.bottom }
+    useStore.getState().openContextMenu({ target, ...at })
+  }
+}
+
 function activityColor(s: Session): string {
   if (s.status === 'waiting') return C.accentSoft
   if (s.status === 'error') return C.danger
@@ -73,8 +92,24 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
   const setBranchFor = useStore((s) => s.setBranchFor)
   const toggleGroup = useStore((s) => s.toggleGroup)
   const reorderWithinGroup = useStore((s) => s.reorderWithinGroup)
+  // `editingId` is global, so the surface has to match too — otherwise a session
+  // open in a pane *and* visible here would render two autofocused inputs.
+  const editing = useStore((s) => s.editingId === session.id && s.editingWhere === 'sidebar')
+  const startEdit = useStore((s) => s.startEdit)
+  // A boolean, not a derived object: a fresh object from a selector would loop
+  // useSyncExternalStore.
+  const menuOpen = useStore(
+    (s) => s.contextMenu?.target.kind === 'sessions' && s.contextMenu.target.ids.includes(session.id),
+  )
+  const nameRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
   const active = focusedId === session.id
+
+  const commitRename = () => {
+    const v = nameRef.current?.value.trim()
+    if (v) void window.terminator.renameSession(session.id, v)
+    startEdit(null)
+  }
   // The accent "selected" treatment is reserved for the single focused session.
   // A notified (needs-attention) session is signalled separately by the pulsing
   // dot below, so it never competes with selection when several are notified.
@@ -106,8 +141,15 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
   return (
     <div
       className="cc-row"
-      draggable
+      // A draggable ancestor swallows drag-to-select inside a nested input, so
+      // the row stops being draggable while its name is being edited.
+      draggable={!editing}
       onClick={() => openSession(session.id)}
+      onContextMenu={
+        editing
+          ? undefined // leave the rename input its native menu, for paste
+          : menuOpener({ kind: 'sessions', ids: [session.id] })
+      }
       onDragStart={(e) => {
         draggedId = session.id
         e.dataTransfer.effectAllowed = 'move'
@@ -138,10 +180,14 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
         cursor: 'pointer',
         background: active
           ? accentA(0.1)
-          : shown
-            ? ink(0.04)
-            : 'transparent',
-        border: `1px solid ${active ? accentA(0.22) : 'transparent'}`,
+          : menuOpen
+            ? ink(0.06)
+            : shown
+              ? ink(0.04)
+              : 'transparent',
+        // The accent treatment stays reserved for the one focused session, so a
+        // row with its menu open is marked with a neutral hairline instead.
+        border: `1px solid ${active ? accentA(0.22) : menuOpen ? C.border3 : 'transparent'}`,
         boxShadow: dragOver ? `inset 0 2px 0 ${C.accent}` : undefined,
       }}
     >
@@ -166,18 +212,51 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
               <Icon name="editor" size={12} />
             </span>
           )}
-          <span
-            style={{
-              fontSize: 12.5,
-              fontWeight: 500,
-              color: active ? C.textHi : C.text,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {session.name}
-          </span>
+          {editing ? (
+            <input
+              ref={nameRef}
+              defaultValue={session.name}
+              autoFocus
+              // The row's own onClick calls openSession, which clears editingId —
+              // a single click inside the box would otherwise destroy it.
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename()
+                else if (e.key === 'Escape') {
+                  e.stopPropagation() // cancelling the rename is all this Esc does
+                  startEdit(null)
+                }
+              }}
+              style={{
+                minWidth: 0,
+                flex: 1,
+                background: ink(0.06),
+                border: `1px solid ${accentA(0.45)}`,
+                borderRadius: 4,
+                color: C.textMax,
+                font: 'inherit',
+                fontSize: 12.5,
+                fontWeight: 500,
+                padding: '1px 5px',
+                outline: 'none',
+              }}
+            />
+          ) : (
+            <span
+              style={{
+                fontSize: 12.5,
+                fontWeight: 500,
+                color: active ? C.textHi : C.text,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {session.name}
+            </span>
+          )}
           {session.kind === 'claude' && session.mode === 'readonly' && (
             <span style={{ display: 'flex', color: C.muted, flex: 'none' }}>
               <Icon name="lock" size={11} />
@@ -357,6 +436,9 @@ function RailTab({ session, index }: { session: Session; index: number }): React
   const focusedId = useStore((s) => s.panes[s.focused])
   const shown = useStore((s) => s.panes.includes(session.id))
   const openSession = useStore((s) => s.openSession)
+  const menuOpen = useStore(
+    (s) => s.contextMenu?.target.kind === 'sessions' && s.contextMenu.target.ids.includes(session.id),
+  )
   const active = focusedId === session.id
   const notified = session.notified && !active
   const hint = index < 9 ? `  (Alt+${index + 1})` : ''
@@ -365,6 +447,7 @@ function RailTab({ session, index }: { session: Session; index: number }): React
     <button
       data-rail-session={session.id}
       onClick={() => openSession(session.id)}
+      onContextMenu={menuOpener({ kind: 'sessions', ids: [session.id] })}
       title={`${session.name} · ${STATUS_LABELS[session.status]}${hint}`}
       style={{
         position: 'relative',
@@ -379,10 +462,12 @@ function RailTab({ session, index }: { session: Session; index: number }): React
         padding: 0,
         background: active
           ? accentA(0.1)
-          : shown
-            ? ink(0.04)
-            : 'transparent',
-        border: `1px solid ${active ? accentA(0.22) : 'transparent'}`,
+          : menuOpen
+            ? ink(0.06)
+            : shown
+              ? ink(0.04)
+              : 'transparent',
+        border: `1px solid ${active ? accentA(0.22) : menuOpen ? C.border3 : 'transparent'}`,
       }}
     >
       <span style={dotStyle(session.status, 11)} />
@@ -563,29 +648,14 @@ function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
   // moment Run creates the terminal and vanishes when it is closed.
   const runSession = group.sessions.find((s) => s.task === 'run' && s.projectPath === projectPath)
 
-  const runTask = async (task: 'build' | 'run') => {
-    const store = useStore.getState()
-    let target = Object.values(store.sessions).find((x) => x.task === task && x.projectPath === projectPath)
-    if (!target) {
-      target = await window.terminator.createSession({
-        kind: 'shell',
-        mode: 'normal',
-        task,
-        name: task === 'build' ? 'Build' : 'Run',
-        projectName: group.name,
-        projectPath,
-      })
-      store.upsert(target)
-    }
-    store.openSession(target.id)
-    await window.terminator.runTaskCommand(target.id, task)
-  }
+  // Both live in menus.ts so the header buttons and the group's context menu run
+  // exactly one implementation.
+  const runTask = (task: 'build' | 'run') =>
+    runProjectTask({ name: group.name, path: projectPath }, task)
 
-  // Types the stop command into the existing Run terminal — never creates one.
   const stopTask = async () => {
     if (!runSession) return
-    useStore.getState().openSession(runSession.id)
-    await window.terminator.runTaskCommand(runSession.id, 'stop')
+    await stopProjectTask(runSession.id)
   }
 
   const headerBtn = (
@@ -620,6 +690,7 @@ function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
     <div>
       <div
         onClick={() => toggleGroup(group.name)}
+        onContextMenu={menuOpener({ kind: 'project', name: group.name, path: projectPath })}
         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '13px 4px 6px', cursor: 'pointer' }}
       >
         <span

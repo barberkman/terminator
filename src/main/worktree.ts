@@ -2,17 +2,29 @@ import { shell } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
+import type { FolderChoice, Session } from '../shared/types'
 import { loadSettings } from './settings'
 import { expandHome } from './pty-manager'
 import { getSession, updateSession } from './state'
 
 const pExecFile = promisify(execFile)
 
+/**
+ * Which folder an action means. 'session' is the app-wide `worktreePath ||
+ * projectPath` idiom and stays the default; 'project' is the repo the worktree
+ * was cut from. Resolved here from the session id — the renderer names a choice,
+ * never a path, the same posture every other path in the app is held to.
+ */
+function folderFor(s: Session, which: FolderChoice = 'session'): string {
+  const raw = which === 'project' ? s.projectPath : s.worktreePath || s.projectPath
+  return expandHome(raw) || s.projectPath
+}
+
 /** Launch the user's configured git GUI on a session's folder. App never merges. */
-export function openGitGui(id: string): void {
+export function openGitGui(id: string, which?: FolderChoice): void {
   const s = getSession(id)
   if (!s) return
-  const folder = expandHome(s.worktreePath || s.projectPath) || s.projectPath
+  const folder = folderFor(s, which)
   const cmd = loadSettings().gitGuiCommand.trim()
   if (!cmd) return
   const parts = cmd.split(/\s+/)
@@ -28,10 +40,10 @@ export function openGitGui(id: string): void {
 }
 
 /** Open a session's folder in the OS default file manager. Best effort. */
-export function openInFolder(id: string): void {
+export function openInFolder(id: string, which?: FolderChoice): void {
   const s = getSession(id)
   if (!s) return
-  const folder = expandHome(s.worktreePath || s.projectPath) || s.projectPath
+  const folder = folderFor(s, which)
   // Resolves to '' on success, an error string on failure — ignored (best effort).
   void shell.openPath(folder)
 }

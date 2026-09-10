@@ -8,6 +8,7 @@ import { Footer } from './components/Footer'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { NewSessionModal } from './components/NewSessionModal'
 import { BranchModal } from './components/BranchModal'
+import { SessionContextMenu } from './components/SessionContextMenu'
 import { SettingsView } from './components/SettingsView'
 import { NotesView } from './components/NotesView'
 import { Toasts } from './components/Toasts'
@@ -98,9 +99,11 @@ export function App(): React.JSX.Element {
       const k = e.key.toLowerCase()
       if (k === 'n') {
         e.preventDefault()
+        useStore.getState().closeContextMenu()
         setShowNew(true)
       } else if (k === 'b') {
         e.preventDefault()
+        useStore.getState().closeContextMenu()
         toggleSidebar()
       }
     }
@@ -117,7 +120,7 @@ export function App(): React.JSX.Element {
       const m = /^Digit([1-9])$/.exec(e.code)
       if (!m) return
       const st = useStore.getState()
-      if (st.showNew || st.showSettings || st.branchFor) return // don't switch underneath a modal
+      if (st.showNew || st.showSettings || st.branchFor || st.contextMenu) return // don't switch underneath a modal
       const list = buildGroups(st.order, st.sessions).flatMap((g) => g.sessions)
       const target = list[Number(m[1]) - 1]
       if (!target) return
@@ -137,8 +140,12 @@ export function App(): React.JSX.Element {
     const onEscape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       const st = useStore.getState()
-      // Close the highest-stacked modal by zIndex: Notes(60) > Confirm(55) > Settings/New/Branch(50).
-      if (st.showNotes) st.setShowNotes(false)
+      // Close the highest-stacked overlay by zIndex: ContextMenu(78) > Notes(60) >
+      // Confirm(55) > Settings/New/Branch(50). The menu normally handles its own
+      // Escape (capture phase, so it runs before this and stops propagation);
+      // this branch is the fallback for when focus has drifted off the panel.
+      if (st.contextMenu) st.closeContextMenu()
+      else if (st.showNotes) st.setShowNotes(false)
       else if (st.confirm) st.setConfirm(null)
       else if (st.showSettings) st.setShowSettings(false)
       else if (st.showNew) st.setShowNew(false)
@@ -167,7 +174,7 @@ export function App(): React.JSX.Element {
       const st = useStore.getState()
       const accel = st.settings?.notesShortcut ?? ''
       if (!accel || !matchesAccelerator(e, accel)) return
-      if (st.showNew || st.showSettings || st.confirm || st.branchFor) return // don't toggle underneath another modal
+      if (st.showNew || st.showSettings || st.confirm || st.branchFor || st.contextMenu) return // don't toggle underneath another modal
       e.preventDefault()
       e.stopPropagation()
       st.setShowNotes(!st.showNotes)
@@ -202,6 +209,7 @@ export function App(): React.JSX.Element {
         </div>
       </div>
       <Footer />
+      <SessionContextMenu />
       <ConfirmDialog />
       <NewSessionModal />
       <BranchModal />

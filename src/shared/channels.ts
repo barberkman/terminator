@@ -10,6 +10,8 @@ export const Channels = {
   sessionRemove: 'session:remove',
   sessionRename: 'session:rename',
   sessionSetMode: 'session:setMode',
+  sessionStop: 'session:stop',
+  sessionRelaunch: 'session:relaunch',
   runTaskCommand: 'session:runTaskCommand',
   sessionOpenGitGui: 'session:openGitGui',
   sessionOpenInFolder: 'session:openInFolder',

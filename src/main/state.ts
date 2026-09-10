@@ -18,11 +18,24 @@ import { loadPersistedSessions, savePersistedSessions } from './persistence'
 const sessions = new Map<string, Session>()
 /** Sessions being relaunched (mode switch); their exit must not flip status to closed. */
 const restarting = new Set<string>()
+/**
+ * Sessions being stopped on purpose. Without this a deliberate kill lands in the
+ * non-zero-exit branch below, which sets status 'error' *and* runs the user's
+ * configured notification command — raising an alarm for something they asked for.
+ * (Removal is quiet only by accident of ordering: removeSession kills the pty
+ * before deleting the session, so the exit arrives to find nothing left.)
+ */
+const stopping = new Set<string>()
 let mainWindow: BrowserWindow | null = null
 
 export function setRestarting(id: string, value: boolean): void {
   if (value) restarting.add(id)
   else restarting.delete(id)
+}
+
+export function setStopping(id: string, value: boolean): void {
+  if (value) stopping.add(id)
+  else stopping.delete(id)
 }
 
 /** Tell the renderer to clear a session's terminal buffer (on mode-switch relaunch). */
@@ -210,6 +223,8 @@ export function clearNotified(id: string): void {
 }
 
 export function removeSession(id: string): void {
+  restarting.delete(id)
+  stopping.delete(id)
   ptyMgr.killPty(id)
   closeFsWatchers(id) // no-op for non-editor sessions
   cancelPendingPrompt(id) // no-op unless a branch never started
@@ -263,6 +278,15 @@ export function wireProcessEvents(): void {
     // Mode switch: launcher will relaunch + set status; don't mark it closed.
     if (restarting.has(id)) {
       restarting.delete(id)
+      stopping.delete(id) // a stop that raced the relaunch must not outlive it
+      emit(Channels.sessionUpdated, s)
+      return
+    }
+    // Asked for: report it as closed, and raise nothing.
+    if (stopping.has(id)) {
+      stopping.delete(id)
+      s.status = 'closed'
+      s.activity = 'stopped'
       emit(Channels.sessionUpdated, s)
       return
     }
