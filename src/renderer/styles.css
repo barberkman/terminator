@@ -27,8 +27,15 @@
   --c-accent-text: #1a120c;
   --c-danger: #cf5e4e;
   --c-kind-icon: #7d8597;
+  --c-cursor: #d97757;
+  --c-cursor-text: #1a1917;
+  --c-selection: rgba(217, 119, 87, 0.3);
+  --c-selection-hex: #d97757;
   --c-bg-rgb: 26, 25, 23;
-  --c-ink-rgb: 214, 209, 196;
+  /* buildPalette takes this from `fg` (#cbc6b8); the value here used to be the
+     brighter textStrong step, so hairlines were faintly wrong until the first
+     applyTheme ran. */
+  --c-ink-rgb: 203, 198, 184;
   --c-accent-rgb: 217, 119, 87;
   --c-danger-rgb: 207, 94, 78;
   --c-shadow-rgb: 10, 9, 8;
@@ -45,6 +52,23 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* The theme editor's colour wells. Without this the platform draws its own
+   chrome around the swatch, which at this size leaves a dark colour looking like
+   an empty white box. */
+input[type='color'] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 5px;
 }
 
 html,

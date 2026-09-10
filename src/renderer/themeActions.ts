@@ -22,6 +22,16 @@ export async function writeThemes(next: CustomTheme[]): Promise<void> {
   applyThemeFromSettings(settings)
 }
 
+/** "Nord copy", then "Nord copy 2" — a duplicate never silently reuses a name. */
+export function freeName(base: string, taken: string[]): string {
+  const wanted = `${base} copy`
+  if (!taken.includes(wanted)) return wanted
+  for (let n = 2; n < 500; n++) {
+    if (!taken.includes(`${wanted} ${n}`)) return `${wanted} ${n}`
+  }
+  return wanted
+}
+
 /** The set with one theme replaced, or appended when it's new. */
 export function upsert(list: CustomTheme[], seed: CustomTheme): CustomTheme[] {
   const at = list.findIndex((t) => t.id === seed.id)

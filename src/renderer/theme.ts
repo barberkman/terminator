@@ -44,6 +44,10 @@ export const C = {
   accentBgHi: 'rgba(var(--c-accent-rgb),0.16)',
   accentBorder: 'rgba(var(--c-accent-rgb),0.32)',
   kindIcon: 'var(--c-kind-icon)',
+  /** The caret, in the terminal and the editor alike. Derived from `accent`. */
+  cursor: 'var(--c-cursor)',
+  /** The selection wash, alpha included. Derived from `accent`. */
+  selection: 'var(--c-selection)',
   danger: 'var(--c-danger)',
   /** Backdrop behind modals. */
   scrim: 'rgba(var(--c-shadow-rgb),0.66)',

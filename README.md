@@ -289,13 +289,16 @@ and the notes hotkey (default `Ctrl/Cmd+Shift+N`) are configurable in Settings.
 ## Settings
 
 Settings live in a JSON file in the app's user-data directory (editable in-app via the gear
-icon, or on disk):
+icon, or on disk). The panel is a set of foldable sections — collapsed, each one shows what it's
+set to — and which ones you left open is remembered:
 
 - `modes.normal.command` / `modes.readonly.command` — the Claude commands (defaults `claude`,
   `claude-readonly`). The app appends `--session-id` / `--resume` / `--settings`, so a custom
   read-only command must forward appended args (e.g. `exec claude --permission-mode plan "$@"`).
 - `defaultShell`, `gitGuiCommand`, `worktreesRoot`, `projects`.
 - `theme` — the active colour theme (see below), and `customTheme` for per-token overrides.
+  Themes of your own live in their own file, `themes.json`, alongside this one.
+- `settingsOpen` — which Settings sections are expanded. Absent means collapsed.
 - `notifications` — see below.
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.
 - `links.browsers` (each `{ id, name, command, args }`), `links.defaultBrowserId`,
@@ -310,6 +313,7 @@ it immediately — to the app chrome, the terminal panes (background, cursor, se
 its syntax colours. Nothing needs a restart, and terminals that are open — even the ones parked
 off-screen — repaint in place.
 
+- **Yours** — anything you've made. See *Making your own* below.
 - **Dark** — Terminator (the default), Darcula, One Dark, Dracula, Gruvbox Dark, Nord,
   Solarized Dark.
 - **Light** — Solarized Light, GitHub Light.
@@ -317,14 +321,50 @@ off-screen — repaint in place.
   warm cream-and-ink page, with the faint grain behind the chrome (panes stay flat, so nothing
   interferes with glyph rendering); *Bold* also raises the chrome's font weight.
 
-Themes live in [`src/shared/themes.ts`](src/shared/themes.ts). Each is a compact seed — a
+The built-ins live in [`src/shared/themes.ts`](src/shared/themes.ts). Each is a compact seed — a
 background, two text anchors, a few accents, and the terminal/editor palettes — from which the
 six surface shades and the eleven-step text ramp are derived, so adding one is about 25 lines.
 The built palette is published as CSS custom properties (`--c-bg`, `--c-ink-rgb`, …) that the
 whole renderer reads, and handed to xterm and CodeMirror as literal colours, which is what those
 two need.
 
-To adjust a single colour without writing a theme, add a `customTheme` block to `settings.json`:
+### Making your own
+
+The built-ins are read-only. To change one, **Duplicate** it. The copy captures exactly what you
+were looking at — any `customTheme` overrides included — and is then yours: it will not move
+again if the built-in it came from ever changes. Rename, duplicate and delete your own freely;
+deleting the one you're using falls back to Terminator.
+
+Your themes are stored in `themes.json`, next to `settings.json` but deliberately not in it — a
+theme is seventy-odd colours and `settings.json` is a file you edit by hand.
+
+**Edit** opens a view of its own rather than another block in the Settings scroll:
+
+- **The basics** — the background, the two text anchors, the accents, the danger colour, and
+  whether the theme is light or dark.
+- **Depth** — one control that moves the sidebar, footer and panels away from the background as
+  a group. Any individual surface can be pinned to hold still, and unpinned again.
+- **Terminal** — the full ANSI set plus cursor and selection, over a sample of terminal output.
+  This is where a published palette goes.
+- **Editor syntax** — the ten token colours, shown against a real code sample.
+- **The finer things**, folded away — the five session status colours, shadows, the icon tint,
+  the interface font weight, and the nine derived ramp steps, each pinnable and un-pinnable.
+
+Everything is live as you type — the chrome, every terminal pane including the ones parked
+off-screen, and any open editor tab — because the editor drives the same repaint the picker
+does rather than a preview of its own. There is no Save button: edits land a moment after you
+stop. Combinations that make text unreadable raise a warning rather than being corrected or
+refused, and a value that isn't a hex colour never leaves the box you typed it in.
+
+**Export** hands you the theme as JSON to keep or send on. **Import** (Settings → THEME) takes
+one back, and is deliberately forgiving: paste a published palette's `ansi` block on its own and
+everything else fills in from the default. An import always arrives as a new theme rather than
+overwriting one.
+
+### Overriding a single colour by hand
+
+To adjust a colour of a **built-in** without making a theme, add a `customTheme` block to
+`settings.json`:
 
 ```json
 { "theme": "nord", "customTheme": { "accent": "#00b0ff", "bg": "#101216" } }
@@ -333,6 +373,10 @@ To adjust a single colour without writing a theme, add a `customTheme` block to 
 It overrides tokens of the selected theme by name (any surface, ramp step, `accent`,
 `accentSoft`, `accentText`, `danger`, `kindIcon` or `shadow`). Values must be hex; anything else
 is ignored rather than applied, so a typo can't blank the UI.
+
+The block applies to built-ins only. One of your own themes already carries whatever was in
+force when you duplicated it, so laying the same overrides on again would count them twice — and
+would quietly swallow every edit you made in the theme editor to an overridden colour.
 
 ## Notifications
 

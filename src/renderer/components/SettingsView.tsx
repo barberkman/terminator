@@ -8,7 +8,7 @@ import { useStore } from '../state/store'
 import { ThemePicker } from './ThemePicker'
 import { Choice, Field, Section, inputStyle, smallBtn } from './controls'
 import { applyThemeFromSettings } from '../theme-apply'
-import { upsert, writeThemes } from '../themeActions'
+import { freeName, upsert, writeThemes } from '../themeActions'
 import { eventToAccelerator } from '../shortcuts'
 
 const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited']
@@ -228,16 +228,6 @@ function EditorRow({
   )
 }
 
-/** "Nord copy", then "Nord copy 2" — a duplicate never silently reuses a name. */
-function freeName(base: string, taken: string[]): string {
-  const wanted = `${base} copy`
-  if (!taken.includes(wanted)) return wanted
-  for (let n = 2; n < 500; n++) {
-    if (!taken.includes(`${wanted} ${n}`)) return `${wanted} ${n}`
-  }
-  return wanted
-}
-
 export function SettingsView(): React.JSX.Element | null {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
@@ -452,7 +442,17 @@ export function SettingsView(): React.JSX.Element | null {
               <button onClick={duplicate} title="Copy the theme you're looking at, overrides and all, and edit the copy" style={smallBtn}>
                 Duplicate
               </button>
-              <button onClick={() => setImportText(importText === null ? '' : null)} style={smallBtn}>
+              <button
+                onClick={() => {
+                  const opening = importText === null
+                  setImportText(opening ? '' : null)
+                  setImportError('')
+                  // The paste box lives in the section body, so opening it from a
+                  // collapsed header has to open the section too.
+                  if (opening && !isOpen('theme')) toggleSection('theme')
+                }}
+                style={smallBtn}
+              >
                 Import…
               </button>
             </>,

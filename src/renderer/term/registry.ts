@@ -29,16 +29,19 @@ let curFontFamily = FONT
 
 /**
  * xterm parses colours in JS for its renderer, so unlike the app chrome it can't
- * read the theme's CSS variables — it needs the literal palette. The selection
- * stays translucent: an opaque one would hide the text under it on light themes.
+ * read the theme's CSS variables — it needs the literal palette. Cursor and
+ * selection used to be derived here; they're palette tokens now, derived from the
+ * accent and the background exactly as this did, so a theme that says nothing
+ * about them still paints the way it always has — and one that does say something
+ * (a published palette usually does) is finally able to.
  */
 function xtermTheme(p: ThemePalette): ITheme {
   return {
     background: p.bg,
     foreground: p.text,
-    cursor: p.accent,
-    cursorAccent: p.bg,
-    selectionBackground: `rgba(${p.accentRgb},0.3)`,
+    cursor: p.cursor,
+    cursorAccent: p.cursorText,
+    selectionBackground: p.selection,
     ...p.ansi,
   }
 }
