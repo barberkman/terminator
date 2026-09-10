@@ -15,7 +15,6 @@ export function SessionContextMenu(): React.JSX.Element | null {
   const sessions = useStore((s) => s.sessions)
   const order = useStore((s) => s.order)
   const panes = useStore((s) => s.panes)
-  const focused = useStore((s) => s.focused)
   const layout = useStore((s) => s.layout)
   const settings = useStore((s) => s.settings)
   const collapsed = useStore((s) => s.collapsed)
@@ -73,11 +72,10 @@ export function SessionContextMenu(): React.JSX.Element | null {
       projectSessions,
       layout,
       panes,
-      focused,
       settings,
       collapsed,
     })
-  }, [target, resolved, order, sessions, layout, panes, focused, settings, collapsed])
+  }, [target, resolved, order, sessions, layout, panes, settings, collapsed])
 
   if (!menu || !nodes.length) return null
 

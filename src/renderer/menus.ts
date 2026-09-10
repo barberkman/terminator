@@ -85,8 +85,6 @@ export interface MenuCtx {
   projectSessions: Session[]
   layout: LayoutName
   panes: string[]
-  /** Index into `panes` of the split that currently has focus. */
-  focused: number
   settings: Settings | null
   collapsed: Record<string, boolean>
 }
@@ -221,29 +219,18 @@ function headingSection(ctx: MenuCtx): MenuNode[] {
   return [{ kind: 'heading', label: s.name, sub: `${s.projectName} · ${s.branch}` }]
 }
 
+/**
+ * Only the split picker. There is no plain "Open": left-clicking the row already
+ * calls openSession, so a menu entry for it would just restate the row's own
+ * primary action. Choosing *which* split is the part a click can't do.
+ */
 function openSection(ctx: MenuCtx): MenuNode[] {
   if (ctx.sessions.length !== 1) return []
   const s = ctx.sessions[0]
-  const out: MenuNode[] = []
-  // Nothing to offer when it's already the split you're in: openSession would
-  // leave `focused` where it is and nothing would happen. A row that does nothing
-  // is worse than a row that isn't there.
-  if (ctx.panes[ctx.focused] !== s.id) {
-    out.push({
-      kind: 'item',
-      id: 'open',
-      // Already on screen, just not the split you're typing in — this moves you
-      // to it rather than opening it anywhere new.
-      label: ctx.panes.includes(s.id) ? 'Focus' : 'Open',
-      icon: 'single',
-      run: () => useStore.getState().openSession(s.id),
-    })
-  }
-  // With one pane there is no choice to offer, so the submenu isn't there at all.
-  if (ctx.panes.length < 2) return out
+  // With one pane there is no choice to offer, so the section isn't there at all.
+  if (ctx.panes.length < 2) return []
   const labels = PANE_LABELS[ctx.layout]
   return [
-    ...out,
     {
       kind: 'sub',
       id: 'open-split',

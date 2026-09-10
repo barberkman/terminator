@@ -28,8 +28,8 @@ npm run typecheck  # tsc, no emit
 ## What it does
 
 - **Sidebar** lists every session grouped by project, each with a live status dot.
-  **Right-click** a session for everything you can do to it — open, rename, start/stop,
-  branch, folders — whether or not it's open in a pane. See below.
+  **Right-click** a session for everything you can do to it — rename, start/stop, branch,
+  folders — whether or not it's open in a pane. See below.
 - **Main area** shows open sessions as live terminal panes, with a layout switcher for viewing
   **1 / 2 / 4** sessions at once. Off-screen sessions keep running.
 - **New session**: pick a folder, name it, choose a type — **Claude**, **Claude (read-only)**,
@@ -86,7 +86,8 @@ gaps.
   no re-picking the folder. **More options…** opens the normal New Session dialog with the
   project already filled in, for when you want a name, a worktree or a branch.
 - **Open in split** picks which pane it lands in, rather than the app choosing. It only appears
-  when there's more than one split to choose between.
+  when there's more than one split to choose between — and it's the only opening entry, since
+  clicking the row already opens it.
 - Destructive actions sit last, separated, and keep their confirmation. There's no **Close**:
   it only ever meant Remove, and now that Stop exists the pair that means something is **Stop**
   and **Remove**.
