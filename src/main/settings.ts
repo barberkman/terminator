@@ -33,6 +33,9 @@ export function defaultSettings(): Settings {
     fontSize: 14,
     iconScale: 100,
     sidebarSide: 'left',
+    // Off by default: glass costs the window its OS frame, which is not
+    // something an app should help itself to.
+    windowGlass: 'off',
     theme: DEFAULT_THEME_ID,
     globalToggleShortcut: 'F12',
     notesShortcut: 'CommandOrControl+Shift+N',

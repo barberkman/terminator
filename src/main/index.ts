@@ -6,10 +6,11 @@ import { killAll } from './pty-manager'
 import { closeAll as closeFsWatchers, setWindow as setFsWindow } from './fs-service'
 import { loadPersisted, setWindow, wireProcessEvents } from './state'
 import { startReportServer, stopReportServer } from './report-server'
-import { applyGlobalShortcut, disposeGlobalShortcut } from './window-toggle'
+import { applyGlobalShortcut, disposeGlobalShortcut, setFadeEnabled } from './window-toggle'
 import { loadSettings } from './settings'
-import { resolveTheme, setCustomThemes } from '../shared/themes'
+import { cssVars, resolveTheme, setCustomThemes } from '../shared/themes'
 import { loadCustomThemes } from './theme-store'
+import { glassWindowOptions, resolveGlass, setActiveGlass } from './glass'
 
 let win: BrowserWindow | null = null
 
@@ -26,14 +27,26 @@ function createWindow(): void {
   setCustomThemes(loadCustomThemes())
   const theme = resolveTheme(settings.theme, settings.customTheme)
 
+  const glass = resolveGlass(settings.windowGlass)
+  setActiveGlass(glass)
+
+  // Note for anyone extending this: setIgnoreMouseEvents is deliberately never
+  // called. A see-through area is still a normal part of the window — it takes
+  // clicks and it takes focus — and the opacity floors in shared/themes.ts keep
+  // every surface above zero alpha so there's never a hole to fall through.
+
   win = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 900,
     minHeight: 560,
-    // The window paints this before the renderer's first frame, so it has to be
-    // the chosen theme's background — otherwise a light theme opens with a dark flash.
-    backgroundColor: theme.bg,
+    // With glass off this is `backgroundColor: theme.bg` and nothing else: the
+    // window paints the chosen theme's background before the renderer's first
+    // frame, so a light theme never opens with a dark flash. A glass mode has to
+    // clear that to nothing for the desktop to reach the client area, and pays
+    // the difference back with the boot palette below — the renderer's own first
+    // paint then needs no IPC round-trip.
+    ...glassWindowOptions(glass.active, theme),
     title: 'Terminator',
     icon: iconPath,
     autoHideMenuBar: true,
@@ -42,6 +55,13 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Preload runs before the document, so this reaches the first paint with
+      // no round-trip. main.tsx writes it straight onto the root element.
+      additionalArguments: [
+        `--terminator-boot=${Buffer.from(
+          JSON.stringify({ vars: cssVars(theme), dark: theme.dark, id: theme.id, glass: glass.active }),
+        ).toString('base64')}`,
+      ],
     },
   })
 
@@ -51,6 +71,7 @@ function createWindow(): void {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
+  setFadeEnabled(glass.active === 'off')
   setWindow(win)
   setFsWindow(win)
 }

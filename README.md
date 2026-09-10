@@ -298,6 +298,7 @@ set to — and which ones you left open is remembered:
 - `defaultShell`, `gitGuiCommand`, `worktreesRoot`, `projects`.
 - `theme` — the active colour theme (see below), and `customTheme` for per-token overrides.
   Themes of your own live in their own file, `themes.json`, alongside this one.
+- `windowGlass` — `off` (default), `acrylic`, `mica` or `clear`. See **Glass** below.
 - `settingsOpen` — which Settings sections are expanded. Absent means collapsed.
 - `notifications` — see below.
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.
@@ -345,6 +346,8 @@ theme is seventy-odd colours and `settings.json` is a file you edit by hand.
   whether the theme is light or dark.
 - **Depth** — one control that moves the sidebar, footer and panels away from the background as
   a group. Any individual surface can be pinned to hold still, and unpinned again.
+- **Glass** — two sliders, terminal and app, for how much of the desktop shows through. See
+  **Glass** below.
 - **Terminal** — the full ANSI set plus cursor and selection, over a sample of terminal output.
   This is where a published palette goes.
 - **Editor syntax** — the ten token colours, shown against a real code sample.
@@ -356,6 +359,46 @@ off-screen, and any open editor tab — because the editor drives the same repai
 does rather than a preview of its own. There is no Save button: edits land a moment after you
 stop. Combinations that make text unreadable raise a warning rather than being corrected or
 refused, and a value that isn't a hex colour never leaves the box you typed it in.
+
+### Glass
+
+Two dials in the theme editor, under **GLASS**, decide how much of the desktop comes through:
+**terminal** for the panes and **app** for the sidebar, the status bar and the pane headers.
+They are independent — solid chrome around see-through terminals is the ordinary setting — and
+they belong to the theme, so each of yours carries its own pair. Like every other value in the
+editor they are live as you drag.
+
+Only backgrounds go see-through. Terminal output, labels and icons are painted from separate
+tokens and stay fully opaque at every setting, and Settings, the menus and the theme editor
+itself never take either dial — so no combination can hide the way back. Both sliders stop
+short of nothing: 30% for the terminal, 50% for the chrome.
+
+Actually letting the desktop through is Settings → **APPEARANCE → WINDOW GLASS**, and it needs a
+restart, which the panel says next to the control along with a **Restart now** button. The reason
+is unavoidable: a window with an OS frame can't show anything behind it, on Windows or anywhere
+else, so glass rebuilds the window frameless. The title bar moves into the app as a slim drag
+strip, the minimise/maximise/close buttons stay the system's own, and the Alt menu bar goes. The
+global show/hide hotkey also stops fading while glass is on — whole-window opacity and a system
+backdrop are a poor pairing on Windows.
+
+The four settings:
+
+- **Off** — an ordinary opaque window. Nothing about the app changes.
+- **Acrylic** — Windows 11's frosted backdrop, blurring whatever is behind the window. Needs
+  Windows 11 22H2 or newer. Windows flattens it to a plain tint while the window is unfocused,
+  and it has known rough edges: the backdrop can go black when the window is dragged partly
+  off-screen or fully covered, and grey when **Energy saver** is on.
+- **Mica** — a blurred tint of the wallpaper only, never the windows behind. Always drawn,
+  cheaper, and much the steadier of the two. Also Windows 11 22H2 and up.
+- **Clear** — plain transparency, no blur, wherever the desktop composites. Sharpest view of
+  what's behind and the hardest to read over a busy wallpaper.
+
+Asking for Acrylic or Mica where they don't exist — an older Windows, or macOS and Linux — falls
+back to Clear rather than opening a black window, and Settings says so. macOS uses its own
+under-window vibrancy for all three.
+
+A see-through area is still a normal part of the window: it takes clicks and it takes focus. The
+app never makes any of itself click-through.
 
 **Export** hands you the theme as JSON to keep or send on. **Import** (Settings → THEME) takes
 one back, and is deliberately forgiving: paste a published palette's `ansi` block on its own and

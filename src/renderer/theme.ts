@@ -15,6 +15,21 @@ export const C = {
   bg: 'var(--c-bg)',
   sidebar: 'var(--c-sidebar)',
   footer: 'var(--c-footer)',
+  /**
+   * The glass grounds — the theme's own surfaces at its two opacities. These are
+   * the *only* tokens that carry the glass alpha, and each has exactly one
+   * painter, because two stacked alphas compound into something more opaque than
+   * the slider asked for. The painter is named beside each one; everything above
+   * and below it paints `transparent`. See cssVars() in shared/themes.ts.
+   */
+  /** The pane column's ground — App.tsx. */
+  glassGround: 'var(--c-glass-ground)',
+  /** The sidebar, rail and expanded alike — Sidebar.tsx. */
+  glassSidebar: 'var(--c-glass-sidebar)',
+  /** The status bar — Footer.tsx. */
+  glassFooter: 'var(--c-glass-footer)',
+  /** Each pane's wrapper, header included — TerminalPane.tsx. */
+  glassTerm: 'var(--c-glass-term)',
   panel: 'var(--c-panel)',
   panel2: 'var(--c-panel2)',
   input: 'var(--c-input)',

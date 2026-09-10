@@ -35,7 +35,7 @@ export function Footer(): React.JSX.Element {
         height: 40,
         flex: 'none',
         padding: '0 16px',
-        background: C.footer,
+        background: C.glassFooter,
         borderTop: `1px solid ${C.border}`,
         fontSize: 11.5,
         color: C.muted,

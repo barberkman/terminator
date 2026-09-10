@@ -13,12 +13,15 @@ import { C, FONT, accentA, ink } from '../theme'
 function chrome(dark: boolean): Extension {
   return EditorView.theme(
     {
-      '&': { color: C.text, backgroundColor: C.bg, height: '100%', fontSize: '13px' },
+      // Transparent, not C.bg: the editor fills a pane whose wrapper has already
+      // painted the ground at the theme's terminal opacity, and a second layer
+      // here would compound it.
+      '&': { color: C.text, backgroundColor: 'transparent', height: '100%', fontSize: '13px' },
       '.cm-scroller': { fontFamily: FONT, lineHeight: '1.55' },
       '.cm-content': { caretColor: C.cursor },
       '.cm-cursor, .cm-dropCursor': { borderLeftColor: C.cursor },
       '&.cm-focused .cm-cursor': { borderLeftColor: C.cursor },
-      '.cm-gutters': { backgroundColor: C.bg, color: C.dim, border: 'none' },
+      '.cm-gutters': { backgroundColor: 'transparent', color: C.dim, border: 'none' },
       '.cm-activeLine': { backgroundColor: C.hover },
       '.cm-activeLineGutter': { backgroundColor: C.hover, color: C.muted },
       '.cm-foldPlaceholder': { backgroundColor: C.panel2, color: C.muted, border: 'none' },

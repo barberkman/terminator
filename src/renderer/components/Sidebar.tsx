@@ -809,7 +809,7 @@ export function Sidebar(): React.JSX.Element {
         style={{
           width: sz(42),
           flex: 'none',
-          background: C.sidebar,
+          background: C.glassSidebar,
           ...sideBorder,
           display: 'flex',
           flexDirection: 'column',
@@ -859,7 +859,7 @@ export function Sidebar(): React.JSX.Element {
       style={{
         width: 262,
         flex: 'none',
-        background: C.sidebar,
+        background: C.glassSidebar,
         ...sideBorder,
         display: 'flex',
         flexDirection: 'column',

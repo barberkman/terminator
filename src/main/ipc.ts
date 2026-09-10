@@ -1,4 +1,4 @@
-import { dialog, ipcMain, type BrowserWindow } from 'electron'
+import { app, dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
 import { DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
 import type {
@@ -32,6 +32,7 @@ import { forkTranscript, listPrompts } from './transcript'
 import { readConversation } from './conversation'
 import { setPendingPrompt } from './prefill'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
+import { glassStatus } from './glass'
 
 /** Registers every ipcMain handler. The single IPC registry for the main process. */
 export function registerIpc(getWin: () => BrowserWindow): void {
@@ -286,4 +287,12 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     return { themes, settings }
   })
   ipcMain.handle(Channels.globalShortcutStatus, () => globalShortcutStatus())
+  // What the *live* window was built with, which is not the same as what
+  // settings.windowGlass says once it's been changed — the difference is exactly
+  // what Settings shows a Restart now button for.
+  ipcMain.handle(Channels.glassStatus, () => glassStatus())
+  ipcMain.handle(Channels.relaunch, () => {
+    app.relaunch()
+    app.quit()
+  })
 }

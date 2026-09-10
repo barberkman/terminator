@@ -13,6 +13,7 @@ import { SettingsView } from './components/SettingsView'
 import { ThemeEditorView } from './components/ThemeEditorView'
 import { NotesView } from './components/NotesView'
 import { Toasts } from './components/Toasts'
+import { TitleBar } from './components/TitleBar'
 import { matchesAccelerator } from './shortcuts'
 import { C } from './theme'
 import { applyThemeFromSettings } from './theme-apply'
@@ -25,6 +26,10 @@ export function App(): React.JSX.Element {
   const fontSize = useStore((s) => s.settings?.fontSize)
   const iconScale = useStore((s) => s.settings?.iconScale)
   const sidebarSide = useStore((s) => s.settings?.sidebarSide)
+  // Fixed for the window's lifetime — glass is decided at construction and a
+  // change to the setting only lands on the next launch — so it reads straight
+  // off the boot payload rather than from the store.
+  const glass = window.terminator.bootTheme?.glass ?? 'off'
   const linkSettings = useStore((s) => s.settings?.links)
   const settings = useStore((s) => s.settings)
 
@@ -195,9 +200,12 @@ export function App(): React.JSX.Element {
         height: '100vh',
         width: '100%',
         overflow: 'hidden',
-        background: C.bg,
+        // Transparent: the sidebar, the pane column and the footer each paint
+        // their own ground once. A ground here would sit under all three.
+        background: 'transparent',
       }}
     >
+      {glass !== 'off' && <TitleBar />}
       <div
         style={{
           display: 'flex',
@@ -208,7 +216,11 @@ export function App(): React.JSX.Element {
         }}
       >
         <Sidebar />
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: C.bg }}>
+        {/* No ground here. A pane paints its own, and a layer underneath one
+            would composite with it — a 60% terminal over an 85% column reads as
+            94%, not 60%. The 8px seams the grid leaves between panes show the
+            window's backdrop instead. */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <PaneGrid />
         </div>
       </div>

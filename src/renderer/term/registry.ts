@@ -37,7 +37,12 @@ let curFontFamily = FONT
  */
 function xtermTheme(p: ThemePalette): ITheme {
   return {
-    background: p.bg,
+    // Fully transparent, always. The pane wrapper paints the ground at the
+    // theme's terminal opacity (C.glassTerm), which covers the header and the
+    // sub-row remainder xterm leaves at the bottom of a pane as one piece —
+    // xterm's own background covers neither. It also means dragging the opacity
+    // slider is a CSS variable write and never a re-theme of every live pane.
+    background: 'rgba(0,0,0,0)',
     foreground: p.text,
     cursor: p.cursor,
     cursorAccent: p.cursorText,
@@ -127,6 +132,14 @@ export function getOrCreate(id: string): Entry {
     cursorBlink: true,
     scrollback: 8000,
     allowProposedApi: true,
+    // Unconditional, because xterm can't change this after open() and these
+    // terminals outlive every theme switch — gating it on the current theme
+    // would leave the opacity slider working only on panes opened afterwards.
+    // It's close to free here: there's no webgl or canvas addon in the tree, so
+    // this is the DOM renderer and transparency is just CSS. (It's the webgl
+    // renderer that thins out glyphs with this on.) At 100% opacity a pane
+    // composites to exactly the pixels it always did.
+    allowTransparency: true,
     theme: curTheme,
   })
   // OSC 8 hyperlinks — text a program explicitly marked as a link. Detection of

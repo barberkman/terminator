@@ -47,6 +47,12 @@
   --c-status-closed: #6e6a60;
   --c-ui-weight: 400;
   --c-texture: none;
+  /* The glass grounds at their default full opacity, so the first frame agrees
+     with the first applyTheme(). A theme only makes these translucent. */
+  --c-glass-ground: rgba(26, 25, 23, 1);
+  --c-glass-sidebar: rgba(32, 30, 27, 1);
+  --c-glass-footer: rgba(29, 28, 25, 1);
+  --c-glass-term: rgba(26, 25, 23, 1);
   color-scheme: dark;
 }
 
@@ -71,13 +77,18 @@ input[type='color']::-webkit-color-swatch {
   border-radius: 5px;
 }
 
+/* No background here on purpose. The chrome's ground is painted by the sidebar,
+   the footer and the pane column, each exactly once (see C.glass* in theme.ts) —
+   a ground on these as well would sit under all three and compound their alpha.
+   With glass off the window's own backgroundColor is this colour anyway, so
+   nothing changes; with glass on, this is what lets the desktop reach the gaps. */
 html,
 body,
 #root {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: var(--c-bg);
+  background: transparent;
   color: var(--c-text);
   font-weight: var(--c-ui-weight);
   font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
@@ -296,6 +307,13 @@ textarea {
    `.xterm .xterm-viewport` rule on specificity, so this wins whichever order
    the two stylesheets happen to land in. */
 .xterm div.xterm-viewport {
+  background-color: transparent;
+}
+/* The pane wrapper paints the terminal's ground (C.glassTerm) so that it covers
+   the header and the sub-row remainder in one piece; xterm's theme background is
+   fully transparent to match. This keeps the element xterm paints out of the way
+   whatever it decides to put there, same reasoning as the viewport rule above. */
+.xterm .xterm-scrollable-element {
   background-color: transparent;
 }
 .xterm .xterm-viewport::-webkit-scrollbar-thumb {

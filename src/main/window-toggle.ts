@@ -9,6 +9,22 @@ const FADE_MS = 150
 let fadeTimer: NodeJS.Timeout | null = null
 /** The accelerator currently registered with the OS (so we can unregister on change). */
 let registered = ''
+/** Whether the summon/dismiss fade runs at all — see setFadeEnabled. */
+let fadeEnabled = true
+
+/**
+ * Turned off by createWindow while the window is in a glass mode.
+ *
+ * setOpacity is layered-window alpha on Windows, and layering a window that also
+ * carries a DWM system backdrop is the combination that misbehaves — the
+ * backdrop can drop out for the length of the tween. Rather than ship a fade
+ * that might flash black over the desktop, glass shows and hides instantly and
+ * Settings says so. fade() itself is untouched, so this is one call to reverse
+ * once the pairing is confirmed good on a real Windows 11 machine.
+ */
+export function setFadeEnabled(enabled: boolean): void {
+  fadeEnabled = enabled
+}
 
 /** Opacity tween (easeOutQuad). No-op-safe: setOpacity needs a compositor; without
  *  one it's effectively instant and the toggle still works. */
@@ -43,19 +59,21 @@ function fade(win: BrowserWindow, from: number, to: number, done?: () => void): 
 export function toggleWindow(win: BrowserWindow | null): void {
   if (!win || win.isDestroyed()) return
   if (win.isMinimized()) {
-    win.setOpacity(0)
+    if (fadeEnabled) win.setOpacity(0)
     win.restore()
     win.focus()
-    fade(win, 0, 1)
+    if (fadeEnabled) fade(win, 0, 1)
   } else if (!win.isFocused()) {
     win.show()
     win.focus()
-  } else {
+  } else if (fadeEnabled) {
     fade(win, 1, 0, () => {
       win.minimize()
       // Reset so a later taskbar restore (not via the hotkey) isn't transparent.
       win.setOpacity(1)
     })
+  } else {
+    win.minimize()
   }
 }
 

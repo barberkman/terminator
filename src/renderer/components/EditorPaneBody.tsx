@@ -195,7 +195,11 @@ export function EditorPaneBody({ session }: { session: Session }): React.JSX.Ele
   }
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', background: C.bg }}>
+    // An editor pane's body takes the terminal ground, same as a terminal's.
+    // The file tree and tab bar below keep their opaque surfaces on purpose:
+    // they sit inside a pane that has already spent its alpha, and solid is what
+    // keeps them readable.
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', background: C.glassTerm }}>
       {/* File tree */}
       <div style={{ width: treeWidth, flex: 'none', minWidth: 0, display: 'flex', flexDirection: 'column', background: C.sidebar, borderRight: `1px solid ${C.border}` }}>
         <div style={{ padding: '9px 12px 7px', fontSize: 10.5, letterSpacing: 0.6, color: C.dim, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7 }}>

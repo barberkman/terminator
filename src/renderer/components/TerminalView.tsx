@@ -38,7 +38,10 @@ export function TerminalView({ id, active }: { id: string; active: boolean }): R
     <div
       ref={ref}
       onMouseDown={() => registry.focus(id)}
-      style={{ flex: 1, minHeight: 0, background: C.bg, padding: '6px 8px' }}
+      // The terminal's ground, painted once: this spans the padding gutter and
+      // the sub-row remainder at the foot of the pane that xterm's own elements
+      // don't reach, which is why the ground lives here and not on xterm.
+      style={{ flex: 1, minHeight: 0, background: C.glassTerm, padding: '6px 8px' }}
     />
   )
 }

@@ -121,6 +121,18 @@ export interface ThemeSeed {
    * is laid on at the same 0.3 the derived default uses unless this says otherwise.
    */
   selectionAlpha?: number
+  /**
+   * How opaque the terminal panes' background is, `TERMINAL_OPACITY_MIN`..1.
+   * Only reaches the desktop when the window is in a glass mode (see
+   * main/glass.ts); at 1 — the default — a pane paints exactly as it always has.
+   */
+  terminalOpacity?: number
+  /**
+   * The same for the app chrome: the sidebar, the footer and the pane grounds.
+   * Independent of `terminalOpacity` on purpose — solid chrome around
+   * see-through terminals is the common setting.
+   */
+  appOpacity?: number
   status: Record<SessionStatus, string>
   ansi: AnsiPalette
   syntax: SyntaxPalette
@@ -153,6 +165,10 @@ export interface ThemePalette extends Record<RampKey, string> {
   selectionAlpha: number
   /** `selectionHex` at `selectionAlpha`, ready for xterm and `--c-selection`. */
   selection: string
+  /** Resolved and clamped; 1 means the pane is opaque, as it has always been. */
+  terminalOpacity: number
+  /** Resolved and clamped; 1 means the chrome is opaque. */
+  appOpacity: number
   /** "r,g,b" triplets — every alpha tint in the app is mixed from one of these. */
   bgRgb: string
   inkRgb: string
@@ -252,6 +268,21 @@ function buildSurfaces(seed: ThemeSeed): Surfaces {
   }
 }
 
+/**
+ * Floors for the two glass opacities. They exist so the app can never be dragged
+ * to the point where it isn't there: below these the chrome stops carrying its
+ * 11px labels, and Settings — the only place the sliders can be undone — has to
+ * stay reachable. The chrome floor is the higher of the two because it holds
+ * small text and icons, where the terminal is broad type on a broad ground.
+ */
+export const TERMINAL_OPACITY_MIN = 0.3
+export const APP_OPACITY_MIN = 0.5
+
+/** Clamp one of the glass opacities to its floor..1. */
+export function clampOpacity(value: number, min: number): number {
+  return Math.max(min, Math.min(1, value))
+}
+
 export function buildPalette(seed: ThemeSeed): ThemePalette {
   return {
     id: seed.id,
@@ -271,6 +302,10 @@ export function buildPalette(seed: ThemeSeed): ThemePalette {
     selectionHex: seed.selection ?? seed.accent,
     selectionAlpha: seed.selectionAlpha ?? 0.3,
     selection: `rgba(${rgbTriplet(seed.selection ?? seed.accent)},${seed.selectionAlpha ?? 0.3})`,
+    // Clamped here as well as in sanitizeSeed: the theme editor rebuilds a live
+    // draft through this on every keystroke, never through the sanitiser.
+    terminalOpacity: clampOpacity(seed.terminalOpacity ?? 1, TERMINAL_OPACITY_MIN),
+    appOpacity: clampOpacity(seed.appOpacity ?? 1, APP_OPACITY_MIN),
     bgRgb: rgbTriplet(seed.bg),
     inkRgb: rgbTriplet(seed.fg),
     accentRgb: rgbTriplet(seed.accent),
@@ -789,6 +824,18 @@ export function resolveTheme(theme: string | undefined, custom?: ThemeOverrides)
  * The palette as CSS custom properties. Alpha tints are deliberately *not*
  * variables of their own — components mix them from the `*-rgb` triplets, e.g.
  * `rgba(var(--c-ink-rgb),0.07)`.
+ *
+ * The four `--c-glass-*` tokens are the exception, and the only place either
+ * opacity turns into a colour. Two invariants hold them together:
+ *
+ *  - Every other token here keeps its opaque value. `--c-panel`, `--c-panel2`
+ *    and `--c-input` in particular, because those are what modals, menus and
+ *    Settings paint with — Settings is the only surface that can undo a slider,
+ *    so it must never be able to make itself see-through. Text tokens are
+ *    untouched too, which is why only backgrounds go glassy and glyphs never do.
+ *  - Each glass token is painted by exactly one element (renderer/theme.ts names
+ *    them). Stack two and the alphas compound, and the surface comes out more
+ *    opaque than the slider says.
  */
 export function cssVars(p: ThemePalette): Record<string, string> {
   const vars: Record<string, string> = {
@@ -826,6 +873,10 @@ export function cssVars(p: ThemePalette): Record<string, string> {
     '--c-status-waiting-rgb': rgbTriplet(p.status.waiting),
     '--c-ui-weight': String(p.uiWeight),
     '--c-texture': p.texture,
+    '--c-glass-ground': `rgba(${p.bgRgb},${p.appOpacity})`,
+    '--c-glass-sidebar': `rgba(${rgbTriplet(p.sidebar)},${p.appOpacity})`,
+    '--c-glass-footer': `rgba(${rgbTriplet(p.footer)},${p.appOpacity})`,
+    '--c-glass-term': `rgba(${p.bgRgb},${p.terminalOpacity})`,
   }
   for (const [key, value] of Object.entries(p.status)) vars[`--c-status-${key}`] = value
   for (const [key, value] of Object.entries(p.syntax)) vars[`--c-syn-${key}`] = value
@@ -1133,6 +1184,12 @@ export function sanitizeSeed(input: unknown, fallback: ThemeSeed = THEME_SEEDS[0
   if (selection) seed.selection = selection
   const alpha = Number(src.selectionAlpha)
   if (Number.isFinite(alpha)) seed.selectionAlpha = Math.max(0.05, Math.min(0.9, alpha))
+  const termOpacity = Number(src.terminalOpacity)
+  if (Number.isFinite(termOpacity)) {
+    seed.terminalOpacity = clampOpacity(termOpacity, TERMINAL_OPACITY_MIN)
+  }
+  const appOpacity = Number(src.appOpacity)
+  if (Number.isFinite(appOpacity)) seed.appOpacity = clampOpacity(appOpacity, APP_OPACITY_MIN)
   const weight = UI_WEIGHTS.find((w) => w === Number(src.uiWeight))
   if (weight) seed.uiWeight = weight
   if (typeof src.from === 'string') seed.from = src.from.trim().slice(0, 60)
@@ -1143,7 +1200,8 @@ export function sanitizeSeed(input: unknown, fallback: ThemeSeed = THEME_SEEDS[0
 const THEME_KEYS = new Set([
   'name', 'dark', 'bg', 'elev', 'surfaces', 'hi', 'fg', 'ramp', 'accent', 'accentSoft',
   'accentText', 'danger', 'kindIcon', 'shadow', 'cursor', 'cursorText', 'selection',
-  'selectionAlpha', 'status', 'ansi', 'syntax', 'uiWeight', 'texture',
+  'selectionAlpha', 'terminalOpacity', 'appOpacity', 'status', 'ansi', 'syntax',
+  'uiWeight', 'texture',
 ])
 
 /**

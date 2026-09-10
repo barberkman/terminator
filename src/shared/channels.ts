@@ -62,4 +62,6 @@ export const Channels = {
   themesGet: 'themes:get',
   themesSave: 'themes:save',
   globalShortcutStatus: 'globalShortcut:status',
+  glassStatus: 'window:glassStatus',
+  relaunch: 'app:relaunch',
 } as const

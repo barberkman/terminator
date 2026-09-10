@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import type { BrowserOption, EditorOption, NotifType, Settings } from '../../shared/types'
+import type {
+  BrowserOption,
+  EditorOption,
+  GlassMode,
+  GlassStatus,
+  NotifType,
+  Settings,
+} from '../../shared/types'
 import { formatArgs, parseArgs } from '../../shared/args'
 import { importTheme, newThemeId, resolveTheme, snapshotSeed } from '../../shared/themes'
 import { C, STATUS_COLORS, accentA, sz } from '../theme'
@@ -22,7 +29,8 @@ const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited']
  */
 const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'worktreesRoot', 'notifications', 'terminalFont',
-  'fontSize', 'iconScale', 'sidebarSide', 'globalToggleShortcut', 'notesShortcut', 'attachments',
+  'fontSize', 'iconScale', 'sidebarSide', 'windowGlass', 'globalToggleShortcut', 'notesShortcut',
+  'attachments',
   'links', 'settingsOpen',
 ] as const satisfies readonly (keyof Settings)[]
 
@@ -241,6 +249,64 @@ function EditorRow({
   )
 }
 
+/**
+ * What the glass control owes the user: that it does nothing until a restart,
+ * what the restart changes, and whether this machine can actually give them the
+ * material they picked. A slider that silently waits for a relaunch is the thing
+ * this note exists to prevent.
+ */
+function GlassNote({
+  draft,
+  status,
+  onRestart,
+}: {
+  draft: GlassMode
+  status: GlassStatus | null
+  onRestart: () => Promise<void>
+}): React.JSX.Element | null {
+  // Against what the window was *asked* for at launch, not what it settled on:
+  // a downgrade repeats on every launch, so comparing with `active` would ask
+  // for a restart that never clears.
+  const pending = status !== null && draft !== status.requested
+  const downgraded = Boolean(status?.reason) && !pending
+
+  if (!pending && !downgraded) return null
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        marginTop: 8,
+        padding: '9px 11px',
+        borderRadius: 8,
+        border: `1px solid ${C.border2}`,
+        background: C.panel2,
+        fontSize: 10.5,
+        color: C.body,
+      }}
+    >
+      <span style={{ flex: 1 }}>
+        {downgraded
+          ? status?.reason
+          : draft === 'off'
+            ? 'Takes effect after a restart: the window is rebuilt with its normal title bar, and the show/hide hotkey fades again.'
+            : "Takes effect after a restart — the desktop can only come through a window with no frame, so the title bar moves into the app and the Alt menu goes with it. The show/hide hotkey stops fading while glass is on."}
+      </span>
+      {pending && (
+        <button
+          type="button"
+          style={{ ...smallBtn, color: C.accent, borderColor: C.accentBorder }}
+          onClick={() => void onRestart()}
+        >
+          Restart now
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function SettingsView(): React.JSX.Element | null {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
@@ -250,6 +316,7 @@ export function SettingsView(): React.JSX.Element | null {
   const setThemeEditorFor = useStore((s) => s.setThemeEditorFor)
   const [draft, setDraft] = useState<Settings | null>(settings)
   const [shortcutStatus, setShortcutStatus] = useState<{ accelerator: string; registered: boolean } | null>(null)
+  const [glassStatus, setGlassStatus] = useState<GlassStatus | null>(null)
   // null when the import sheet is shut; the pasted text while it's open.
   const [importText, setImportText] = useState<string | null>(null)
   const [importError, setImportError] = useState('')
@@ -264,6 +331,7 @@ export function SettingsView(): React.JSX.Element | null {
       setImportText(null)
       setImportError('')
       void window.terminator.getGlobalShortcutStatus().then(setShortcutStatus)
+      void window.terminator.getGlassStatus().then(setGlassStatus)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show])
@@ -551,6 +619,29 @@ export function SettingsView(): React.JSX.Element | null {
                     { value: 'left' as const, label: 'Left' },
                     { value: 'right' as const, label: 'Right' },
                   ]}
+                />
+              </Field>
+              <Field
+                label="WINDOW GLASS"
+                hint="Lets the desktop show through the app's backgrounds. How much is per theme — the two sliders in the theme editor, under GLASS. Acrylic frosts whatever is behind the window and needs Windows 11 22H2; Mica tints from the wallpaper only, and is the steadier of the two; Clear is plain see-through with no blur."
+              >
+                <Choice
+                  value={draft.windowGlass ?? 'off'}
+                  onPick={(windowGlass) => patch({ windowGlass })}
+                  options={[
+                    { value: 'off' as const, label: 'Off' },
+                    { value: 'acrylic' as const, label: 'Acrylic' },
+                    { value: 'mica' as const, label: 'Mica' },
+                    { value: 'clear' as const, label: 'Clear' },
+                  ]}
+                />
+                <GlassNote
+                  draft={draft.windowGlass ?? 'off'}
+                  status={glassStatus}
+                  onRestart={async () => {
+                    await save()
+                    await window.terminator.relaunch()
+                  }}
                 />
               </Field>
             </>

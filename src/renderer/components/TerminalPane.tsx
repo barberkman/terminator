@@ -146,7 +146,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
           minWidth: 0,
           minHeight: 0,
           color: C.dim,
-          background: C.bg,
+          background: C.glassTerm,
           ...frame,
         }}
       >
@@ -190,7 +190,6 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
           flexDirection: 'column',
           minWidth: 0,
           minHeight: 0,
-          background: C.bg,
           overflow: 'hidden',
           ...frame,
         }}
@@ -223,7 +222,9 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
         flexDirection: 'column',
         minWidth: 0,
         minHeight: 0,
-        background: C.bg,
+        // Deliberately no ground. The header paints the app opacity and the body
+        // paints the terminal opacity, one layer each; a ground here would sit
+        // under both and composite with whichever landed on top of it.
         overflow: 'hidden',
         ...frame,
       }}

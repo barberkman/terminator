@@ -197,7 +197,11 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
         gap: 12,
         padding: '11px 14px',
         borderBottom: `1px solid ${C.border}`,
-        background: active ? ink(0.02) : 'transparent',
+        // The pane's chrome strip, on the app dial rather than the terminal one.
+        // The focused wash rides over it as an image so it stays one element and
+        // one ground.
+        backgroundColor: C.glassGround,
+        backgroundImage: active ? `linear-gradient(${ink(0.02)}, ${ink(0.02)})` : undefined,
       }}
     >
       <span style={dotStyle(session.status, 9)} />

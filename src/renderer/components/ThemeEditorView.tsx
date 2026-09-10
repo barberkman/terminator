@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  APP_OPACITY_MIN,
   RAMP_KEYS,
   SURFACE_KEYS,
+  TERMINAL_OPACITY_MIN,
   type AnsiPalette,
   type CustomTheme,
   type RampKey,
@@ -21,6 +23,48 @@ import { freeName, upsert, writeThemes } from '../themeActions'
 import { Choice, Field, Section, inputStyle, smallBtn } from './controls'
 import { ColorField, ContrastNotes } from './ColorField'
 import { ThemeCodeSample } from './ThemeCodeSample'
+
+const pct = (v: number): string => `${Math.round(v * 100)}%`
+
+/**
+ * One of the two glass dials. Whole percent, floored at the theme model's own
+ * minimum so the slider cannot ask for something sanitizeSeed would refuse — the
+ * same relationship the elev control has with its wider clamp.
+ */
+function OpacitySlider({
+  value,
+  min,
+  onChange,
+}: {
+  value: number
+  min: number
+  onChange: (value: number) => void
+}): React.JSX.Element {
+  const floor = Math.round(min * 100)
+  const now = Math.round(value * 100)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <input
+        type="range"
+        min={floor}
+        max={100}
+        step={5}
+        value={now}
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
+        style={{ flex: 1, accentColor: C.accent }}
+      />
+      <input
+        type="number"
+        min={floor}
+        max={100}
+        step={5}
+        style={{ ...inputStyle, width: 70, flex: 'none' }}
+        value={now}
+        onChange={(e) => onChange(Math.max(floor, Math.min(100, Number(e.target.value) || floor)) / 100)}
+      />
+    </div>
+  )
+}
 
 const ANSI_KEYS: (keyof AnsiPalette)[] = [
   'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
@@ -197,6 +241,9 @@ export function ThemeEditorView(): React.JSX.Element | null {
     void flush()
     setId(null)
   }
+
+  // Decided at window construction, so it can't change while this is open.
+  const glass = window.terminator.bootTheme?.glass ?? 'off'
 
   const section = (key: string, label: string, summary: React.ReactNode, children: React.ReactNode) => (
     <Section
@@ -385,6 +432,70 @@ export function ThemeEditorView(): React.JSX.Element | null {
               </Field>
             </>
           ))}
+
+          {section(
+            'glass',
+            'GLASS',
+            `terminal ${pct(palette.terminalOpacity)} · app ${pct(palette.appOpacity)}`,
+            (
+              <>
+                {glass === 'off' && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '9px 11px',
+                      marginBottom: 12,
+                      borderRadius: 8,
+                      border: `1px solid ${C.border2}`,
+                      background: C.panel2,
+                      fontSize: 11,
+                      color: C.body,
+                    }}
+                  >
+                    <span style={{ flex: 1 }}>
+                      Window glass is off, so these two only tint against the theme's own
+                      background — nothing of the desktop comes through yet. Turning it on rebuilds
+                      the window without its title bar, which takes a restart.
+                    </span>
+                    <button
+                      type="button"
+                      style={{ ...smallBtn, color: C.accent, borderColor: C.accentBorder }}
+                      onClick={() => {
+                        // Settings is z-50 and this editor is z-52, so it has to
+                        // close or Settings opens behind it.
+                        close()
+                        useStore.getState().setShowSettings(true)
+                      }}
+                    >
+                      Settings
+                    </button>
+                  </div>
+                )}
+                <Field
+                  label="TERMINAL"
+                  hint="How much of the desktop shows through the terminal panes. Backgrounds only — the output, the cursor and the selection stay fully opaque at every setting, so nothing here can cost you legibility of the text itself."
+                >
+                  <OpacitySlider
+                    value={palette.terminalOpacity}
+                    min={TERMINAL_OPACITY_MIN}
+                    onChange={(terminalOpacity) => set({ terminalOpacity })}
+                  />
+                </Field>
+                <Field
+                  label="APP"
+                  hint="The same for the chrome: the sidebar, the status bar and the pane grounds. Independent of the terminal above — solid chrome around see-through panes is a perfectly ordinary way to run this. Settings, the menus and this editor always stay opaque, so a setting here can never hide the way back."
+                >
+                  <OpacitySlider
+                    value={palette.appOpacity}
+                    min={APP_OPACITY_MIN}
+                    onChange={(appOpacity) => set({ appOpacity })}
+                  />
+                </Field>
+              </>
+            ),
+          )}
 
           {section('terminal', 'TERMINAL', 'the ANSI set, cursor and selection', (
             <>

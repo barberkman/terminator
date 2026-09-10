@@ -3,6 +3,7 @@ import { Channels } from '../shared/channels'
 import type { CustomTheme } from '../shared/themes'
 import type {
   AttachFileInput,
+  BootTheme,
   BranchSessionInput,
   CreateSessionInput,
   FolderChoice,
@@ -15,6 +16,23 @@ import type {
   Settings,
   TerminatorApi,
 } from '../shared/types'
+
+/**
+ * The palette main handed over in `webPreferences.additionalArguments`. Read
+ * here rather than fetched, because preload runs before the document: main.tsx
+ * can write these onto the root element before the first frame instead of
+ * waiting on two IPC round-trips. A missing or malformed argument just means the
+ * static fallbacks in styles.css paint the first frame, as they always have.
+ */
+function bootTheme(): BootTheme | null {
+  const arg = process.argv.find((a) => a.startsWith('--terminator-boot='))
+  if (!arg) return null
+  try {
+    return JSON.parse(Buffer.from(arg.slice('--terminator-boot='.length), 'base64').toString())
+  } catch {
+    return null
+  }
+}
 
 function on<T>(channel: string, cb: (payload: T) => void): () => void {
   const handler = (_e: unknown, payload: T) => cb(payload)
@@ -68,6 +86,9 @@ const api: TerminatorApi = {
   getSettings: () => ipcRenderer.invoke(Channels.settingsGet),
   updateSettings: (patch: Partial<Settings>) => ipcRenderer.invoke(Channels.settingsUpdate, patch),
   getGlobalShortcutStatus: () => ipcRenderer.invoke(Channels.globalShortcutStatus),
+  getGlassStatus: () => ipcRenderer.invoke(Channels.glassStatus),
+  bootTheme: bootTheme(),
+  relaunch: () => ipcRenderer.invoke(Channels.relaunch),
   getCustomThemes: () => ipcRenderer.invoke(Channels.themesGet),
   saveCustomThemes: (list: CustomTheme[]) => ipcRenderer.invoke(Channels.themesSave, list),
 

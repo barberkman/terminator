@@ -511,6 +511,10 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
         zIndex: 2,
         display: 'flex',
         flexDirection: 'column',
+        // Opaque on purpose, and the one surface inside a pane that is. It sits
+        // inset:0 over a *live* terminal: translucent here would either ghost
+        // that output through the transcript or stack a second alpha on the
+        // pane's own ground. A long read wants a solid page under it.
         background: C.bg,
       }}
     >

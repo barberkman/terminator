@@ -321,6 +321,38 @@ export interface AttachmentSettings {
   keepDays: number
 }
 
+/**
+ * How much of the desktop the window lets through, and by what means.
+ *
+ * - `off` — an ordinary opaque, OS-framed window. The default.
+ * - `acrylic` — Windows 11's frosted backdrop, blurring whatever is behind the
+ *   window. Windows flattens it while the window is unfocused.
+ * - `mica` — a blurred tint of the wallpaper only, always drawn, and much the
+ *   better behaved of the two.
+ * - `clear` — plain transparency, no blur, on any platform that composites.
+ *
+ * Anything but `off` builds the window frameless, so it only takes effect on a
+ * restart. See main/glass.ts for why.
+ */
+export type GlassMode = 'off' | 'acrylic' | 'mica' | 'clear'
+
+/** The palette handed to the renderer at construction, ahead of any IPC. */
+export interface BootTheme {
+  /** The output of cssVars() for the resolved theme. */
+  vars: Record<string, string>
+  dark: boolean
+  id: string
+  glass: GlassMode
+}
+
+/** What the window actually launched with, for Settings to report. */
+export interface GlassStatus {
+  requested: GlassMode
+  active: GlassMode
+  /** Why `active` differs from `requested`, when it does. */
+  reason?: string
+}
+
 export interface Settings {
   modes: {
     normal: ModeConfig
@@ -340,6 +372,12 @@ export interface Settings {
   iconScale: number
   /** Which side of the window the session sidebar sits on. */
   sidebarSide: 'left' | 'right'
+  /**
+   * Whether the desktop shows through the app's backgrounds, and how. How *much*
+   * comes from the active theme's `terminalOpacity` and `appOpacity`. Needs a
+   * restart: the window has to be rebuilt frameless.
+   */
+  windowGlass: GlassMode
   /** Id of the active colour theme (see shared/themes.ts). Unknown ids fall back to the default. */
   theme: string
   /**
@@ -459,6 +497,17 @@ export interface TerminatorApi {
   getSettings(): Promise<Settings>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   getGlobalShortcutStatus(): Promise<{ accelerator: string; registered: boolean }>
+  /** What the live window was built with — not necessarily what settings now say. */
+  getGlassStatus(): Promise<GlassStatus>
+  /** Restart the app, so a changed glass mode can rebuild the window. */
+  relaunch(): Promise<void>
+  /**
+   * The active palette as CSS variables, handed over at construction rather than
+   * fetched. Preload runs before the document, so this is what lets the first
+   * paint be the right colour with no IPC round-trip — the guarantee the window's
+   * own backgroundColor gives when glass is off, and can't when it's on.
+   */
+  bootTheme: BootTheme | null
 
   // the user's own themes (themes.json)
   getCustomThemes(): Promise<CustomTheme[]>
