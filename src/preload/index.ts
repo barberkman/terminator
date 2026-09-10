@@ -1,5 +1,6 @@
 import { clipboard, contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import { Channels } from '../shared/channels'
+import type { CustomTheme } from '../shared/themes'
 import type {
   AttachFileInput,
   BranchSessionInput,
@@ -67,6 +68,8 @@ const api: TerminatorApi = {
   getSettings: () => ipcRenderer.invoke(Channels.settingsGet),
   updateSettings: (patch: Partial<Settings>) => ipcRenderer.invoke(Channels.settingsUpdate, patch),
   getGlobalShortcutStatus: () => ipcRenderer.invoke(Channels.globalShortcutStatus),
+  getCustomThemes: () => ipcRenderer.invoke(Channels.themesGet),
+  saveCustomThemes: (list: CustomTheme[]) => ipcRenderer.invoke(Channels.themesSave, list),
 
   setZoom: (factor: number) => webFrame.setZoomFactor(factor),
   getZoom: () => webFrame.getZoomFactor(),

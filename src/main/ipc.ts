@@ -1,5 +1,6 @@
 import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
+import { DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
 import type {
   AttachFileInput,
   BranchResult,
@@ -25,6 +26,7 @@ import {
   switchMode,
 } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
+import { loadCustomThemes, saveCustomThemes } from './theme-store'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
 import { forkTranscript, listPrompts } from './transcript'
 import { readConversation } from './conversation'
@@ -268,6 +270,20 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     // Re-register the global hotkey in case it changed.
     applyGlobalShortcut(getWin)
     return next
+  })
+  ipcMain.handle(Channels.themesGet, () => loadCustomThemes())
+  ipcMain.handle(Channels.themesSave, (_e, list: unknown) => {
+    const themes = saveCustomThemes(list)
+    // A theme can only disappear through this call, so this is where a dangling
+    // selection gets repaired. The renderer falls back at paint time anyway, but
+    // the window's backgroundColor is read from settings at launch — so the file
+    // has to agree, or the next start opens on the wrong ground.
+    const current = loadSettings().theme
+    const settings =
+      isBuiltIn(current) || themes.some((t) => t.id === current)
+        ? loadSettings()
+        : saveSettings({ theme: DEFAULT_THEME_ID })
+    return { themes, settings }
   })
   ipcMain.handle(Channels.globalShortcutStatus, () => globalShortcutStatus())
 }

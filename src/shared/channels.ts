@@ -57,5 +57,9 @@ export const Channels = {
   pickFile: 'dialog:pickFile',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+
+  // the user's own themes (themes.json, kept apart from settings.json)
+  themesGet: 'themes:get',
+  themesSave: 'themes:save',
   globalShortcutStatus: 'globalShortcut:status',
 } as const

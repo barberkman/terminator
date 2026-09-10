@@ -1,36 +1,17 @@
 import { useEffect, useState } from 'react'
 import type { BrowserOption, EditorOption, NotifType, Settings } from '../../shared/types'
 import { formatArgs, parseArgs } from '../../shared/args'
+import { importTheme, newThemeId, resolveTheme, snapshotSeed } from '../../shared/themes'
 import { C, STATUS_COLORS, accentA, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { ThemePicker } from './ThemePicker'
+import { Choice, Field, Section, inputStyle, smallBtn } from './controls'
 import { applyThemeFromSettings } from '../theme-apply'
+import { upsert, writeThemes } from '../themeActions'
 import { eventToAccelerator } from '../shortcuts'
 
 const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited']
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '9px 11px',
-  background: C.input,
-  border: `1px solid ${C.border2}`,
-  borderRadius: 8,
-  color: C.textHi,
-  font: 'inherit',
-  fontSize: 12.5,
-  outline: 'none',
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div>
-      <div style={{ fontSize: 11, letterSpacing: 0.5, color: C.muted, fontWeight: 600, marginBottom: 6 }}>{label}</div>
-      {children}
-      {hint && <div style={{ fontSize: 10.5, color: C.dim, marginTop: 5 }}>{hint}</div>}
-    </div>
-  )
-}
 
 /** Ids only have to be unique within the list and stable across edits. */
 function newBrowserId(): string {
@@ -92,56 +73,6 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (accel
       >
         Clear
       </button>
-    </div>
-  )
-}
-
-const smallBtn: React.CSSProperties = {
-  padding: '5px 10px',
-  borderRadius: 7,
-  border: `1px solid ${C.border2}`,
-  background: 'transparent',
-  color: C.muted,
-  font: 'inherit',
-  fontSize: 11,
-  cursor: 'pointer',
-  flex: 'none',
-}
-
-/** A two-option toggle, the shape Settings already uses for its either/ors. */
-function Choice<T extends string | boolean>({
-  options,
-  value,
-  onPick,
-}: {
-  options: { value: T; label: string }[]
-  value: T
-  onPick: (v: T) => void
-}): React.JSX.Element {
-  return (
-    <div style={{ display: 'flex', gap: 8 }}>
-      {options.map((o) => {
-        const on = value === o.value
-        return (
-          <button
-            key={String(o.value)}
-            onClick={() => onPick(o.value)}
-            style={{
-              flex: 1,
-              padding: '8px 12px',
-              borderRadius: 8,
-              border: `1px solid ${on ? C.accentBorder : C.border2}`,
-              background: on ? accentA(0.12) : 'transparent',
-              color: on ? C.accentSoft : C.muted,
-              font: 'inherit',
-              fontSize: 12.5,
-              cursor: 'pointer',
-            }}
-          >
-            {o.label}
-          </button>
-        )
-      })}
     </div>
   )
 }
@@ -297,23 +228,47 @@ function EditorRow({
   )
 }
 
+/** "Nord copy", then "Nord copy 2" — a duplicate never silently reuses a name. */
+function freeName(base: string, taken: string[]): string {
+  const wanted = `${base} copy`
+  if (!taken.includes(wanted)) return wanted
+  for (let n = 2; n < 500; n++) {
+    if (!taken.includes(`${wanted} ${n}`)) return `${wanted} ${n}`
+  }
+  return wanted
+}
+
 export function SettingsView(): React.JSX.Element | null {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
   const settings = useStore((s) => s.settings)
   const setSettings = useStore((s) => s.setSettings)
+  const customThemes = useStore((s) => s.customThemes)
+  const setThemeEditorFor = useStore((s) => s.setThemeEditorFor)
   const [draft, setDraft] = useState<Settings | null>(settings)
   const [shortcutStatus, setShortcutStatus] = useState<{ accelerator: string; registered: boolean } | null>(null)
+  // null when the import sheet is shut; the pasted text while it's open.
+  const [importText, setImportText] = useState<string | null>(null)
+  const [importError, setImportError] = useState('')
 
+  // Re-seeded when the panel opens, and deliberately not when `settings` changes
+  // underneath: duplicating a theme writes settings while the panel is up, and
+  // re-seeding there would throw away whatever the user was half-way through
+  // typing in one of the command boxes.
   useEffect(() => {
     if (show) {
       setDraft(settings)
+      setImportText(null)
+      setImportError('')
       void window.terminator.getGlobalShortcutStatus().then(setShortcutStatus)
     }
-  }, [show, settings])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show])
 
   // Picking a theme applies it immediately so the swatch grid is a real preview;
-  // closing without saving puts the saved one back.
+  // closing without saving puts the saved one back. Anything that makes a theme
+  // of the user's own persists the selection as it goes, so there is nothing of
+  // theirs for this to revert.
   useEffect(() => {
     if (show || !settings) return
     applyThemeFromSettings(settings)
@@ -344,6 +299,63 @@ export function SettingsView(): React.JSX.Element | null {
     const cur = draft.notifications.triggerOn
     const next = cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]
     patch({ notifications: { ...draft.notifications, triggerOn: next } })
+  }
+
+  // ---- sections ----
+  // Absent means collapsed, so a first run opens as a short list of headings
+  // rather than the scroll this replaced. Toggling persists on the spot: which
+  // sections you left open isn't an edit, so Cancel has no business undoing it.
+  const isOpen = (id: string): boolean => draft.settingsOpen?.[id] ?? false
+  const toggleSection = (id: string) => {
+    const settingsOpen = { ...draft.settingsOpen, [id]: !isOpen(id) }
+    patch({ settingsOpen })
+    void window.terminator.updateSettings({ settingsOpen }).then(setSettings)
+  }
+  const section = (id: string, label: string, summary: React.ReactNode, children: React.ReactNode, actions?: React.ReactNode) => (
+    <Section label={label} summary={summary} actions={actions} open={isOpen(id)} onToggle={() => toggleSection(id)}>
+      {children}
+    </Section>
+  )
+
+  // ---- themes ----
+  const active = resolveTheme(draft.theme, draft.customTheme)
+  const pickTheme = (theme: string) => {
+    patch({ theme })
+    applyThemeFromSettings({ theme, customTheme: draft.customTheme })
+  }
+  /**
+   * Selecting one of the user's own themes is persisted rather than left in the
+   * draft: they've just made or opened a theme, and having Cancel quietly put the
+   * old one back would read as losing the work rather than discarding a preview.
+   */
+  const selectAndEdit = async (id: string) => {
+    patch({ theme: id })
+    applyThemeFromSettings({ theme: id, customTheme: draft.customTheme })
+    setSettings(await window.terminator.updateSettings({ theme: id }))
+    setThemeEditorFor(id)
+  }
+  const addTheme = async (seed: Parameters<typeof upsert>[1]) => {
+    await writeThemes(upsert(customThemes, seed))
+    await selectAndEdit(seed.id)
+  }
+  const duplicate = () =>
+    void addTheme(
+      snapshotSeed(
+        draft.theme,
+        draft.customTheme,
+        freeName(active.name, customThemes.map((t) => t.name)),
+        newThemeId(),
+      ),
+    )
+  const runImport = () => {
+    const result = importTheme(importText ?? '')
+    if (!result.ok) {
+      setImportError(result.reason)
+      return
+    }
+    setImportText(null)
+    setImportError('')
+    void addTheme(result.seed)
   }
 
   return (
@@ -385,337 +397,394 @@ export function SettingsView(): React.JSX.Element | null {
           </button>
         </div>
 
-        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Field label="CLAUDE COMMAND" hint="Run for a normal Claude session. The app appends --session-id / --resume / --settings.">
-            <input style={inputStyle} value={draft.modes.normal.command} onChange={(e) => patch({ modes: { ...draft.modes, normal: { ...draft.modes.normal, command: e.target.value } } })} />
-          </Field>
-          <Field label="CLAUDE READ-ONLY COMMAND" hint={'Must forward appended args (e.g. exec claude --some-flag "$@").'}>
-            <input style={inputStyle} value={draft.modes.readonly.command} onChange={(e) => patch({ modes: { ...draft.modes, readonly: { ...draft.modes.readonly, command: e.target.value } } })} />
-          </Field>
-          <Field label="DEFAULT SHELL" hint="Used for plain terminals and to resolve commands.">
-            <input style={inputStyle} value={draft.defaultShell} onChange={(e) => patch({ defaultShell: e.target.value })} />
-          </Field>
-          <Field label="GIT GUI COMMAND" hint="Launched with a session's folder by the git button. App never merges.">
-            <input style={inputStyle} value={draft.gitGuiCommand} onChange={(e) => patch({ gitGuiCommand: e.target.value })} />
-          </Field>
-          <Field label="WORKTREES ROOT" hint="Where new git worktrees are created.">
-            <input style={inputStyle} value={draft.worktreesRoot} onChange={(e) => patch({ worktreesRoot: e.target.value })} />
-          </Field>
-
-          <div style={{ height: 1, background: C.hair, margin: '2px 0' }} />
-
-          <Field label="THEME" hint="Applies to the app, the terminal panes (including ANSI colours) and the file editor. Individual colours can be overridden with a customTheme block in settings.json.">
-            <ThemePicker
-              value={draft.theme}
-              onPick={(theme) => {
-                patch({ theme })
-                applyThemeFromSettings({ theme, customTheme: draft.customTheme })
-              }}
-            />
-          </Field>
-
-          <Field label="TERMINAL FONT" hint="Font family for the terminal panes (the app chrome uses JetBrains Mono).">
-            <input
-              style={inputStyle}
-              list="term-fonts"
-              value={draft.terminalFont}
-              onChange={(e) => patch({ terminalFont: e.target.value })}
-            />
-            <datalist id="term-fonts">
-              <option value="'JetBrains Mono', monospace" />
-              <option value="'Fira Code', monospace" />
-              <option value="'Cascadia Code', monospace" />
-              <option value="'Source Code Pro', monospace" />
-              <option value="Menlo, monospace" />
-              <option value="Consolas, monospace" />
-              <option value="'Ubuntu Mono', monospace" />
-              <option value="monospace" />
-            </datalist>
-          </Field>
-          <Field label="FONT SIZE" hint="Scales the whole interface — sidebar, tabs, and terminals. 14 = default.">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <input
-                type="range"
-                min={9}
-                max={26}
-                step={1}
-                value={draft.fontSize}
-                onChange={(e) => patch({ fontSize: Number(e.target.value) || draft.fontSize })}
-                style={{ flex: 1, accentColor: C.accent }}
-              />
-              <input
-                type="number"
-                min={9}
-                max={26}
-                style={{ ...inputStyle, width: 70, flex: 'none' }}
-                value={draft.fontSize}
-                onChange={(e) => patch({ fontSize: Number(e.target.value) || draft.fontSize })}
-              />
-            </div>
-          </Field>
-          <Field label="ICON SIZE" hint="Scales buttons and icons only, on top of the interface size. 100 = default.">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <input
-                type="range"
-                min={80}
-                max={160}
-                step={10}
-                value={draft.iconScale}
-                onChange={(e) => patch({ iconScale: Number(e.target.value) || draft.iconScale })}
-                style={{ flex: 1, accentColor: C.accent }}
-              />
-              <input
-                type="number"
-                min={80}
-                max={160}
-                step={10}
-                style={{ ...inputStyle, width: 70, flex: 'none' }}
-                value={draft.iconScale}
-                onChange={(e) => patch({ iconScale: Number(e.target.value) || draft.iconScale })}
-              />
-            </div>
-          </Field>
-          <Field label="SIDEBAR POSITION" hint="Which side of the window the session sidebar sits on.">
-            <div style={{ display: 'flex', gap: 8 }}>
-              {(['left', 'right'] as const).map((side) => {
-                const on = (draft.sidebarSide ?? 'left') === side
-                return (
-                  <button
-                    key={side}
-                    onClick={() => patch({ sidebarSide: side })}
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: `1px solid ${on ? C.accentBorder : C.border2}`,
-                      background: on ? accentA(0.12) : 'transparent',
-                      color: on ? C.accentSoft : C.muted,
-                      font: 'inherit',
-                      fontSize: 12.5,
-                      cursor: 'pointer',
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {side}
-                  </button>
-                )
-              })}
-            </div>
-          </Field>
-          <Field
-            label="GLOBAL SHOW/HIDE SHORTCUT"
-            hint="System-wide hotkey to minimize/restore the window, even when the app isn't focused. Click to record, Esc to cancel, Clear to disable. Applies after Save."
-          >
-            <ShortcutRecorder
-              value={draft.globalToggleShortcut ?? ''}
-              onChange={(accel) => patch({ globalToggleShortcut: accel })}
-            />
-            {shortcutStatus && (
-              <div style={{ fontSize: 10.5, marginTop: 6, color: shortcutStatus.registered ? STATUS_COLORS.idle : C.dim }}>
-                {shortcutStatus.accelerator
-                  ? shortcutStatus.registered
-                    ? `✓ Active: ${shortcutStatus.accelerator}`
-                    : `Not registered: ${shortcutStatus.accelerator} (the key may be in use)`
-                  : 'Currently disabled'}
-              </div>
-            )}
-          </Field>
-          <Field
-            label="OPEN NOTES SHORTCUT"
-            hint="In-app hotkey to toggle the Notes overlay. Click to record, Esc to cancel, Clear to disable. Applies after Save."
-          >
-            <ShortcutRecorder
-              value={draft.notesShortcut ?? ''}
-              onChange={(accel) => patch({ notesShortcut: accel })}
-            />
-          </Field>
-
-          <Field
-            label="ATTACHMENT READS"
-            hint="Pasted images are saved in the app's own folder, outside your repos — which puts them outside Claude's working directory. Pre-approved adds that one folder to each Claude session's allowed directories, so reading a pasted screenshot never stops to ask. Dropped files are read from where they live and follow your normal permission rules either way."
-          >
-            <div style={{ display: 'flex', gap: 8 }}>
-              {([true, false] as const).map((val) => {
-                const on = (draft.attachments?.allowClaudeRead ?? true) === val
-                return (
-                  <button
-                    key={String(val)}
-                    onClick={() => patch({ attachments: { ...draft.attachments, allowClaudeRead: val } })}
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: `1px solid ${on ? C.accentBorder : C.border2}`,
-                      background: on ? accentA(0.12) : 'transparent',
-                      color: on ? C.accentSoft : C.muted,
-                      font: 'inherit',
-                      fontSize: 12.5,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {val ? 'Pre-approved' : 'Ask each time'}
-                  </button>
-                )
-              })}
-            </div>
-          </Field>
-          <Field label="KEEP PASTED IMAGES FOR" hint="Days before a saved paste is deleted, checked at startup. 0 keeps them forever. Dropped files are never touched.">
-            <input
-              type="number"
-              min={0}
-              max={365}
-              style={{ ...inputStyle, width: 90 }}
-              value={draft.attachments?.keepDays ?? 7}
-              onChange={(e) =>
-                patch({ attachments: { ...draft.attachments, keepDays: Math.max(0, Number(e.target.value) || 0) } })
-              }
-            />
-          </Field>
-
-          <div style={{ height: 1, background: C.hair, margin: '2px 0' }} />
-
-          <Field
-            label="LINKS IN TERMINAL OUTPUT"
-            hint="Underlines http and https links in a pane and opens them on click. Hovering one shows where it goes; selecting text over a link never opens it. Only http and https are ever opened — terminal output can't launch anything else."
-          >
-            <Choice
-              value={draft.links?.enabled ?? true}
-              onPick={(enabled) => patchLinks({ enabled })}
-              options={[
-                { value: true, label: 'Clickable' },
-                { value: false, label: 'Plain text' },
-              ]}
-            />
-          </Field>
-
-          <Field
-            label="BROWSERS FOR LINKS"
-            hint="The program and its arguments are kept apart and handed straight to the process, so a path with spaces (Program Files) needs no quoting. A plain click uses the default; right-click a link for the rest. With no browser here, links open in your OS default."
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(draft.links?.browsers ?? []).map((b, i) => (
-                <BrowserRow
-                  key={b.id}
-                  browser={b}
-                  isDefault={draft.links.defaultBrowserId === b.id}
-                  onChange={(next) => {
-                    const browsers = draft.links.browsers.slice()
-                    browsers[i] = next
-                    patchLinks({ browsers })
-                  }}
-                  onMakeDefault={() =>
-                    patchLinks({
-                      // Clicking the default again hands links back to the OS.
-                      defaultBrowserId: draft.links.defaultBrowserId === b.id ? '' : b.id,
-                    })
-                  }
-                  onRemove={() => {
-                    const browsers = draft.links.browsers.filter((x) => x.id !== b.id)
-                    patchLinks({
-                      browsers,
-                      defaultBrowserId:
-                        draft.links.defaultBrowserId === b.id ? '' : draft.links.defaultBrowserId,
-                    })
-                  }}
-                />
-              ))}
-              <button
-                onClick={() =>
-                  patchLinks({
-                    browsers: [
-                      ...(draft.links?.browsers ?? []),
-                      { id: newBrowserId(), name: 'New browser', command: '', args: [] },
-                    ],
-                  })
-                }
+        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column' }}>
+          {section(
+            'theme',
+            'THEME',
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span
                 style={{
-                  padding: '8px 12px',
-                  borderRadius: 8,
-                  border: `1px dashed ${C.border3}`,
-                  background: 'transparent',
-                  color: C.muted,
-                  font: 'inherit',
-                  fontSize: 12,
-                  cursor: 'pointer',
+                  width: 9,
+                  height: 9,
+                  borderRadius: '50%',
+                  background: active.accent,
+                  border: `1px solid ${C.border3}`,
+                  flex: 'none',
                 }}
-              >
-                + Add browser
-              </button>
-              <div style={{ fontSize: 10.5, color: C.dim }}>
-                {defaultBrowserName
-                  ? `A plain click opens ${defaultBrowserName}.`
-                  : 'A plain click opens your OS default browser.'}
-              </div>
-            </div>
-          </Field>
-
-          <Field
-            label="FILE PATHS IN OUTPUT"
-            hint="Also linkify paths a session prints (src/app.ts:42 jumps to the line), and only ever paths that exist inside the session's own folder."
-          >
-            <Choice
-              value={draft.links?.openFilePaths ?? true}
-              onPick={(openFilePaths) => patchLinks({ openFilePaths })}
-              options={[
-                { value: true, label: 'Open in editor' },
-                { value: false, label: 'Leave as text' },
-              ]}
-            />
-          </Field>
-
-          <Field
-            label="EXTERNAL EDITOR"
-            hint="The program a clicked file path opens in. Program and arguments are kept apart and handed straight to the process, so a path with spaces needs no quoting. In the arguments, {path}, {line} and {column} are filled in where you put them — an argument mentioning {line} is dropped when the path had no line number, and with no {path} anywhere the file is added at the end. Leave the program blank to open file paths in an in-app Editor pane instead."
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <EditorRow
-                editor={draft.links?.editor ?? { command: '', args: [] }}
-                onChange={(editor) => patchLinks({ editor })}
               />
-              <div style={{ fontSize: 10.5, color: C.dim }}>
-                {editorLabel
-                  ? `A clicked path opens ${editorLabel}. Right-click one for an editor pane instead.`
-                  : 'A clicked path opens an in-app Editor pane covering that project.'}
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: 10.5, color: C.faint2 }}>
-                {EDITOR_EXAMPLES.map(([name, args]) => (
-                  <span key={name} style={{ whiteSpace: 'nowrap' }}>
-                    {name} <code style={{ color: C.dim }}>{args}</code>
-                  </span>
-                ))}
-              </div>
-            </div>
-          </Field>
-
-          <Field label="NOTIFICATION COMMAND" hint="Run on each notification, via your shell. Receives the event as JSON on stdin and TERMINATOR_* env vars. Leave blank to disable.">
-            <input style={inputStyle} placeholder="python3 ~/notify.py" value={draft.notifications.command} onChange={(e) => patch({ notifications: { ...draft.notifications, command: e.target.value } })} />
-          </Field>
-          <Field label="RUN COMMAND ON">
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {NOTIF_TYPES.map((t) => {
-                const on = draft.notifications.triggerOn.includes(t)
-                return (
-                  <button
-                    key={t}
-                    onClick={() => toggleTrigger(t)}
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: 7,
-                      border: `1px solid ${on ? C.accentBorder : C.border2}`,
-                      background: on ? accentA(0.12) : 'transparent',
-                      color: on ? C.accentSoft : C.muted,
-                      font: 'inherit',
-                      fontSize: 12,
-                      cursor: 'pointer',
-                      textTransform: 'capitalize',
+              {active.name}
+            </span>,
+            <>
+              <Field hint="Applies to the app, the terminal panes (including ANSI colours) and the file editor. Duplicate one to get a theme of your own — copies are editable, the built-ins are not." label="PICK A THEME">
+                <ThemePicker value={draft.theme} onPick={pickTheme} onEdit={(id) => void selectAndEdit(id)} />
+              </Field>
+              {importText !== null && (
+                <Field label="PASTE A THEME" hint="Our own export, or any JSON object of theme colours — a published palette's ansi block on its own is enough. It always lands as a new theme of yours.">
+                  <textarea
+                    autoFocus
+                    value={importText}
+                    onChange={(e) => {
+                      setImportText(e.target.value)
+                      setImportError('')
                     }}
-                  >
-                    {t}
-                  </button>
-                )
-              })}
-            </div>
-          </Field>
+                    placeholder={'{ "name": "Ayu Mirage", "bg": "#1f2430", … }'}
+                    style={{ ...inputStyle, height: 120, resize: 'vertical', fontSize: 11.5, lineHeight: 1.5 }}
+                  />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                    <button onClick={() => setImportText(window.terminator.clipboardRead())} style={smallBtn}>
+                      Paste from clipboard
+                    </button>
+                    <button
+                      onClick={runImport}
+                      style={{ ...smallBtn, borderColor: C.accentBorder, color: C.accentSoft, background: accentA(0.12) }}
+                    >
+                      Add theme
+                    </button>
+                    <button onClick={() => { setImportText(null); setImportError('') }} style={smallBtn}>
+                      Cancel
+                    </button>
+                    {importError && <span style={{ fontSize: 10.5, color: C.danger }}>{importError}</span>}
+                  </div>
+                </Field>
+              )}
+            </>,
+            <>
+              <button onClick={duplicate} title="Copy the theme you're looking at, overrides and all, and edit the copy" style={smallBtn}>
+                Duplicate
+              </button>
+              <button onClick={() => setImportText(importText === null ? '' : null)} style={smallBtn}>
+                Import…
+              </button>
+            </>,
+          )}
+
+          {section('commands', 'COMMANDS AND PATHS', draft.modes.normal.command, (
+            <>
+              <Field label="CLAUDE COMMAND" hint="Run for a normal Claude session. The app appends --session-id / --resume / --settings.">
+                <input style={inputStyle} value={draft.modes.normal.command} onChange={(e) => patch({ modes: { ...draft.modes, normal: { ...draft.modes.normal, command: e.target.value } } })} />
+              </Field>
+              <Field label="CLAUDE READ-ONLY COMMAND" hint={'Must forward appended args (e.g. exec claude --some-flag "$@").'}>
+                <input style={inputStyle} value={draft.modes.readonly.command} onChange={(e) => patch({ modes: { ...draft.modes, readonly: { ...draft.modes.readonly, command: e.target.value } } })} />
+              </Field>
+              <Field label="DEFAULT SHELL" hint="Used for plain terminals and to resolve commands.">
+                <input style={inputStyle} value={draft.defaultShell} onChange={(e) => patch({ defaultShell: e.target.value })} />
+              </Field>
+              <Field label="GIT GUI COMMAND" hint="Launched with a session's folder by the git button. App never merges.">
+                <input style={inputStyle} value={draft.gitGuiCommand} onChange={(e) => patch({ gitGuiCommand: e.target.value })} />
+              </Field>
+              <Field label="WORKTREES ROOT" hint="Where new git worktrees are created.">
+                <input style={inputStyle} value={draft.worktreesRoot} onChange={(e) => patch({ worktreesRoot: e.target.value })} />
+              </Field>
+            </>
+          ))}
+
+          {section('appearance', 'APPEARANCE', `${draft.fontSize} · ${draft.iconScale}% · sidebar ${draft.sidebarSide ?? 'left'}`, (
+            <>
+              <Field label="TERMINAL FONT" hint="Font family for the terminal panes (the app chrome uses JetBrains Mono).">
+                <input
+                  style={inputStyle}
+                  list="term-fonts"
+                  value={draft.terminalFont}
+                  onChange={(e) => patch({ terminalFont: e.target.value })}
+                />
+                <datalist id="term-fonts">
+                  <option value="'JetBrains Mono', monospace" />
+                  <option value="'Fira Code', monospace" />
+                  <option value="'Cascadia Code', monospace" />
+                  <option value="'Source Code Pro', monospace" />
+                  <option value="Menlo, monospace" />
+                  <option value="Consolas, monospace" />
+                  <option value="'Ubuntu Mono', monospace" />
+                  <option value="monospace" />
+                </datalist>
+              </Field>
+              <Field label="FONT SIZE" hint="Scales the whole interface — sidebar, tabs, and terminals. 14 = default.">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <input
+                    type="range"
+                    min={9}
+                    max={26}
+                    step={1}
+                    value={draft.fontSize}
+                    onChange={(e) => patch({ fontSize: Number(e.target.value) || draft.fontSize })}
+                    style={{ flex: 1, accentColor: C.accent }}
+                  />
+                  <input
+                    type="number"
+                    min={9}
+                    max={26}
+                    style={{ ...inputStyle, width: 70, flex: 'none' }}
+                    value={draft.fontSize}
+                    onChange={(e) => patch({ fontSize: Number(e.target.value) || draft.fontSize })}
+                  />
+                </div>
+              </Field>
+              <Field label="ICON SIZE" hint="Scales buttons and icons only, on top of the interface size. 100 = default.">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <input
+                    type="range"
+                    min={80}
+                    max={160}
+                    step={10}
+                    value={draft.iconScale}
+                    onChange={(e) => patch({ iconScale: Number(e.target.value) || draft.iconScale })}
+                    style={{ flex: 1, accentColor: C.accent }}
+                  />
+                  <input
+                    type="number"
+                    min={80}
+                    max={160}
+                    step={10}
+                    style={{ ...inputStyle, width: 70, flex: 'none' }}
+                    value={draft.iconScale}
+                    onChange={(e) => patch({ iconScale: Number(e.target.value) || draft.iconScale })}
+                  />
+                </div>
+              </Field>
+              <Field label="SIDEBAR POSITION" hint="Which side of the window the session sidebar sits on.">
+                <Choice
+                  value={draft.sidebarSide ?? 'left'}
+                  onPick={(sidebarSide) => patch({ sidebarSide })}
+                  options={[
+                    { value: 'left' as const, label: 'Left' },
+                    { value: 'right' as const, label: 'Right' },
+                  ]}
+                />
+              </Field>
+            </>
+          ))}
+
+          {section('shortcuts', 'SHORTCUTS', draft.globalToggleShortcut || 'none set', (
+            <>
+              <Field
+                label="GLOBAL SHOW/HIDE SHORTCUT"
+                hint="System-wide hotkey to minimize/restore the window, even when the app isn't focused. Click to record, Esc to cancel, Clear to disable. Applies after Save."
+              >
+                <ShortcutRecorder
+                  value={draft.globalToggleShortcut ?? ''}
+                  onChange={(accel) => patch({ globalToggleShortcut: accel })}
+                />
+                {shortcutStatus && (
+                  <div style={{ fontSize: 10.5, marginTop: 6, color: shortcutStatus.registered ? STATUS_COLORS.idle : C.dim }}>
+                    {shortcutStatus.accelerator
+                      ? shortcutStatus.registered
+                        ? `✓ Active: ${shortcutStatus.accelerator}`
+                        : `Not registered: ${shortcutStatus.accelerator} (the key may be in use)`
+                      : 'Currently disabled'}
+                  </div>
+                )}
+              </Field>
+              <Field
+                label="OPEN NOTES SHORTCUT"
+                hint="In-app hotkey to toggle the Notes overlay. Click to record, Esc to cancel, Clear to disable. Applies after Save."
+              >
+                <ShortcutRecorder
+                  value={draft.notesShortcut ?? ''}
+                  onChange={(accel) => patch({ notesShortcut: accel })}
+                />
+              </Field>
+            </>
+          ))}
+
+          {section(
+            'attachments',
+            'IMAGES AND FILES',
+            `${(draft.attachments?.allowClaudeRead ?? true) ? 'Pre-approved' : 'Ask each time'} · ${
+              (draft.attachments?.keepDays ?? 7) === 0 ? 'kept forever' : `${draft.attachments?.keepDays ?? 7} days`
+            }`,
+            (
+              <>
+                <Field
+                  label="ATTACHMENT READS"
+                  hint="Pasted images are saved in the app's own folder, outside your repos — which puts them outside Claude's working directory. Pre-approved adds that one folder to each Claude session's allowed directories, so reading a pasted screenshot never stops to ask. Dropped files are read from where they live and follow your normal permission rules either way."
+                >
+                  <Choice
+                    value={draft.attachments?.allowClaudeRead ?? true}
+                    onPick={(allowClaudeRead) => patch({ attachments: { ...draft.attachments, allowClaudeRead } })}
+                    options={[
+                      { value: true, label: 'Pre-approved' },
+                      { value: false, label: 'Ask each time' },
+                    ]}
+                  />
+                </Field>
+                <Field label="KEEP PASTED IMAGES FOR" hint="Days before a saved paste is deleted, checked at startup. 0 keeps them forever. Dropped files are never touched.">
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    style={{ ...inputStyle, width: 90 }}
+                    value={draft.attachments?.keepDays ?? 7}
+                    onChange={(e) =>
+                      patch({ attachments: { ...draft.attachments, keepDays: Math.max(0, Number(e.target.value) || 0) } })
+                    }
+                  />
+                </Field>
+              </>
+            ),
+          )}
+
+          {section(
+            'links',
+            'LINKS AND FILE PATHS',
+            `${(draft.links?.enabled ?? true) ? 'Clickable' : 'Plain text'} · ${
+              (draft.links?.browsers ?? []).length
+            } browser${(draft.links?.browsers ?? []).length === 1 ? '' : 's'}`,
+            (
+              <>
+                <Field
+                  label="LINKS IN TERMINAL OUTPUT"
+                  hint="Underlines http and https links in a pane and opens them on click. Hovering one shows where it goes; selecting text over a link never opens it. Only http and https are ever opened — terminal output can't launch anything else."
+                >
+                  <Choice
+                    value={draft.links?.enabled ?? true}
+                    onPick={(enabled) => patchLinks({ enabled })}
+                    options={[
+                      { value: true, label: 'Clickable' },
+                      { value: false, label: 'Plain text' },
+                    ]}
+                  />
+                </Field>
+
+                <Field
+                  label="BROWSERS FOR LINKS"
+                  hint="The program and its arguments are kept apart and handed straight to the process, so a path with spaces (Program Files) needs no quoting. A plain click uses the default; right-click a link for the rest. With no browser here, links open in your OS default."
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(draft.links?.browsers ?? []).map((b, i) => (
+                      <BrowserRow
+                        key={b.id}
+                        browser={b}
+                        isDefault={draft.links.defaultBrowserId === b.id}
+                        onChange={(next) => {
+                          const browsers = draft.links.browsers.slice()
+                          browsers[i] = next
+                          patchLinks({ browsers })
+                        }}
+                        onMakeDefault={() =>
+                          patchLinks({
+                            // Clicking the default again hands links back to the OS.
+                            defaultBrowserId: draft.links.defaultBrowserId === b.id ? '' : b.id,
+                          })
+                        }
+                        onRemove={() => {
+                          const browsers = draft.links.browsers.filter((x) => x.id !== b.id)
+                          patchLinks({
+                            browsers,
+                            defaultBrowserId:
+                              draft.links.defaultBrowserId === b.id ? '' : draft.links.defaultBrowserId,
+                          })
+                        }}
+                      />
+                    ))}
+                    <button
+                      onClick={() =>
+                        patchLinks({
+                          browsers: [
+                            ...(draft.links?.browsers ?? []),
+                            { id: newBrowserId(), name: 'New browser', command: '', args: [] },
+                          ],
+                        })
+                      }
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        border: `1px dashed ${C.border3}`,
+                        background: 'transparent',
+                        color: C.muted,
+                        font: 'inherit',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      + Add browser
+                    </button>
+                    <div style={{ fontSize: 10.5, color: C.dim }}>
+                      {defaultBrowserName
+                        ? `A plain click opens ${defaultBrowserName}.`
+                        : 'A plain click opens your OS default browser.'}
+                    </div>
+                  </div>
+                </Field>
+
+                <Field
+                  label="FILE PATHS IN OUTPUT"
+                  hint="Also linkify paths a session prints (src/app.ts:42 jumps to the line), and only ever paths that exist inside the session's own folder."
+                >
+                  <Choice
+                    value={draft.links?.openFilePaths ?? true}
+                    onPick={(openFilePaths) => patchLinks({ openFilePaths })}
+                    options={[
+                      { value: true, label: 'Open in editor' },
+                      { value: false, label: 'Leave as text' },
+                    ]}
+                  />
+                </Field>
+
+                <Field
+                  label="EXTERNAL EDITOR"
+                  hint="The program a clicked file path opens in. Program and arguments are kept apart and handed straight to the process, so a path with spaces needs no quoting. In the arguments, {path}, {line} and {column} are filled in where you put them — an argument mentioning {line} is dropped when the path had no line number, and with no {path} anywhere the file is added at the end. Leave the program blank to open file paths in an in-app Editor pane instead."
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <EditorRow
+                      editor={draft.links?.editor ?? { command: '', args: [] }}
+                      onChange={(editor) => patchLinks({ editor })}
+                    />
+                    <div style={{ fontSize: 10.5, color: C.dim }}>
+                      {editorLabel
+                        ? `A clicked path opens ${editorLabel}. Right-click one for an editor pane instead.`
+                        : 'A clicked path opens an in-app Editor pane covering that project.'}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: 10.5, color: C.faint2 }}>
+                      {EDITOR_EXAMPLES.map(([name, args]) => (
+                        <span key={name} style={{ whiteSpace: 'nowrap' }}>
+                          {name} <code style={{ color: C.dim }}>{args}</code>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </Field>
+              </>
+            ),
+          )}
+
+          {section(
+            'notifications',
+            'NOTIFICATIONS',
+            draft.notifications.command ? draft.notifications.triggerOn.join(', ') || 'no triggers' : 'no command',
+            (
+              <>
+                <Field label="NOTIFICATION COMMAND" hint="Run on each notification, via your shell. Receives the event as JSON on stdin and TERMINATOR_* env vars. Leave blank to disable.">
+                  <input style={inputStyle} placeholder="python3 ~/notify.py" value={draft.notifications.command} onChange={(e) => patch({ notifications: { ...draft.notifications, command: e.target.value } })} />
+                </Field>
+                <Field label="RUN COMMAND ON">
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {NOTIF_TYPES.map((t) => {
+                      const on = draft.notifications.triggerOn.includes(t)
+                      return (
+                        <button
+                          key={t}
+                          onClick={() => toggleTrigger(t)}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: 7,
+                            border: `1px solid ${on ? C.accentBorder : C.border2}`,
+                            background: on ? accentA(0.12) : 'transparent',
+                            color: on ? C.accentSoft : C.muted,
+                            font: 'inherit',
+                            fontSize: 12,
+                            cursor: 'pointer',
+                            textTransform: 'capitalize',
+                          }}
+                        >
+                          {t}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </Field>
+              </>
+            ),
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '18px 20px 20px', marginTop: 6 }}>
