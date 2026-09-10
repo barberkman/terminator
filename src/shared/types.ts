@@ -43,12 +43,32 @@ export interface SessionMetrics {
   contextTokens?: number
   contextLimit?: number
   costUsd?: number
-  /** 5-hour rate-limit window usage. */
-  usagePct?: number
-  usageResetsAt?: string
-  /** 7-day (weekly) rate-limit window usage. */
-  weeklyUsagePct?: number
-  weeklyResetsAt?: string
+}
+
+/** One rate-limit window, as Claude last reported it. */
+export interface UsageWindow {
+  /** How much of the window's budget is spent, 0-100. */
+  usedPct: number
+  /**
+   * When the window resets — a unix epoch in *milliseconds*. Claude reports it as a
+   * number of seconds; report-server.ts normalises it on the way in. Absent when the
+   * report didn't carry one.
+   */
+  resetsAt?: number
+}
+
+/**
+ * Account-wide rate-limit usage. The 5-hour and weekly windows are facts about the
+ * account, not about a session, so this is one value that any running session's
+ * statusLine report refreshes — see main/usage-store.ts. It deliberately does not sit
+ * on SessionMetrics: a per-session copy is a snapshot frozen at that session's last
+ * turn, which is the bug this replaced.
+ */
+export interface UsageSnapshot {
+  fiveHour?: UsageWindow
+  weekly?: UsageWindow
+  /** When these numbers last arrived, epoch ms. 0 = never seen. */
+  updatedAt: number
 }
 
 /**
@@ -356,6 +376,12 @@ export interface Settings {
   notesShortcut: string
   /** Single freeform markdown note, edited from Settings → Notes. */
   notes: string
+  /**
+   * How often the footer's usage meter re-reads the clock, in seconds — the 5-hour
+   * countdown and the "as of" hint. It never asks Claude for anything: the numbers
+   * themselves arrive on their own, as sessions work.
+   */
+  usageRefreshSeconds: number
   attachments: AttachmentSettings
   links: LinkSettings
 }
@@ -468,6 +494,11 @@ export interface TerminatorApi {
    */
   saveCustomThemes(list: CustomTheme[]): Promise<{ themes: CustomTheme[]; settings: Settings }>
 
+  // account-wide rate-limit usage (5-hour / weekly windows)
+  /** The last-known snapshot, including one persisted from a previous run. */
+  getUsage(): Promise<UsageSnapshot>
+  onUsageUpdated(cb: (u: UsageSnapshot) => void): () => void
+
   // UI zoom (global font scaling)
   setZoom(factor: number): void
   getZoom(): number
@@ -511,3 +542,12 @@ export const UI_BASE_FONT_SIZE = 14
 
 /** `iconScale` value that corresponds to the as-designed icon/button sizing. */
 export const UI_BASE_ICON_SCALE = 100
+
+/**
+ * Bounds for `usageRefreshSeconds`. The meter shows its countdown to the minute, so
+ * half a minute keeps it visually current for nothing; the range spans "nearly live"
+ * to "once every five minutes". Shared so main, Settings and the footer can't disagree.
+ */
+export const USAGE_REFRESH_DEFAULT = 30
+export const USAGE_REFRESH_MIN = 5
+export const USAGE_REFRESH_MAX = 300

@@ -27,6 +27,7 @@ import {
 } from './session-launcher'
 import { loadSettings, rememberProject, saveSettings } from './settings'
 import { loadCustomThemes, saveCustomThemes } from './theme-store'
+import { loadUsage } from './usage-store'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
 import { forkTranscript, listPrompts } from './transcript'
 import { readConversation } from './conversation'
@@ -286,4 +287,9 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     return { themes, settings }
   })
   ipcMain.handle(Channels.globalShortcutStatus, () => globalShortcutStatus())
+
+  // ---- account-wide rate-limit usage ----
+  // Read-only from here: the values are written by the statusLine reports arriving at
+  // report-server.ts, and pushed out on Channels.usageUpdated.
+  ipcMain.handle(Channels.usageGet, () => loadUsage())
 }

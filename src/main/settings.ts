@@ -2,7 +2,12 @@ import { app } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import type { Settings } from '../shared/types'
+import {
+  USAGE_REFRESH_DEFAULT,
+  USAGE_REFRESH_MAX,
+  USAGE_REFRESH_MIN,
+  type Settings,
+} from '../shared/types'
 import { DEFAULT_THEME_ID } from '../shared/themes'
 import { defaultShell } from './shell'
 
@@ -37,6 +42,7 @@ export function defaultSettings(): Settings {
     globalToggleShortcut: 'F12',
     notesShortcut: 'CommandOrControl+Shift+N',
     notes: '',
+    usageRefreshSeconds: USAGE_REFRESH_DEFAULT,
     attachments: { allowClaudeRead: true, keepDays: 7 },
     // No browser configured means the OS default opens links — the same thing
     // that happens today when you copy one out by hand, just without the copying.
@@ -56,6 +62,16 @@ function settingsPath(): string {
   return join(app.getPath('userData'), 'settings.json')
 }
 
+/**
+ * Bounded on the way through `merge`, which both the load and the save go past, so a
+ * hand-edited settings.json can't leave a 0 — or a string — to become the footer's
+ * `setInterval` period.
+ */
+function clampRefresh(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return USAGE_REFRESH_DEFAULT
+  return Math.max(USAGE_REFRESH_MIN, Math.min(USAGE_REFRESH_MAX, Math.round(v)))
+}
+
 /** Deep-merge persisted settings over defaults so new fields always have a value. */
 function merge(base: Settings, patch: Partial<Settings>): Settings {
   return {
@@ -67,6 +83,9 @@ function merge(base: Settings, patch: Partial<Settings>): Settings {
     // browsers[] is replaced wholesale (it's a list, not a set of fields), which
     // is what makes removing one in Settings actually remove it.
     links: { ...base.links, ...(patch.links ?? {}) },
+    usageRefreshSeconds: clampRefresh(
+      'usageRefreshSeconds' in patch ? patch.usageRefreshSeconds : base.usageRefreshSeconds,
+    ),
     // Replaced wholesale rather than deep-merged, so deleting a token from
     // settings.json actually removes that override.
     customTheme: 'customTheme' in patch ? patch.customTheme : base.customTheme,

@@ -62,4 +62,10 @@ export const Channels = {
   themesGet: 'themes:get',
   themesSave: 'themes:save',
   globalShortcutStatus: 'globalShortcut:status',
+
+  // account-wide rate-limit usage (usage.json). `usageUpdated` is a main -> renderer
+  // event; it lives with its feature rather than in the events block above, the same
+  // way `fsChanged` does.
+  usageGet: 'usage:get',
+  usageUpdated: 'usage:updated',
 } as const

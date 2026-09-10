@@ -6,7 +6,8 @@ import { app } from 'electron'
 import { REPORTER_SOURCE } from './reporter-source'
 import { getSession, notify, setStatus, updateSession } from './state'
 import { flushPendingPrompt } from './prefill'
-import type { SessionMetrics } from '../shared/types'
+import { recordUsage } from './usage-store'
+import type { SessionMetrics, UsageWindow } from '../shared/types'
 
 let server: Server | null = null
 let port = 0
@@ -121,6 +122,30 @@ function num(v: unknown): number | undefined {
   return typeof v === 'number' && Number.isFinite(v) ? v : undefined
 }
 
+/**
+ * `resets_at` arrives as a unix epoch *number* — seconds, despite how it reads. A
+ * value already in milliseconds is passed through, so this stays right either way
+ * rather than turning the countdown into a fifty-thousand-year wait: 1e11 is four
+ * orders of magnitude clear of "now" in both units.
+ */
+function epochMs(v: unknown): number | undefined {
+  const n = num(v)
+  if (n === undefined || n <= 0) return undefined
+  const ms = n < 1e11 ? n * 1000 : n
+  // Anything outside 2000..2100 is not a reset time, it's noise — better no
+  // countdown at all than one measured in centuries.
+  return ms >= 946_684_800_000 && ms <= 4_102_444_800_000 ? Math.round(ms) : undefined
+}
+
+/** One window of `rate_limits`, or undefined when it's absent or unusable. */
+function usageWindow(v: unknown): UsageWindow | undefined {
+  const w = v as { used_percentage?: unknown; resets_at?: unknown } | undefined
+  const usedPct = num(w?.used_percentage)
+  if (usedPct === undefined) return undefined
+  const resetsAt = epochMs(w?.resets_at)
+  return resetsAt === undefined ? { usedPct } : { usedPct, resetsAt }
+}
+
 function handleStatus(p: Record<string, unknown>): void {
   const id = typeof p.session_id === 'string' ? p.session_id : ''
   if (!id) return
@@ -131,12 +156,6 @@ function handleStatus(p: Record<string, unknown>): void {
   const effort = p.effort as { level?: string } | undefined
   const cw = (p.context_window as Record<string, unknown>) || {}
   const cost = p.cost as { total_cost_usd?: number } | undefined
-  const limits = p.rate_limits as
-    | {
-        five_hour?: { used_percentage?: number; resets_at?: string }
-        seven_day?: { used_percentage?: number; resets_at?: string }
-      }
-    | undefined
 
   const next: SessionMetrics = { ...(s.metrics ?? {}) }
   if (model?.display_name || model?.id) next.model = model.display_name ?? model.id
@@ -147,12 +166,11 @@ function handleStatus(p: Record<string, unknown>): void {
   if (ctxTokens !== undefined) next.contextTokens = ctxTokens
   const c = num(cost?.total_cost_usd)
   if (c !== undefined) next.costUsd = c
-  const usage = num(limits?.five_hour?.used_percentage)
-  if (usage !== undefined) next.usagePct = usage
-  if (limits?.five_hour?.resets_at) next.usageResetsAt = limits.five_hour.resets_at
-  const weekly = num(limits?.seven_day?.used_percentage)
-  if (weekly !== undefined) next.weeklyUsagePct = weekly
-  if (limits?.seven_day?.resets_at) next.weeklyResetsAt = limits.seven_day.resets_at
 
   updateSession(id, { metrics: next })
+
+  // The rate limits are the account's, not this session's, so they go to the global
+  // store — which is what lets an idle or unfocused pane still show the real number.
+  const limits = p.rate_limits as { five_hour?: unknown; seven_day?: unknown } | undefined
+  recordUsage({ fiveHour: usageWindow(limits?.five_hour), weekly: usageWindow(limits?.seven_day) })
 }
