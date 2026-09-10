@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, Settings } from '../../shared/types'
+import type { Session, Settings, UsageSnapshot } from '../../shared/types'
 import { type CustomTheme, setCustomThemes as publishThemes } from '../../shared/themes'
 import type { IconName } from '../icons'
 import * as editor from '../editor/registry'
@@ -115,6 +115,11 @@ interface StoreState {
   settings: Settings | null
   /** The user's own themes. Mirrored into shared/themes.ts by `setCustomThemes`. */
   customThemes: CustomTheme[]
+  /**
+   * Claude's rate-limit windows — one account-wide value, not one per session, so
+   * the footer reads the same whichever pane has focus. Null until `init` hydrates it.
+   */
+  usage: UsageSnapshot | null
   toasts: ToastItem[]
 
   init(): Promise<void>
@@ -139,6 +144,7 @@ interface StoreState {
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
   setCustomThemes(list: CustomTheme[]): void
+  setUsage(u: UsageSnapshot): void
   pushToast(t: Omit<ToastItem, 'id'>): void
   dismissToast(id: number): void
 }
@@ -171,15 +177,20 @@ export const useStore = create<StoreState>((set, get) => ({
   newPrefill: null,
   settings: null,
   customThemes: [],
+  usage: null,
   toasts: [],
 
   async init() {
     if (initialized) return
     initialized = true
-    const [list, settings, themes] = await Promise.all([
+    const [list, settings, themes, usage] = await Promise.all([
       window.terminator.listSessions(),
       window.terminator.getSettings(),
       window.terminator.getCustomThemes(),
+      // Pulled as well as subscribed to below: this is where the numbers a previous
+      // run left on disk come from, and it also covers a report that landed before
+      // the subscription existed.
+      window.terminator.getUsage(),
     ])
     // main.tsx already published these before the first paint; doing it again is
     // idempotent and keeps the one code path that owns the mirror.
@@ -191,11 +202,12 @@ export const useStore = create<StoreState>((set, get) => ({
       order.push(s.id)
     }
     const panes = order.length ? [order[0]] : ['']
-    set({ sessions, order, settings, panes })
+    set({ sessions, order, settings, panes, usage })
 
     window.terminator.onSessionUpdated((s) => get().upsert(s))
     window.terminator.onSessionRemoved((id) => get().remove(id))
     window.terminator.onNavJump((id) => get().openSession(id))
+    window.terminator.onUsageUpdated((u) => get().setUsage(u))
   },
 
   upsert(s) {
@@ -388,6 +400,9 @@ export const useStore = create<StoreState>((set, get) => ({
   setCustomThemes(list) {
     publishThemes(list)
     set({ customThemes: list })
+  },
+  setUsage(u) {
+    set({ usage: u })
   },
   pushToast(t) {
     // Newest first, and never more than a few on screen at once.

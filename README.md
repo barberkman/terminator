@@ -59,7 +59,11 @@ file injects **hooks** and a **statusLine** that report back to a loopback HTTP 
 - Hooks → state transitions: `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → **working**,
   `Notification`/`PermissionRequest`/`Elicitation` → **waiting** (the "needs me" signal),
   `Stop` → **idle/finished**, abnormal exit → **error**.
-- statusLine → the model / effort / context% / cost / usage shown in the pane header and footer.
+- statusLine → the model / effort / context% / cost shown in the pane header, and the
+  rate-limit usage in the footer. The 5-hour and weekly windows belong to the account, not
+  to a session, so they're held once and shown whichever pane has focus: any running
+  session refreshes them for all of them, they're kept across restarts, and the footer
+  counts down to each reset on its own clock rather than asking Claude anything.
 
 Because the app forces `--session-id`, every hook payload's `session_id` maps back to the exact
 session — so two Claude sessions in the *same folder* are tracked independently. Your own
@@ -298,6 +302,8 @@ set to — and which ones you left open is remembered:
 - `defaultShell`, `gitGuiCommand`, `worktreesRoot`, `projects`.
 - `theme` — the active colour theme (see below), and `customTheme` for per-token overrides.
   Themes of your own live in their own file, `themes.json`, alongside this one.
+- `usageRefreshSeconds` — how often the footer's usage meter re-reads the clock
+  (default 30, range 5–300). A display tick only; it never asks Claude for anything.
 - `settingsOpen` — which Settings sections are expanded. Absent means collapsed.
 - `notifications` — see below.
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.

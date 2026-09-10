@@ -10,6 +10,7 @@ import { applyGlobalShortcut, disposeGlobalShortcut } from './window-toggle'
 import { loadSettings } from './settings'
 import { resolveTheme, setCustomThemes } from '../shared/themes'
 import { loadCustomThemes } from './theme-store'
+import { flushUsage, setWindow as setUsageWindow } from './usage-store'
 
 let win: BrowserWindow | null = null
 
@@ -53,6 +54,7 @@ function createWindow(): void {
 
   setWindow(win)
   setFsWindow(win)
+  setUsageWindow(win)
 }
 
 app.whenReady().then(async () => {
@@ -77,6 +79,9 @@ app.on('window-all-closed', () => {
 
 // Make sure no shell/claude PTYs are orphaned when the app quits.
 app.on('before-quit', () => {
+  // Surviving the restart is the whole point of the usage snapshot, so its debounced
+  // save gets written out rather than dropped.
+  flushUsage()
   killAll()
   closeFsWatchers()
   stopReportServer()

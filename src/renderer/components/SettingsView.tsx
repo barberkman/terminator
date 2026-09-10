@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
-import type { BrowserOption, EditorOption, NotifType, Settings } from '../../shared/types'
+import {
+  USAGE_REFRESH_DEFAULT,
+  USAGE_REFRESH_MAX,
+  USAGE_REFRESH_MIN,
+  type BrowserOption,
+  type EditorOption,
+  type NotifType,
+  type Settings,
+} from '../../shared/types'
 import { formatArgs, parseArgs } from '../../shared/args'
 import { importTheme, newThemeId, resolveTheme, snapshotSeed } from '../../shared/themes'
 import { C, STATUS_COLORS, accentA, sz } from '../theme'
@@ -23,7 +31,7 @@ const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited']
 const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'worktreesRoot', 'notifications', 'terminalFont',
   'fontSize', 'iconScale', 'sidebarSide', 'globalToggleShortcut', 'notesShortcut', 'attachments',
-  'links', 'settingsOpen',
+  'links', 'settingsOpen', 'usageRefreshSeconds',
 ] as const satisfies readonly (keyof Settings)[]
 
 /** Ids only have to be unique within the list and stable across edits. */
@@ -555,6 +563,51 @@ export function SettingsView(): React.JSX.Element | null {
               </Field>
             </>
           ))}
+
+          {section(
+            'usage',
+            'USAGE',
+            `refresh every ${draft.usageRefreshSeconds ?? USAGE_REFRESH_DEFAULT}s`,
+            (
+              <Field
+                label="REFRESH EVERY"
+                hint="How often the footer's usage meter re-reads the clock — the 5-hour countdown, the reset times and the 'as of' note. It never asks Claude for anything, so it costs nothing against the limits it shows; the percentages themselves move when a session finishes a turn. 30 seconds = default."
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <input
+                    type="range"
+                    min={USAGE_REFRESH_MIN}
+                    max={USAGE_REFRESH_MAX}
+                    step={5}
+                    value={draft.usageRefreshSeconds ?? USAGE_REFRESH_DEFAULT}
+                    onChange={(e) =>
+                      patch({ usageRefreshSeconds: Number(e.target.value) || USAGE_REFRESH_DEFAULT })
+                    }
+                    style={{ flex: 1, accentColor: C.accent }}
+                  />
+                  <input
+                    type="number"
+                    min={USAGE_REFRESH_MIN}
+                    max={USAGE_REFRESH_MAX}
+                    step={5}
+                    style={{ ...inputStyle, width: 70, flex: 'none' }}
+                    value={draft.usageRefreshSeconds ?? USAGE_REFRESH_DEFAULT}
+                    onChange={(e) =>
+                      patch({
+                        usageRefreshSeconds: Math.max(
+                          USAGE_REFRESH_MIN,
+                          Math.min(
+                            USAGE_REFRESH_MAX,
+                            Number(e.target.value) || USAGE_REFRESH_DEFAULT,
+                          ),
+                        ),
+                      })
+                    }
+                  />
+                </div>
+              </Field>
+            ),
+          )}
 
           {section('shortcuts', 'SHORTCUTS', draft.globalToggleShortcut || 'none set', (
             <>

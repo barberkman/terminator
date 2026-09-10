@@ -14,6 +14,7 @@ import type {
   SessionMode,
   Settings,
   TerminatorApi,
+  UsageSnapshot,
 } from '../shared/types'
 
 function on<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -70,6 +71,9 @@ const api: TerminatorApi = {
   getGlobalShortcutStatus: () => ipcRenderer.invoke(Channels.globalShortcutStatus),
   getCustomThemes: () => ipcRenderer.invoke(Channels.themesGet),
   saveCustomThemes: (list: CustomTheme[]) => ipcRenderer.invoke(Channels.themesSave, list),
+
+  getUsage: () => ipcRenderer.invoke(Channels.usageGet),
+  onUsageUpdated: (cb: (u: UsageSnapshot) => void) => on(Channels.usageUpdated, cb),
 
   setZoom: (factor: number) => webFrame.setZoomFactor(factor),
   getZoom: () => webFrame.getZoomFactor(),
