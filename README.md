@@ -56,9 +56,25 @@ your shell, appending `--session-id <uuid>` and a per-session `--settings` file.
 file injects **hooks** and a **statusLine** that report back to a loopback HTTP server
 (127.0.0.1, random port, bearer-token auth) the app runs:
 
-- Hooks → state transitions: `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → **working**,
-  `Notification`/`PermissionRequest`/`Elicitation` → **waiting** (the "needs me" signal),
-  `Stop` → **idle/finished**, abnormal exit → **error**.
+- Hooks → state transitions. `UserPromptSubmit`/`PreToolUse`/`PostToolUse`/`PreCompact` and the
+  `SubagentStart`/`SubagentStop` pair → **working** (a subagent finishing leaves the turn
+  running, so it never reads as finished). `PermissionRequest` and `Elicitation` → **waiting**,
+  and `Notification` only when its `notification_type` is one that means Claude has actually
+  stopped for you: `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog`,
+  `agent_needs_input`, `worker_permission_prompt`, `quota_auto_resume_stale`. The hook fires for
+  a dozen other reasons that merely announce something completed, resolved or timed out, and
+  none of those touch the status — in particular `idle_prompt` ("Claude is waiting for your
+  input") is a ~60-second idle *timeout* raised after a turn has already ended, so it can raise
+  an optional `idle` nudge but never the "needs me" signal. `Stop` → **idle/finished** and its
+  separate failure counterpart `StopFailure` → **error** (with the reason, e.g. `rate_limit`);
+  an abnormal process exit is still an error too.
+- Hook payloads carry no timestamp or sequence number, and every hook is its own process posting
+  its own request, so arrival order is not the order Claude emitted them. The reporter stamps
+  each report with the moment Claude spawned it, and the app pairs that with `prompt_id` (which
+  Claude holds constant across one prompt's events) to order them: a permission prompt that was
+  raised before a turn ended can never drag the finished session back to **waiting**. The
+  "needs me" highlight clears itself when the session leaves waiting — clicking the row is a way
+  to dismiss it early, not the only way out.
 - statusLine → the model / effort / context% / cost shown in the pane header, and the
   rate-limit usage in the footer. The 5-hour and weekly windows belong to the account, not
   to a session, so they're held once and shown whichever pane has focus: any running
@@ -394,7 +410,7 @@ For anything else — desktop notifications, sound, a phone push — configure a
 command** that the app runs on each notification, through your shell. It receives the event as
 **JSON on stdin** and as `TERMINATOR_*` environment variables, and can branch on the type:
 
-- `TERMINATOR_NOTIF_TYPE` ∈ `waiting | finished | error | exited`
+- `TERMINATOR_NOTIF_TYPE` ∈ `waiting | finished | error | exited | idle`
 - `TERMINATOR_SESSION_NAME`, `TERMINATOR_PROJECT`, `TERMINATOR_BRANCH`, `TERMINATOR_STATUS`,
   `TERMINATOR_KIND`, `TERMINATOR_MODE`, `TERMINATOR_CWD`, `TERMINATOR_MESSAGE`
 

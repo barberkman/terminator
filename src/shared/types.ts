@@ -33,8 +33,12 @@ export type SessionStatus = 'busy' | 'waiting' | 'idle' | 'error' | 'closed'
  */
 export type FolderChoice = 'session' | 'project'
 
-/** Notification categories — passed to the configurable notification command. */
-export type NotifType = 'waiting' | 'finished' | 'error' | 'exited'
+/**
+ * Notification categories — passed to the configurable notification command. 'waiting'
+ * and 'error' also raise the session's "needs me" highlight; 'idle' deliberately does
+ * not — it is Claude's idle-timeout nudge about a finished session, not a block.
+ */
+export type NotifType = 'waiting' | 'finished' | 'error' | 'exited' | 'idle'
 
 export interface SessionMetrics {
   model?: string

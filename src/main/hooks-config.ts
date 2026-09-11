@@ -8,7 +8,11 @@ import { expandHome } from './pty-manager'
 import { reportPort, reportToken, reporterPath } from './report-server'
 import { loadSettings } from './settings'
 
-// Events we attach our reporter to. All confirmed present in Claude Code 2.x.
+// Events we attach our reporter to. Names verified against the installed Claude Code
+// (2.1.267): every one of these is in the CLI's own hook-event list. `StopFailure` is
+// the separate failure counterpart to `Stop` — leaving it out is what made the app's
+// error branch unreachable — and the Subagent pair is what keeps a session's activity
+// honest while a Task call runs.
 const EVENTS = [
   'UserPromptSubmit',
   'PreToolUse',
@@ -17,7 +21,10 @@ const EVENTS = [
   'Notification',
   'PermissionRequest',
   'Elicitation',
+  'SubagentStart',
+  'SubagentStop',
   'Stop',
+  'StopFailure',
   'SessionStart',
   'SessionEnd',
 ]

@@ -10,6 +10,10 @@ const http = require('http')
 const kind = process.argv[2] || 'hook'
 const port = process.argv[3] || process.env.TERMINATOR_PORT
 const token = process.argv[4] || process.env.TERMINATOR_TOKEN
+// When Claude spawned us. Hook payloads carry no timestamp or sequence number, and
+// each report is its own HTTP POST, so this is the only thing that tells the app
+// which of two reports Claude actually emitted first.
+const capturedAt = Date.now()
 
 let body = ''
 process.stdin.setEncoding('utf8')
@@ -46,6 +50,7 @@ function send() {
         headers: {
           'content-type': 'application/json',
           'content-length': data.length,
+          'x-terminator-ts': String(capturedAt),
           authorization: 'Bearer ' + token,
         },
       },
