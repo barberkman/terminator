@@ -2,6 +2,7 @@ import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
 import { DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
 import type {
+  AttachDeliver,
   AttachFileInput,
   BranchResult,
   BranchSessionInput,
@@ -205,10 +206,18 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   )
 
   // ---- attachments (paste / drag-and-drop) ----
-  ipcMain.handle(Channels.attachClipboard, (_e, id: string) => attachClipboardImage(id))
+  // `deliver` is normalised rather than trusted, like every other argument here:
+  // only the exact string opts into typing at a live prompt.
+  const how = (d: AttachDeliver | undefined): AttachDeliver => (d === 'caller' ? 'caller' : 'pty')
+  ipcMain.handle(
+    Channels.attachClipboard,
+    (_e, { id, deliver }: { id: string; deliver?: AttachDeliver }) =>
+      attachClipboardImage(id, how(deliver)),
+  )
   ipcMain.handle(
     Channels.attachFiles,
-    (_e, { id, files }: { id: string; files: AttachFileInput[] }) => attachFiles(id, files),
+    (_e, { id, files, deliver }: { id: string; files: AttachFileInput[]; deliver?: AttachDeliver }) =>
+      attachFiles(id, files, how(deliver)),
   )
   // Acting on an attachment from its toast. Same posture as linkOpenFile, reached a
   // different way: the path can't be re-resolved from a session id (a dropped file

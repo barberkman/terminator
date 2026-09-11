@@ -97,6 +97,11 @@ export interface Session {
   status: SessionStatus
   /** Human-readable current activity, e.g. "waiting for input", "running tests". */
   activity: string
+  /**
+   * When the current turn started — set on the edge into `busy`, cleared on the
+   * way out. Runtime only (never persisted): a restored session isn't running.
+   */
+  busySince?: number
   /** True between a notable event firing and the user viewing the session. */
   notified: boolean
   /** True while the PTY process is running. */
@@ -240,6 +245,16 @@ export interface AttachFileInput {
   name?: string
   bytes?: Uint8Array
 }
+
+/**
+ * Where an attachment's path goes once the file exists.
+ *
+ * `pty` types it into the session, which is what a drop on a terminal has always
+ * done. `caller` writes and registers the file but types nothing, leaving the
+ * renderer to hold the path — how the conversation view's composer shows an
+ * attachment as a chip and sends it with the next message.
+ */
+export type AttachDeliver = 'pty' | 'caller'
 
 /** Attaching is all-or-nothing per drop/paste: on failure nothing was typed. */
 export type AttachResult =
@@ -563,9 +578,13 @@ export interface TerminatorApi {
 
   // attachments
   /** Save the clipboard image to disk and reference it in the session. */
-  attachClipboardImage(id: string): Promise<AttachResult>
+  attachClipboardImage(id: string, deliver?: AttachDeliver): Promise<AttachResult>
   /** Reference dropped files in the session. Files on disk are never copied. */
-  attachFiles(id: string, files: AttachFileInput[]): Promise<AttachResult>
+  attachFiles(
+    id: string,
+    files: AttachFileInput[],
+    deliver?: AttachDeliver,
+  ): Promise<AttachResult>
   /** Absolute path of a dropped File ('' when it has none, e.g. a browser drag). */
   pathForFile(file: File): string
   /**

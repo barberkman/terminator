@@ -4,7 +4,7 @@ import { useStore } from '../state/store'
 import { C, accentA, bgA, dangerA } from '../theme'
 import { Icon } from '../icons'
 import * as registry from '../term/registry'
-import { attachDrop } from '../attach'
+import { attachDrop, attachDropToComposer } from '../attach'
 import { PaneHeader } from './PaneHeader'
 import { TerminalView } from './TerminalView'
 import { EditorPaneBody } from './EditorPaneBody'
@@ -25,8 +25,13 @@ function hasFiles(e: React.DragEvent): boolean {
  *
  * dragenter/dragleave fire for every child the pointer crosses (xterm nests
  * several), so the highlight is driven by a depth count, not a boolean.
+ *
+ * `toComposer` is on while the pane is showing its conversation: the drop then
+ * belongs to the message being written, not to the terminal lying hidden
+ * underneath. Typing the path into an input box the overlay covers was the old
+ * behaviour, and it was never useful.
  */
-function useFileDrop(session: Session | undefined, index: number) {
+function useFileDrop(session: Session | undefined, index: number, toComposer: boolean) {
   const [over, setOver] = useState(false)
   const depth = useRef(0)
   const focusPane = useStore((s) => s.focusPane)
@@ -71,6 +76,13 @@ function useFileDrop(session: Session | undefined, index: number) {
         return
       }
       const { id: sid, kind } = session
+      if (toComposer) {
+        // No registry.focus here, deliberately: the terminal is covered, and
+        // pulling focus onto it would take the caret out of the composer the user
+        // is typing in — and with it the Esc handler's only way home.
+        void attachDropToComposer(sid, e.dataTransfer)
+        return
+      }
       void attachDrop(sid, e.dataTransfer).then(() => {
         if (kind !== 'editor') registry.focus(sid)
       })
@@ -119,7 +131,8 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
   const focusPane = useStore((s) => s.focusPane)
   const setShowNew = useStore((s) => s.setShowNew)
   const showTranscript = useStore((s) => (id ? !!s.transcripts[id] : false))
-  const { over, dropProps } = useFileDrop(session, index)
+  const toComposer = showTranscript && session?.kind === 'claude'
+  const { over, dropProps } = useFileDrop(session, index, toComposer)
 
   const frame: React.CSSProperties = multi
     ? {
@@ -231,9 +244,11 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
       {over && (
         <DropVeil
           label={
-            session.kind === 'claude'
-              ? `Drop to attach to ${session.name}`
-              : 'Drop to paste the path'
+            toComposer
+              ? 'Drop to attach to your message'
+              : session.kind === 'claude'
+                ? `Drop to attach to ${session.name}`
+                : 'Drop to paste the path'
           }
         />
       )}

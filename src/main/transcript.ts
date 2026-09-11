@@ -64,12 +64,18 @@ export function promptText(rec: Record_): string {
   if (!msg || msg.role !== 'user') return ''
   const c = msg.content
   if (typeof c === 'string') return c
-  // Content blocks: keep it a prompt only if it's purely text (tool results aren't).
+  // Content blocks: keep it a prompt only if every block is something a person
+  // can send. A `tool_result` isn't, and disqualifies the whole record.
   if (!Array.isArray(c)) return ''
   const texts: string[] = []
   for (const block of c) {
     if (!block || typeof block !== 'object') return ''
     const b = block as { type?: string; text?: string }
+    // An image *is* part of a human prompt — an attached screenshot rides along
+    // beside the words, and Claude leaves an `[Image #1]` marker in the text for
+    // it. Bailing here used to drop the whole message from the conversation, so
+    // sending a picture meant watching your own prompt never appear.
+    if (b.type === 'image') continue
     if (b.type !== 'text' || typeof b.text !== 'string') return ''
     texts.push(b.text)
   }

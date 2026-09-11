@@ -55,16 +55,30 @@ function sanitise(raw: string): string {
 }
 
 /**
+ * Gap between the bracketed paste and the Enter that submits it.
+ *
+ * Measured against claude 2.1.268, ground truth read from the session's own
+ * transcript rather than from the painted screen. A combined write (paste and
+ * `\r` in one go) submits plain text fine — but **not** a prompt containing the
+ * path of an image: the TUI recognises it, replaces it with an `[Image #N]`
+ * chip, and that work outruns the carriage return, leaving the message sitting
+ * unsent in the box. At 150ms both land, every time. This is that number with
+ * headroom, not one raised until it happened to work.
+ *
+ * One delay for every prompt rather than only the ones carrying a path: a single
+ * code path that is always exercised beats a rare one that only runs when
+ * someone attaches a PNG.
+ */
+const SUBMIT_DELAY_MS = 300
+
+/**
  * Type a prompt into a Claude session and press Enter.
  *
- * The paste and the carriage return go out as **one** write. Measured against
- * claude 2.1.268 (four runs, ground truth read from the session's own transcript
- * rather than from the painted screen): a combined `ESC[200~ … ESC[201~\r`
- * submitted the whole multi-line prompt as a single `user` record every time.
- * Splitting them with a timer was the alternative, and it buys a race — a pty id
- * is reused across a relaunch, so a late `\r` could land in a different Claude
- * than the paste did. One write has no such window. If Claude's input handling
- * ever changes, this is the line to re-measure.
+ * The Enter follows the paste after `SUBMIT_DELAY_MS`, which opens a window the
+ * single write didn't have: a pty id is reused across a relaunch, so a late `\r`
+ * could land in a *different* Claude than the paste did. Hence the generation
+ * check before it goes — kill and relaunch inside 300ms is unlikely, but "unlikely"
+ * is not a reason to send a stray Enter into someone's fresh session.
  *
  * `ok` means "handed to the pty", not "Claude has it": nothing comes back up the
  * pty to confirm a prompt was accepted. The transcript is the only real receipt,
@@ -98,6 +112,12 @@ export function sendPrompt(id: string, raw: string): SendPromptResult {
     }
   }
 
-  ptyMgr.writePty(id, `\x1b[200~${text}\x1b[201~\r`)
+  const gen = ptyMgr.ptyGeneration(id)
+  ptyMgr.writePty(id, `\x1b[200~${text}\x1b[201~`)
+  setTimeout(() => {
+    if (ptyMgr.ptyGeneration(id) !== gen) return
+    if (!getSession(id)?.alive) return
+    ptyMgr.writePty(id, '\r')
+  }, SUBMIT_DELAY_MS)
   return { ok: true, text }
 }

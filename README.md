@@ -179,22 +179,30 @@ too — the session is driven from the same place it's read.
 - **Copy a whole message too.** Each exchange has **Copy prompt** and **Copy reply** — the reply
   being everything Claude wrote in prose that turn, as markdown. Inline `code` copies on click,
   like it does in Notes.
-- **The working is out of the way.** What you read is the exchange — your prompts and Claude's
-  prose. A long debugging session reads as an explanation rather than a wall of shell commands.
-  **Working** in the header brings the tool calls and thinking back when you do want to see what
-  ran: one line each — the command, the file, the pattern — opening to what they were given and
-  what came back (long output collapses to its first lines, and copies in full). Subagent traffic
-  stays behind the `Task` row that started it. The choice sticks while the app is open, so
-  checking one command and going back to reading isn't a fight. While it's off, a turn that has
-  only run commands so far says so in one line, which is also the way in.
-- **It keeps up.** The view follows the session while it works, without a refresh. Scroll up to
-  read and it stays where you put it, offering a **New messages** jump instead of yanking you to
-  the bottom.
+- **The working is out of the way.** What you read is the exchange — your prompts, Claude's prose,
+  and its thinking folded to one line. A long debugging session reads as an explanation rather than
+  a wall of shell commands. **Tools** in the header brings the tool calls back when you do want to
+  see what ran: one line each — the command, the file, the pattern — opening to what they were
+  given and what came back (long output collapses to its first lines, and copies in full). Subagent
+  traffic stays behind the `Task` row that started it. The choice sticks while the app is open, so
+  checking one command and going back to reading isn't a fight, and a turn that only ran commands
+  still says how many, which is also the way in.
+- **It keeps up, and it says so.** The view follows the session while it works, without a refresh.
+  Scroll up to read and it stays where you put it, offering a **New messages** jump instead of
+  yanking you to the bottom. While a turn is running, the foot of the conversation carries a
+  breathing dot and what the session is actually doing — *using Bash*, *running 2 subagents*,
+  *compacting* — with how long it has been at it. It's up from the moment you press Enter, before
+  Claude has even acknowledged the prompt, because that gap is exactly when a quiet view looks
+  broken.
 - **Reply without leaving.** **Enter** sends, **Shift+Enter** starts a new line, and a multi-line
   message arrives as one prompt with its line breaks intact — it's typed into Claude's own input
   box, so nothing about the session is special-cased. Sending mid-turn is fine: Claude queues it,
   the same as typing ahead at the terminal. What you sent appears the moment you send it and
   settles into place when it comes back out of the transcript.
+- **Images and files go in the message.** Paste a screenshot or drop a file onto the conversation
+  and it becomes a chip above the box — with a thumbnail, which is the thing a terminal could never
+  show you. Send, and the paths ride along with your words for Claude to read. Remove one before
+  sending, or click it to open it. Shift+V pastes as text when the clipboard holds both.
 - **It says when it can't send, rather than failing quietly.** A stopped session offers
   **Relaunch** in the box itself. And when Claude is waiting on something it drew in the terminal —
   a permission prompt, a plan picker, a `y/n` — the composer refuses and offers the trip instead:

@@ -70,6 +70,13 @@ export interface PendingPrompt {
   key: string
   /** Exactly what `sendPrompt` wrote, which is what the transcript is matched against. */
   text: string
+  /**
+   * The typed message alone, set only when attachment paths were folded in front
+   * of it. Needed because the TUI rewrites an image path it recognises into an
+   * `[Image #1]` chip, so what lands in the transcript is not what was sent and
+   * `text` can never match it — but the words after it still do.
+   */
+  message?: string
   sentAt: number
   /**
    * Time the session has spent *not busy* since this was sent. A prompt queued
@@ -154,17 +161,23 @@ interface StoreState {
    */
   transcripts: Record<string, boolean>
   /**
-   * Whether conversation views draw the working — tool calls and thinking — or
-   * just the exchange. One flag for the whole app, not one per session: wanting
-   * to see what Claude ran is a way of reading, not a property of a particular
-   * conversation, and re-flipping it for every pane you glance at is friction
-   * with nothing on the other side of it.
+   * Whether conversation views draw tool calls, or just the exchange. One flag for
+   * the whole app, not one per session: wanting to see what Claude ran is a way of
+   * reading, not a property of a particular conversation, and re-flipping it for
+   * every pane you glance at is friction with nothing on the other side of it.
+   *
+   * Thinking is deliberately not governed by this. It was hidden alongside tool
+   * calls at first, but a collapsed one-line "Thinking" was never the wall of
+   * shell commands the hiding was aimed at — and it is the first thing to appear
+   * after a prompt, so hiding it took away the earliest sign of life.
    */
-  showWorking: boolean
+  showTools: boolean
   /** Unsent composer text, so a half-typed message survives a trip to the terminal. */
   drafts: Record<string, string>
   /** Prompts sent from the composer that haven't turned up in the transcript yet. */
   pendings: Record<string, PendingPrompt[]>
+  /** Files and images attached to the next message, per session. */
+  attachments: Record<string, AttachedItem[]>
   sidebarHidden: boolean
   editingId: string | null
   editingWhere: EditSurface
@@ -200,9 +213,10 @@ interface StoreState {
   setBranchFor(id: string | null): void
   setRelaunchOffer(ids: string[] | null): void
   toggleTranscript(id: string): void
-  toggleWorking(): void
+  toggleTools(): void
   setDraft(id: string, text: string): void
   setPendings(id: string, list: PendingPrompt[]): void
+  setAttachments(id: string, list: AttachedItem[]): void
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
@@ -233,9 +247,10 @@ export const useStore = create<StoreState>((set, get) => ({
   branchFor: null,
   relaunchOffer: null,
   transcripts: {},
-  showWorking: false,
+  showTools: false,
   drafts: {},
   pendings: {},
+  attachments: {},
   sidebarHidden: false,
   editingId: null,
   editingWhere: 'pane',
@@ -321,6 +336,8 @@ export const useStore = create<StoreState>((set, get) => ({
       delete drafts[id]
       const pendings = { ...st.pendings }
       delete pendings[id]
+      const attachments = { ...st.attachments }
+      delete attachments[id]
       return {
         sessions,
         order,
@@ -328,6 +345,7 @@ export const useStore = create<StoreState>((set, get) => ({
         transcripts,
         drafts,
         pendings,
+        attachments,
         focused: Math.min(st.focused, Math.max(0, panes.length - 1)),
         confirm: st.confirm?.id === id ? null : st.confirm,
         contextMenu:
@@ -471,14 +489,17 @@ export const useStore = create<StoreState>((set, get) => ({
   toggleTranscript(id) {
     set((st) => ({ transcripts: { ...st.transcripts, [id]: !st.transcripts[id] } }))
   },
-  toggleWorking() {
-    set((st) => ({ showWorking: !st.showWorking }))
+  toggleTools() {
+    set((st) => ({ showTools: !st.showTools }))
   },
   setDraft(id, text) {
     set((st) => ({ drafts: { ...st.drafts, [id]: text } }))
   },
   setPendings(id, list) {
     set((st) => ({ pendings: { ...st.pendings, [id]: list } }))
+  },
+  setAttachments(id, list) {
+    set((st) => ({ attachments: { ...st.attachments, [id]: list } }))
   },
   toggleSidebar() {
     set((s) => ({ sidebarHidden: !s.sidebarHidden }))

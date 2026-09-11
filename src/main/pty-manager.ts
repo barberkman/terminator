@@ -22,6 +22,12 @@ interface Term {
 }
 
 const terms = new Map<string, Term>()
+/**
+ * How many ptys a session id has had. The id outlives the process — a relaunch
+ * reuses it — so anything that writes to a pty after a delay has to be able to
+ * tell it's still writing to the one it meant (see send-prompt.ts).
+ */
+const generations = new Map<string, number>()
 /** Last known size per session, kept across restarts so a relaunch can reuse it. */
 const lastSize = new Map<string, { cols: number; rows: number }>()
 /** One-shot callbacks to run after a specific pty exits (used by mode switch). */
@@ -79,6 +85,7 @@ export function createPty(win: BrowserWindow, opts: PtyCreateOpts): string {
 
   const term: Term = { proc, buf: '', flush: null }
   terms.set(id, term)
+  generations.set(id, (generations.get(id) ?? 0) + 1)
   lastSize.set(id, { cols: opts.cols ?? 80, rows: opts.rows ?? 24 })
 
   const send = (channel: string, payload: unknown) => {
@@ -121,6 +128,11 @@ export function createPty(win: BrowserWindow, opts: PtyCreateOpts): string {
 
 export function writePty(id: string, data: string): void {
   terms.get(id)?.proc.write(data)
+}
+
+/** Bumped every time a session gets a new pty. See `generations`. */
+export function ptyGeneration(id: string): number {
+  return generations.get(id) ?? 0
 }
 
 export function resizePty(id: string, cols: number, rows: number): void {
