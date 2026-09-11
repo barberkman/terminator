@@ -53,6 +53,34 @@ export interface ConfirmState {
 }
 
 /**
+ * A prompt typed into the conversation view's composer and handed to the pty,
+ * waiting to turn up in the session's transcript.
+ *
+ * It exists because there is no receipt: nothing comes back up a pty to say a
+ * prompt was accepted, and the transcript is only read every 700ms — and not at
+ * all until Claude finishes the turn a mid-turn message was queued behind. So
+ * the message is shown from the moment it is sent and retired when the real
+ * record arrives (ConversationView reconciles the two).
+ *
+ * Kept in the store rather than in the view because Esc unmounts the view, and a
+ * message in flight must not vanish with it.
+ */
+export interface PendingPrompt {
+  /** Ours, never a transcript uuid — these have no id until they land. */
+  key: string
+  /** Exactly what `sendPrompt` wrote, which is what the transcript is matched against. */
+  text: string
+  sentAt: number
+  /**
+   * Time the session has spent *not busy* since this was sent. A prompt queued
+   * behind a long turn is normal and must never be called lost, so the clock
+   * only runs while there is nothing to wait for.
+   */
+  quietMs: number
+  state: 'pending' | 'unsure'
+}
+
+/**
  * A transient message in the bottom-right corner. The only place the app can tell
  * you an attachment landed (a terminal can't show a thumbnail) — or why it didn't.
  */
@@ -125,6 +153,18 @@ interface StoreState {
    * moves panes — and the terminal underneath is never torn down either way.
    */
   transcripts: Record<string, boolean>
+  /**
+   * Whether conversation views draw the working — tool calls and thinking — or
+   * just the exchange. One flag for the whole app, not one per session: wanting
+   * to see what Claude ran is a way of reading, not a property of a particular
+   * conversation, and re-flipping it for every pane you glance at is friction
+   * with nothing on the other side of it.
+   */
+  showWorking: boolean
+  /** Unsent composer text, so a half-typed message survives a trip to the terminal. */
+  drafts: Record<string, string>
+  /** Prompts sent from the composer that haven't turned up in the transcript yet. */
+  pendings: Record<string, PendingPrompt[]>
   sidebarHidden: boolean
   editingId: string | null
   editingWhere: EditSurface
@@ -160,6 +200,9 @@ interface StoreState {
   setBranchFor(id: string | null): void
   setRelaunchOffer(ids: string[] | null): void
   toggleTranscript(id: string): void
+  toggleWorking(): void
+  setDraft(id: string, text: string): void
+  setPendings(id: string, list: PendingPrompt[]): void
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
@@ -190,6 +233,9 @@ export const useStore = create<StoreState>((set, get) => ({
   branchFor: null,
   relaunchOffer: null,
   transcripts: {},
+  showWorking: false,
+  drafts: {},
+  pendings: {},
   sidebarHidden: false,
   editingId: null,
   editingWhere: 'pane',
@@ -271,11 +317,17 @@ export const useStore = create<StoreState>((set, get) => ({
       })
       const transcripts = { ...st.transcripts }
       delete transcripts[id]
+      const drafts = { ...st.drafts }
+      delete drafts[id]
+      const pendings = { ...st.pendings }
+      delete pendings[id]
       return {
         sessions,
         order,
         panes,
         transcripts,
+        drafts,
+        pendings,
         focused: Math.min(st.focused, Math.max(0, panes.length - 1)),
         confirm: st.confirm?.id === id ? null : st.confirm,
         contextMenu:
@@ -418,6 +470,15 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   toggleTranscript(id) {
     set((st) => ({ transcripts: { ...st.transcripts, [id]: !st.transcripts[id] } }))
+  },
+  toggleWorking() {
+    set((st) => ({ showWorking: !st.showWorking }))
+  },
+  setDraft(id, text) {
+    set((st) => ({ drafts: { ...st.drafts, [id]: text } }))
+  },
+  setPendings(id, list) {
+    set((st) => ({ pendings: { ...st.pendings, [id]: list } }))
   },
   toggleSidebar() {
     set((s) => ({ sidebarHidden: !s.sidebarHidden }))

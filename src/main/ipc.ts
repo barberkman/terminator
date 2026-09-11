@@ -9,6 +9,7 @@ import type {
   CreateSessionInput,
   FolderChoice,
   OpenFileInput,
+  SendPromptResult,
   SessionMode,
   TaskCommand,
   TranscriptPrompt,
@@ -31,6 +32,7 @@ import { loadUsage } from './usage-store'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
 import { forkTranscript, listPrompts } from './transcript'
 import { readConversation } from './conversation'
+import { sendPrompt } from './send-prompt'
 import { setPendingPrompt } from './prefill'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 
@@ -122,6 +124,14 @@ export function registerIpc(getWin: () => BrowserWindow): void {
       if (!s || s.kind !== 'claude') return empty
       return readConversation(s.id, s.worktreePath || s.projectPath, Math.max(0, from | 0))
     },
+  )
+  // Driving the session from that document: the prompt is typed into the pty,
+  // because the TUI owns the only real input box. sendPrompt does its own
+  // preflight (running Claude, not blocked on a dialog) and reports the reason.
+  ipcMain.handle(
+    Channels.sessionSendPrompt,
+    (_e, { id, text }: { id: string; text: string }): SendPromptResult =>
+      sendPrompt(id, typeof text === 'string' ? text : ''),
   )
   ipcMain.handle(
     Channels.sessionBranch,

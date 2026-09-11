@@ -29,6 +29,7 @@ export type IconName =
   | 'copy'
   | 'pencil'
   | 'restart'
+  | 'send'
 
 export function Icon({ name, size = 15 }: { name: IconName; size?: number }): React.JSX.Element {
   const common = {
@@ -226,6 +227,13 @@ export function Icon({ name, size = 15 }: { name: IconName; size?: number }): Re
       return (
         <svg {...common}>
           <path d="M20 11.5l-8.2 8.2a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.3-2.3l7.8-7.8" />
+        </svg>
+      )
+    case 'send':
+      return (
+        <svg {...common}>
+          <path d="M12 19V5" />
+          <path d="M5 12l7-7 7 7" />
         </svg>
       )
     case 'copy':

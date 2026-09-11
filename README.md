@@ -41,8 +41,9 @@ npm run typecheck  # tsc, no emit
 - **Pick up where you left off**: sessions survive a restart, but come back not running. Turn
   the startup prompt on and each start offers them back in one dialog, every box ticked — untick
   the ones you don't want. Off by default. See below.
-- **Read the conversation**: flip a Claude pane from the live terminal to its conversation as
-  a document — Claude's answers rendered as markdown, with a copy button on every code block.
+- **Read and drive the conversation**: flip a Claude pane from the live terminal to its
+  conversation as a document — Claude's answers rendered as markdown, with a copy button on every
+  code block — and send the next prompt from the same place, without going back to the terminal.
   See below.
 - **Branch a conversation**: fork a Claude session from any earlier prompt into a sibling
   session. Both keep running, nested in the sidebar. See below.
@@ -163,6 +164,9 @@ go back) swaps the live terminal for the same session read as a document: your p
 replies as rendered markdown, and **a copy button on every fenced code block**. No more
 drag-selecting across wrapped terminal lines and getting the indentation back mangled.
 
+It isn't only for reading. There's a message box at the bottom, so the next prompt goes from here
+too — the session is driven from the same place it's read.
+
 - **The text is the real text.** It comes from the session's transcript — the JSONL Claude keeps
   per session, the same file the branch picker reads — not from the painted terminal. So a copied
   block has its original indentation, no wrapping artifacts, and nothing the TUI drew around it.
@@ -175,16 +179,31 @@ drag-selecting across wrapped terminal lines and getting the indentation back ma
 - **Copy a whole message too.** Each exchange has **Copy prompt** and **Copy reply** — the reply
   being everything Claude wrote in prose that turn, as markdown. Inline `code` copies on click,
   like it does in Notes.
-- **The working is folded away.** Tool calls are one line each — the command, the file, the
-  pattern — opening to what they were given and what came back (long output collapses to its
-  first lines, and copies in full). Thinking is one collapsed line. Subagent traffic stays behind
-  the `Task` row that started it. Nothing is dumped at you raw.
+- **The working is out of the way.** What you read is the exchange — your prompts and Claude's
+  prose. A long debugging session reads as an explanation rather than a wall of shell commands.
+  **Working** in the header brings the tool calls and thinking back when you do want to see what
+  ran: one line each — the command, the file, the pattern — opening to what they were given and
+  what came back (long output collapses to its first lines, and copies in full). Subagent traffic
+  stays behind the `Task` row that started it. The choice sticks while the app is open, so
+  checking one command and going back to reading isn't a fight. While it's off, a turn that has
+  only run commands so far says so in one line, which is also the way in.
 - **It keeps up.** The view follows the session while it works, without a refresh. Scroll up to
   read and it stays where you put it, offering a **New messages** jump instead of yanking you to
   the bottom.
+- **Reply without leaving.** **Enter** sends, **Shift+Enter** starts a new line, and a multi-line
+  message arrives as one prompt with its line breaks intact — it's typed into Claude's own input
+  box, so nothing about the session is special-cased. Sending mid-turn is fine: Claude queues it,
+  the same as typing ahead at the terminal. What you sent appears the moment you send it and
+  settles into place when it comes back out of the transcript.
+- **It says when it can't send, rather than failing quietly.** A stopped session offers
+  **Relaunch** in the box itself. And when Claude is waiting on something it drew in the terminal —
+  a permission prompt, a plan picker, a `y/n` — the composer refuses and offers the trip instead:
+  those dialogs read keystrokes as menu selections, so a prompt typed into one could pick an option
+  on your behalf. That's the one thing this view can't do for you.
 - **The terminal is still there.** It's an overlay, not a replacement: the pane's terminal stays
   running, the right size, underneath — switching back is instant and the session never notices.
-  **Esc** from the conversation also returns to it.
+  **Esc** from the conversation also returns to it, and a half-typed message is still there when
+  you come back.
 
 Only Claude sessions have any of this. Plain terminals and editor panes are unchanged.
 

@@ -4,7 +4,8 @@ import { C, accentA, ink, sz } from '../theme'
 import { Icon } from '../icons'
 import { CodeBlock, renderMarkdown } from '../markdown'
 import * as registry from '../term/registry'
-import { useStore } from '../state/store'
+import { useStore, type PendingPrompt } from '../state/store'
+import { Composer, blockedReason } from './Composer'
 
 /**
  * How often the view asks for what's been appended. Claude writes a transcript
@@ -16,6 +17,74 @@ const POLL_MS = 700
 
 /** How much of a tool's output is shown before "show all" — copying takes it all. */
 const OUTPUT_PREVIEW_LINES = 14
+
+/**
+ * How long a sent prompt may go unseen in the transcript before the view stops
+ * claiming it's on its way. Only *quiet* time counts (see `PendingPrompt`), so
+ * this is 20 seconds of a session with nothing to do — a long way past the
+ * second or so a send normally takes, and unreachable while Claude is working.
+ */
+const PENDING_UNSURE_MS = 20_000
+const PENDING_TICK_MS = 2_000
+
+/** Clock slop between this process stamping a send and Claude stamping the record. */
+const TS_SLACK_MS = 5_000
+
+/** A stable empty list: a fresh array out of a selector would loop the store. */
+const NO_PENDING: PendingPrompt[] = []
+
+let nextPendingKey = 1
+
+/**
+ * How a sent prompt and a transcript record are compared. Whitespace is
+ * collapsed because the TUI re-flows what it is given (tabs become its own tab
+ * stops), so insisting on the bytes would leave a prompt pending forever.
+ */
+function norm(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Retire the pendings whose prompts have turned up.
+ *
+ * Matching is by text, because a prompt has no id until Claude writes one. Two
+ * guards keep that honest: only records stamped at or after the send can match
+ * (so an identical prompt from an hour ago can't retire a fresh one), and each
+ * record is claimed once (so two identical messages sent back to back resolve
+ * against two records rather than both against the first). Exact matches are
+ * taken before prefix ones — `promptText` joins every text block of a user
+ * record, so our text can legitimately be a prefix, but "go" must not eat the
+ * record belonging to "go on".
+ *
+ * Returns the same array when nothing matched, so an idle tick writes nothing.
+ */
+function reconcile(arrived: ConversationItem[], pendings: PendingPrompt[]): PendingPrompt[] {
+  const prompts = arrived.filter((i) => i.kind === 'prompt')
+  if (!prompts.length) return pendings
+  const claimed = new Set<string>()
+  const retired = new Set<string>()
+
+  const sweep = (exact: boolean): void => {
+    for (const p of pendings) {
+      if (retired.has(p.key)) continue
+      const want = norm(p.text)
+      const hit = prompts.find((c) => {
+        if (claimed.has(c.id)) return false
+        const at = Date.parse(c.ts)
+        if (!Number.isNaN(at) && at < p.sentAt - TS_SLACK_MS) return false
+        const got = norm(c.text)
+        return exact ? got === want : got.startsWith(want)
+      })
+      if (!hit) continue
+      claimed.add(hit.id)
+      retired.add(p.key)
+    }
+  }
+  sweep(true)
+  sweep(false)
+
+  return retired.size ? pendings.filter((p) => !retired.has(p.key)) : pendings
+}
 
 function clock(iso: string): string {
   if (!iso) return ''
@@ -307,6 +376,84 @@ const PromptBlock = memo(function PromptBlock({
   )
 })
 
+/**
+ * A prompt that has been typed into the session but hasn't come back out of the
+ * transcript yet. Same shape as a real one at lower emphasis, so sending doesn't
+ * leave a gap where the message seems to have gone nowhere.
+ */
+const PendingBlock = memo(function PendingBlock({
+  item,
+  busy,
+  onTerminal,
+  onDismiss,
+}: {
+  item: PendingPrompt
+  busy: boolean
+  onTerminal: () => void
+  onDismiss: () => void
+}): React.JSX.Element {
+  const unsure = item.state === 'unsure'
+  return (
+    <div
+      style={{
+        position: 'relative',
+        margin: '4px 0 14px',
+        padding: '10px 14px',
+        background: accentA(0.04),
+        borderLeft: `2px solid ${unsure ? C.border3 : C.accentBorder}`,
+        borderRadius: '0 8px 8px 0',
+        opacity: unsure ? 1 : 0.72,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ fontSize: 9.5, letterSpacing: 0.7, fontWeight: 700, color: C.accentSoft }}>YOU</span>
+        <span style={{ fontSize: 10.5, color: C.faint2, fontStyle: 'italic' }}>
+          {unsure ? 'not seen yet' : busy ? 'queued' : 'sending…'}
+        </span>
+      </div>
+      <div
+        style={{
+          fontSize: 12.5,
+          lineHeight: 1.6,
+          color: C.textHi,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          userSelect: 'text',
+        }}
+      >
+        {item.text}
+      </div>
+      {unsure && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 10.5, color: C.muted }}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            This hasn’t turned up in the conversation — check the terminal.
+          </span>
+          <CopyButton text={item.text} label="Copy" hoverReveal={false} />
+          <button onClick={onTerminal} style={pendingBtn}>
+            Terminal
+          </button>
+          <button onClick={onDismiss} style={pendingBtn}>
+            Dismiss
+          </button>
+        </div>
+      )}
+    </div>
+  )
+})
+
+const pendingBtn: React.CSSProperties = {
+  padding: '3px 9px',
+  background: C.panel2,
+  border: `1px solid ${C.border3}`,
+  borderRadius: 6,
+  color: C.muted,
+  font: 'inherit',
+  fontSize: 10.5,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  flex: 'none',
+}
+
 /** Claude's prose, rendered — every fenced block arrives with its copy button. */
 const MessageText = memo(function MessageText({
   item,
@@ -351,8 +498,77 @@ function replyText(turn: Turn): string {
     .join('\n\n')
 }
 
-function TurnBlock({ turn, outputs }: { turn: Turn; outputs: Record<string, ToolOutput> }): React.JSX.Element {
+/**
+ * What a turn actually shows. The filtering happens here rather than before
+ * `toTurns` on purpose: a turn's key is derived from its first item, so filtering
+ * upstream would change keys when the toggle flips, remounting every row and
+ * losing which tool calls you had open.
+ */
+function visibleBody(turn: Turn, showWorking: boolean): ConversationItem[] {
+  return showWorking ? turn.body : turn.body.filter((i) => i.kind === 'text')
+}
+
+/**
+ * What stands in for a turn whose content so far is all hidden. Without it a
+ * prompt followed by a five-minute tool run renders as a prompt over dead air,
+ * which reads as broken rather than quiet. It's a button because the moment you
+ * most want the working is the moment you're waiting on it.
+ */
+function HiddenWork({
+  count,
+  working,
+  onShow,
+}: {
+  count: number
+  working: boolean
+  onShow: () => void
+}): React.JSX.Element {
+  return (
+    <button
+      className="cv-tool"
+      onClick={onShow}
+      title="Show tool calls and thinking"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '4px 8px',
+        borderRadius: 7,
+        border: 'none',
+        background: 'transparent',
+        color: C.faint2,
+        font: 'inherit',
+        fontSize: 11.5,
+        fontStyle: 'italic',
+        cursor: 'pointer',
+      }}
+    >
+      <span style={{ letterSpacing: 1.5 }}>···</span>
+      {working && <span>Working…</span>}
+      <span>
+        {count} step{count === 1 ? '' : 's'} hidden
+      </span>
+    </button>
+  )
+}
+
+function TurnBlock({
+  turn,
+  outputs,
+  showWorking,
+  onShowWorking,
+  working,
+}: {
+  turn: Turn
+  outputs: Record<string, ToolOutput>
+  showWorking: boolean
+  onShowWorking: () => void
+  /** This is the newest turn and the session is still going. */
+  working: boolean
+}): React.JSX.Element {
   const reply = replyText(turn)
+  const body = visibleBody(turn, showWorking)
+  const hidden = turn.body.length - body.length
   return (
     <section className="cv-msg" style={{ marginBottom: 18 }}>
       {turn.prompt && <PromptBlock item={turn.prompt} />}
@@ -364,12 +580,15 @@ function TurnBlock({ turn, outputs }: { turn: Turn; outputs: Record<string, Tool
           </span>
         </div>
       )}
-      {turn.body.map((item) => {
+      {body.map((item) => {
         if (item.kind === 'text') return <MessageText key={item.id} item={item} />
         if (item.kind === 'thinking') return <ThinkingRow key={item.id} item={item} />
         if (item.kind === 'tool') return <ToolRow key={item.id} item={item} output={outputs[item.toolId]} />
         return null
       })}
+      {!body.length && hidden > 0 && (
+        <HiddenWork count={hidden} working={working} onShow={onShowWorking} />
+      )}
     </section>
   )
 }
@@ -419,12 +638,20 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
   const [behind, setBehind] = useState(false)
 
   const scroller = useRef<HTMLDivElement>(null)
+  const composer = useRef<HTMLTextAreaElement>(null)
   const offset = useRef(0)
   const busy = useRef(false)
   const following = useRef(true)
-  const toggleTranscript = useStore((s) => s.toggleTranscript)
-
+  /** Set when Relaunch was clicked *here*, so focus comes back when it works. */
+  const relaunchedHere = useRef(false)
   const sessionId = session.id
+
+  const toggleTranscript = useStore((s) => s.toggleTranscript)
+  const showWorking = useStore((s) => s.showWorking)
+  const toggleWorking = useStore((s) => s.toggleWorking)
+  // `?? NO_PENDING` outside the selector: returning a fresh array from inside one
+  // would loop useSyncExternalStore.
+  const pendings = useStore((s) => s.pendings[sessionId]) ?? NO_PENDING
 
   const pull = useCallback(async () => {
     if (busy.current) return
@@ -434,6 +661,22 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
       offset.current = slice.nextOffset
       setExists(slice.exists)
       setLoaded(true)
+
+      // Retire sent prompts in the same commit that shows the real ones. React
+      // batches this continuation, so the pending block and its transcript
+      // record never both appear — which is the whole "no duplicate, no gap".
+      // Read the store rather than closing over it: `pull` is keyed on sessionId
+      // alone, and a new dependency here would reset the byte offset and re-read
+      // the whole transcript on every send.
+      const st = useStore.getState()
+      const held = st.pendings[sessionId]
+      if (held?.length) {
+        const next = slice.reset
+          ? held.map((x) => (x.state === 'unsure' ? x : { ...x, state: 'unsure' as const }))
+          : reconcile(slice.items, held)
+        if (next !== held) st.setPendings(sessionId, next)
+      }
+
       if (slice.reset) {
         setItems(slice.items)
         setOutputs(slice.outputs)
@@ -468,10 +711,34 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
   }, [session.status, pull])
 
   // Take focus off the terminal underneath: it's covered, and typing into a pane
-  // you can't see would be worse than the wrapped selections this replaces.
+  // you can't see would be worse than the wrapped selections this replaces. The
+  // composer takes it rather than the scroller now — and the scroller stays as
+  // the fallback, because focus has to land *somewhere* inside this view or the
+  // global Esc handler can't find it.
   useEffect(() => {
-    scroller.current?.focus({ preventScroll: true })
+    const el = composer.current ?? scroller.current
+    el?.focus({ preventScroll: true })
+    if (el instanceof HTMLTextAreaElement) {
+      // Resume a restored draft at its end rather than in front of it.
+      el.selectionStart = el.selectionEnd = el.value.length
+    }
   }, [sessionId])
+
+  // Relaunching from the composer is a deliberate act in this surface, so the
+  // caret comes back when the session is up. Deliberately not a general "focus
+  // whenever it becomes sendable": Claude finishing a turn is not the user's
+  // action and must not pull focus out of wherever they actually are.
+  useEffect(() => {
+    if (!session.alive || !relaunchedHere.current) return
+    relaunchedHere.current = false
+    composer.current?.focus({ preventScroll: true })
+  }, [session.alive])
+
+  /** Stick to the tail, when that's where you were. Three callers need it. */
+  const pin = useCallback(() => {
+    const el = scroller.current
+    if (el && following.current) el.scrollTop = el.scrollHeight
+  }, [])
 
   // Follow the tail while pinned to the bottom; when you've scrolled up to read,
   // stay put and offer the jump instead of yanking the page.
@@ -480,7 +747,7 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
     if (!el) return
     if (following.current) el.scrollTop = el.scrollHeight
     else if (items.length) setBehind(true)
-  }, [items])
+  }, [items, pendings, showWorking])
 
   const onScroll = () => {
     const el = scroller.current
@@ -500,7 +767,95 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
     setBehind(false)
   }
 
+  const blocked = blockedReason(session)
+
+  const toTerminal = useCallback(() => {
+    toggleTranscript(sessionId)
+    registry.focus(sessionId)
+  }, [toggleTranscript, sessionId])
+
+  const send = useCallback(
+    async (raw: string) => {
+      // Snap to the bottom first: sending your own message should always land you
+      // where it will appear, even if you'd scrolled up to read.
+      following.current = true
+      setBehind(false)
+      setAtBottom(true)
+
+      // Empty the box before the round trip, not after: while it still holds the
+      // text a second Enter would send the same message twice.
+      useStore.getState().setDraft(sessionId, '')
+
+      const res = await window.terminator.sendPrompt(sessionId, raw)
+      const now = useStore.getState()
+      if (!res.ok) {
+        // Hand the text back rather than swallowing it — a refusal must never
+        // cost what you typed.
+        now.setDraft(sessionId, raw)
+        now.pushToast({ tone: 'error', text: 'Not sent', sub: res.reason, icon: 'send' })
+        return
+      }
+      // Keyed on what was actually written, not what was typed: sendPrompt
+      // normalises newlines and strips control characters, and the transcript
+      // will record the sanitised text.
+      now.setPendings(sessionId, [
+        ...(now.pendings[sessionId] ?? []),
+        {
+          key: `p${nextPendingKey++}`,
+          text: res.text,
+          sentAt: Date.now(),
+          quietMs: 0,
+          state: 'pending',
+        },
+      ])
+    },
+    [sessionId],
+  )
+
+  const dropPending = useCallback(
+    (key: string) => {
+      const st = useStore.getState()
+      st.setPendings(sessionId, (st.pendings[sessionId] ?? []).filter((p) => p.key !== key))
+    },
+    [sessionId],
+  )
+
+  // A prompt that never lands has to say so eventually — but only *quiet* time
+  // counts. One sent mid-turn sits behind a turn that can run for minutes, and
+  // calling that lost would be wrong every time. So while the session is busy
+  // the clock doesn't run, and nothing is written to the store either.
+  useEffect(() => {
+    if (!pendings.length) return
+    const timer = setInterval(() => {
+      const st = useStore.getState()
+      if (st.sessions[sessionId]?.status === 'busy') return
+      const held = st.pendings[sessionId]
+      if (!held?.length) return
+      let changed = false
+      const next = held.map((p) => {
+        if (p.state === 'unsure') return p
+        changed = true
+        const quietMs = p.quietMs + PENDING_TICK_MS
+        return quietMs >= PENDING_UNSURE_MS
+          ? { ...p, quietMs, state: 'unsure' as const }
+          : { ...p, quietMs }
+      })
+      if (changed) st.setPendings(sessionId, next)
+    }, PENDING_TICK_MS)
+    return () => clearInterval(timer)
+  }, [pendings.length, sessionId])
+
   const turns = useMemo(() => toTurns(items), [items])
+  // A turn with nothing left to draw is dropped rather than rendered as an empty
+  // block — which is what a resumed session's leading tool run, or a turn that
+  // only ran commands, would otherwise become with the working hidden.
+  const shown = useMemo(
+    () => turns.filter((t) => t.prompt || visibleBody(t, showWorking).length > 0),
+    [turns, showWorking],
+  )
+  // Exchanges are prompts, not turns: the synthetic turn a resumed session opens
+  // with isn't one, and the count mustn't wobble when the toggle flips.
+  const exchanges = useMemo(() => turns.reduce((n, t) => n + (t.prompt ? 1 : 0), 0), [turns])
 
   return (
     <div
@@ -530,8 +885,38 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
         </span>
         <span style={{ fontSize: 11.5, fontWeight: 600, color: C.textStrong }}>Conversation</span>
         <span style={{ fontSize: 10.5, color: C.faint2 }}>
-          {turns.length ? `${turns.length} exchange${turns.length === 1 ? '' : 's'}` : ''}
+          {exchanges ? `${exchanges} exchange${exchanges === 1 ? '' : 's'}` : ''}
         </span>
+        <button
+          onClick={toggleWorking}
+          title={
+            showWorking
+              ? 'Hide tool calls and thinking'
+              : "Show tool calls and thinking — what Claude ran to get here"
+          }
+          style={{
+            marginLeft: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            padding: '5px 11px',
+            borderRadius: 7,
+            // Longhand borderColor, never the `border` shorthand: the palette is
+            // var() references, and a shorthand holding one would be dropped
+            // rather than updated when this button's on-state changes it.
+            borderWidth: 1,
+            borderStyle: 'solid',
+            borderColor: showWorking ? C.accentBorder : C.border2,
+            background: showWorking ? accentA(0.12) : 'transparent',
+            color: showWorking ? C.accentSoft : C.textSubtle,
+            font: 'inherit',
+            fontSize: 11.5,
+            cursor: 'pointer',
+          }}
+        >
+          <Icon name="hammer" size={13} />
+          Working
+        </button>
         <button
           onClick={() => {
             toggleTranscript(sessionId)
@@ -539,7 +924,6 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
           }}
           title="Back to the live terminal"
           style={{
-            marginLeft: 'auto',
             display: 'flex',
             alignItems: 'center',
             gap: 7,
@@ -558,6 +942,11 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
         </button>
       </div>
 
+      {/* The scroller gets a wrapper of its own so the "New messages" pill can be
+          positioned against the *reading area* rather than the whole view: against
+          the view it would sit on top of the composer, and chasing the composer's
+          changing height with a measurement is the alternative nobody wants. */}
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <div
         ref={scroller}
         onScroll={onScroll}
@@ -578,10 +967,32 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
           />
         ) : !turns.length ? (
           <Empty text="Nothing to read yet" sub="The conversation is still empty." />
+        ) : !shown.length ? (
+          <Empty text="Nothing but the working so far" sub="Turn on Working to see what ran." />
         ) : (
           <div style={{ maxWidth: 900, margin: '0 auto' }}>
-            {turns.map((turn) => (
-              <TurnBlock key={turn.key} turn={turn} outputs={outputs} />
+            {shown.map((turn, i) => (
+              <TurnBlock
+                key={turn.key}
+                turn={turn}
+                outputs={outputs}
+                showWorking={showWorking}
+                onShowWorking={toggleWorking}
+                working={i === shown.length - 1 && session.status === 'busy'}
+              />
+            ))}
+          </div>
+        )}
+        {!!pendings.length && (
+          <div style={{ maxWidth: 900, margin: '0 auto' }}>
+            {pendings.map((p) => (
+              <PendingBlock
+                key={p.key}
+                item={p}
+                busy={session.status === 'busy'}
+                onTerminal={toTerminal}
+                onDismiss={() => dropPending(p.key)}
+              />
             ))}
           </div>
         )}
@@ -615,6 +1026,18 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
           New messages
         </button>
       )}
+      </div>
+
+      <Composer
+        session={session}
+        blocked={blocked}
+        onSend={send}
+        onHeight={pin}
+        onRelaunch={() => {
+          relaunchedHere.current = true
+        }}
+        inputRef={composer}
+      />
     </div>
   )
 }

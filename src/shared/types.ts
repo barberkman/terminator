@@ -209,6 +209,14 @@ export interface ConversationSlice {
   exists: boolean
 }
 
+/**
+ * What came of typing a prompt into a session. `ok` means the text reached the
+ * pty, not that Claude accepted it — nothing comes back up a pty to say so. The
+ * `text` is exactly what was written after sanitising, so the conversation view
+ * can tell which transcript record is the prompt it sent.
+ */
+export type SendPromptResult = { ok: true; text: string } | { ok: false; reason: string }
+
 // ---- Attachments (paste / drag-and-drop) -----------------------------------
 
 /** One thing that was handed to a session — a pasted image or a dropped path. */
@@ -474,6 +482,14 @@ export interface TerminatorApi {
    * transcript. Pass 0 for the whole thing, then the returned `nextOffset`.
    */
   readConversation(id: string, from: number): Promise<ConversationSlice>
+  /**
+   * Type a prompt into a running Claude session and press Enter, as if it had
+   * been typed into the TUI's own input box. Multi-line text arrives as one
+   * prompt. Refused (with a reason) for a session that isn't a running Claude,
+   * or one that is blocked on a dialog its terminal is drawing — those read a
+   * paste as menu input.
+   */
+  sendPrompt(id: string, text: string): Promise<SendPromptResult>
 
   // pty hot path
   writePty(id: string, data: string): void
