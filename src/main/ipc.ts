@@ -2,6 +2,7 @@ import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
 import { DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
 import type {
+  AttachDeliver,
   AttachFileInput,
   BranchResult,
   BranchSessionInput,
@@ -9,6 +10,7 @@ import type {
   CreateSessionInput,
   FolderChoice,
   OpenFileInput,
+  SendPromptResult,
   SessionMode,
   TaskCommand,
   TranscriptPrompt,
@@ -31,6 +33,7 @@ import { loadUsage } from './usage-store'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
 import { forkTranscript, listPrompts } from './transcript'
 import { readConversation } from './conversation'
+import { sendPrompt } from './send-prompt'
 import { setPendingPrompt } from './prefill'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 
@@ -123,6 +126,14 @@ export function registerIpc(getWin: () => BrowserWindow): void {
       return readConversation(s.id, s.worktreePath || s.projectPath, Math.max(0, from | 0))
     },
   )
+  // Driving the session from that document: the prompt is typed into the pty,
+  // because the TUI owns the only real input box. sendPrompt does its own
+  // preflight (running Claude, not blocked on a dialog) and reports the reason.
+  ipcMain.handle(
+    Channels.sessionSendPrompt,
+    (_e, { id, text }: { id: string; text: string }): SendPromptResult =>
+      sendPrompt(id, typeof text === 'string' ? text : ''),
+  )
   ipcMain.handle(
     Channels.sessionBranch,
     async (_e, input: BranchSessionInput): Promise<BranchResult> => {
@@ -195,10 +206,18 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   )
 
   // ---- attachments (paste / drag-and-drop) ----
-  ipcMain.handle(Channels.attachClipboard, (_e, id: string) => attachClipboardImage(id))
+  // `deliver` is normalised rather than trusted, like every other argument here:
+  // only the exact string opts into typing at a live prompt.
+  const how = (d: AttachDeliver | undefined): AttachDeliver => (d === 'caller' ? 'caller' : 'pty')
+  ipcMain.handle(
+    Channels.attachClipboard,
+    (_e, { id, deliver }: { id: string; deliver?: AttachDeliver }) =>
+      attachClipboardImage(id, how(deliver)),
+  )
   ipcMain.handle(
     Channels.attachFiles,
-    (_e, { id, files }: { id: string; files: AttachFileInput[] }) => attachFiles(id, files),
+    (_e, { id, files, deliver }: { id: string; files: AttachFileInput[]; deliver?: AttachDeliver }) =>
+      attachFiles(id, files, how(deliver)),
   )
   // Acting on an attachment from its toast. Same posture as linkOpenFile, reached a
   // different way: the path can't be re-resolved from a session id (a dropped file

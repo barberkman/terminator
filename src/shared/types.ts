@@ -97,6 +97,11 @@ export interface Session {
   status: SessionStatus
   /** Human-readable current activity, e.g. "waiting for input", "running tests". */
   activity: string
+  /**
+   * When the current turn started — set on the edge into `busy`, cleared on the
+   * way out. Runtime only (never persisted): a restored session isn't running.
+   */
+  busySince?: number
   /** True between a notable event firing and the user viewing the session. */
   notified: boolean
   /** True while the PTY process is running. */
@@ -209,6 +214,14 @@ export interface ConversationSlice {
   exists: boolean
 }
 
+/**
+ * What came of typing a prompt into a session. `ok` means the text reached the
+ * pty, not that Claude accepted it — nothing comes back up a pty to say so. The
+ * `text` is exactly what was written after sanitising, so the conversation view
+ * can tell which transcript record is the prompt it sent.
+ */
+export type SendPromptResult = { ok: true; text: string } | { ok: false; reason: string }
+
 // ---- Attachments (paste / drag-and-drop) -----------------------------------
 
 /** One thing that was handed to a session — a pasted image or a dropped path. */
@@ -232,6 +245,16 @@ export interface AttachFileInput {
   name?: string
   bytes?: Uint8Array
 }
+
+/**
+ * Where an attachment's path goes once the file exists.
+ *
+ * `pty` types it into the session, which is what a drop on a terminal has always
+ * done. `caller` writes and registers the file but types nothing, leaving the
+ * renderer to hold the path — how the conversation view's composer shows an
+ * attachment as a chip and sends it with the next message.
+ */
+export type AttachDeliver = 'pty' | 'caller'
 
 /** Attaching is all-or-nothing per drop/paste: on failure nothing was typed. */
 export type AttachResult =
@@ -474,6 +497,14 @@ export interface TerminatorApi {
    * transcript. Pass 0 for the whole thing, then the returned `nextOffset`.
    */
   readConversation(id: string, from: number): Promise<ConversationSlice>
+  /**
+   * Type a prompt into a running Claude session and press Enter, as if it had
+   * been typed into the TUI's own input box. Multi-line text arrives as one
+   * prompt. Refused (with a reason) for a session that isn't a running Claude,
+   * or one that is blocked on a dialog its terminal is drawing — those read a
+   * paste as menu input.
+   */
+  sendPrompt(id: string, text: string): Promise<SendPromptResult>
 
   // pty hot path
   writePty(id: string, data: string): void
@@ -547,9 +578,13 @@ export interface TerminatorApi {
 
   // attachments
   /** Save the clipboard image to disk and reference it in the session. */
-  attachClipboardImage(id: string): Promise<AttachResult>
+  attachClipboardImage(id: string, deliver?: AttachDeliver): Promise<AttachResult>
   /** Reference dropped files in the session. Files on disk are never copied. */
-  attachFiles(id: string, files: AttachFileInput[]): Promise<AttachResult>
+  attachFiles(
+    id: string,
+    files: AttachFileInput[],
+    deliver?: AttachDeliver,
+  ): Promise<AttachResult>
   /** Absolute path of a dropped File ('' when it has none, e.g. a browser drag). */
   pathForFile(file: File): string
   /**

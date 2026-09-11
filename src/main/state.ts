@@ -173,6 +173,12 @@ export function updateSession(id: string, patch: Partial<Session>): Session | un
 export function setStatus(id: string, status: SessionStatus, activity?: string): void {
   const s = sessions.get(id)
   if (!s) return
+  // When the turn began, not when a view happened to notice it. `busy` is set
+  // again on every tool boundary, so only the edge into it counts — otherwise the
+  // conversation view's "how long has this been going" would restart on each
+  // PreToolUse, and reopening the view mid-turn would count from zero.
+  if (status === 'busy' && s.status !== 'busy') s.busySince = Date.now()
+  else if (status !== 'busy') s.busySince = undefined
   s.status = status
   if (activity !== undefined) s.activity = activity
   // The "needs me" flag belongs to the state that raised it: leaving waiting or error

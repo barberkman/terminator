@@ -20,7 +20,14 @@
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { app, clipboard, nativeImage, shell } from 'electron'
-import type { AttachFileInput, AttachOpenResult, AttachResult, AttachedItem } from '../shared/types'
+import type {
+  AttachDeliver,
+  AttachFileInput,
+  AttachOpenResult,
+  AttachResult,
+  AttachedItem,
+} from '../shared/types'
+import { quotePaths } from '../shared/prompt-path'
 import * as ptyMgr from './pty-manager'
 import { getSession } from './state'
 import { loadSettings } from './settings'
@@ -165,22 +172,40 @@ function saveBytes(name: string, bytes: Uint8Array): string {
  */
 function typeIntoSession(id: string, kind: 'claude' | 'shell', paths: string[]): void {
   if (kind === 'claude') {
-    const text = paths.map((p) => (/\s/.test(p) ? `"${p}"` : p)).join(' ')
-    ptyMgr.writePty(id, `\x1b[200~${text} \x1b[201~`)
+    ptyMgr.writePty(id, `\x1b[200~${quotePaths(paths)} \x1b[201~`)
     return
   }
   const shell = loadSettings().defaultShell
   ptyMgr.writePty(id, `${paths.map((p) => quoteFor(shell, p)).join(' ')} `)
 }
 
-/** Shared preflight: the session has to exist, have a PTY, and be running. */
-function target(id: string): { kind: 'claude' | 'shell' } | { error: string } {
+/**
+ * Shared preflight: the session has to exist and be able to take an attachment.
+ *
+ * A running PTY is only needed to *type* into. When the caller is going to hold
+ * the paths itself — the conversation view's composer, which shows them as chips
+ * and sends them with the next message — a stopped session is fine: you can
+ * attach a screenshot, write the message, and relaunch before sending. Requiring
+ * `alive` there would refuse a perfectly sensible thing to do.
+ */
+function target(
+  id: string,
+  deliver: AttachDeliver,
+): { kind: 'claude' | 'shell' } | { error: string } {
   const s = getSession(id)
   if (!s) return { error: 'that session is gone' }
   if (s.kind === 'editor') {
     return { error: 'an editor pane has no session to attach to — use a Claude or terminal pane' }
   }
-  if (!s.alive) return { error: `${s.name} isn't running — relaunch it first` }
+  if (deliver === 'pty' && !s.alive) {
+    return { error: `${s.name} isn't running — relaunch it first` }
+  }
+  // Caller delivery exists for the conversation view's composer, and only a Claude
+  // session has one. Minting an openable path for a surface that can't show it
+  // would be a quiet success that achieves nothing.
+  if (deliver === 'caller' && s.kind !== 'claude') {
+    return { error: 'only a Claude session can hold an attachment for its next message' }
+  }
   return { kind: s.kind }
 }
 
@@ -189,8 +214,8 @@ function target(id: string): { kind: 'claude' | 'shell' } | { error: string } {
  * it. The renderer only routes here when the clipboard actually holds an image,
  * so an empty read means it changed underneath us.
  */
-export function attachClipboardImage(id: string): AttachResult {
-  const t = target(id)
+export function attachClipboardImage(id: string, deliver: AttachDeliver = 'pty'): AttachResult {
+  const t = target(id, deliver)
   if ('error' in t) return { ok: false, reason: t.error }
 
   let path: string | null
@@ -201,14 +226,14 @@ export function attachClipboardImage(id: string): AttachResult {
   }
   if (!path) return { ok: false, reason: 'the clipboard no longer holds an image' }
 
-  typeIntoSession(id, t.kind, [path])
+  if (deliver === 'pty') typeIntoSession(id, t.kind, [path])
   pruneAttachments()
   const items = [itemFor(path)]
   remember(items)
   return {
     ok: true,
     items,
-    note: t.kind === 'shell' ? 'saved and typed at the prompt' : undefined,
+    note: deliver === 'pty' && t.kind === 'shell' ? 'saved and typed at the prompt' : undefined,
   }
 }
 
@@ -217,8 +242,12 @@ export function attachClipboardImage(id: string): AttachResult {
  * to the attachments folder first. Either every file resolves or nothing is
  * typed, so a partly-failed drop can't leave half a reference in the prompt.
  */
-export function attachFiles(id: string, files: AttachFileInput[]): AttachResult {
-  const t = target(id)
+export function attachFiles(
+  id: string,
+  files: AttachFileInput[],
+  deliver: AttachDeliver = 'pty',
+): AttachResult {
+  const t = target(id, deliver)
   if ('error' in t) return { ok: false, reason: t.error }
   if (!files.length) return { ok: false, reason: 'nothing to attach — the drop carried no files' }
 
@@ -249,7 +278,7 @@ export function attachFiles(id: string, files: AttachFileInput[]): AttachResult 
 
   const items = paths.map(itemFor)
   remember(items)
-  typeIntoSession(id, t.kind, paths)
+  if (deliver === 'pty') typeIntoSession(id, t.kind, paths)
   pruneAttachments()
   const dirs = items.filter((i) => i.kind === 'dir').length
   return {

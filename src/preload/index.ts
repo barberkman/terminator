@@ -2,6 +2,7 @@ import { clipboard, contextBridge, ipcRenderer, webFrame, webUtils } from 'elect
 import { Channels } from '../shared/channels'
 import type { CustomTheme } from '../shared/themes'
 import type {
+  AttachDeliver,
   AttachFileInput,
   BranchSessionInput,
   CreateSessionInput,
@@ -45,6 +46,7 @@ const api: TerminatorApi = {
   listPrompts: (id) => ipcRenderer.invoke(Channels.sessionListPrompts, id),
   branchSession: (input: BranchSessionInput) => ipcRenderer.invoke(Channels.sessionBranch, input),
   readConversation: (id, from) => ipcRenderer.invoke(Channels.sessionConversation, { id, from }),
+  sendPrompt: (id, text) => ipcRenderer.invoke(Channels.sessionSendPrompt, { id, text }),
 
   writePty: (id, data) => ipcRenderer.send(Channels.ptyWrite, { id, data }),
   resizePty: (id, cols, rows) => ipcRenderer.send(Channels.ptyResize, { id, cols, rows }),
@@ -90,9 +92,10 @@ const api: TerminatorApi = {
     ipcRenderer.invoke(Channels.linkResolvePath, { sessionId, token }),
   openFileInEditor: (input: OpenFileInput) => ipcRenderer.invoke(Channels.linkOpenFile, input),
 
-  attachClipboardImage: (id: string) => ipcRenderer.invoke(Channels.attachClipboard, id),
-  attachFiles: (id: string, files: AttachFileInput[]) =>
-    ipcRenderer.invoke(Channels.attachFiles, { id, files }),
+  attachClipboardImage: (id: string, deliver?: AttachDeliver) =>
+    ipcRenderer.invoke(Channels.attachClipboard, { id, deliver }),
+  attachFiles: (id: string, files: AttachFileInput[], deliver?: AttachDeliver) =>
+    ipcRenderer.invoke(Channels.attachFiles, { id, files, deliver }),
   openAttachment: (path: string) => ipcRenderer.invoke(Channels.attachOpen, path),
   revealAttachment: (path: string) => ipcRenderer.invoke(Channels.attachReveal, path),
   // Electron 32 removed File.path; this is the supported replacement. Returns ''

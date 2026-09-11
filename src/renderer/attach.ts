@@ -67,6 +67,61 @@ function report(result: AttachResult): void {
 }
 
 /**
+ * The composer's half of the same story. It doesn't toast on success, because the
+ * chip that appears in the box *is* the receipt — a toast as well would be the app
+ * telling you twice about something already on screen. Failures still toast:
+ * nothing gets to fail quietly.
+ */
+function intoComposer(sessionId: string, result: AttachResult): void {
+  if (!result.ok) {
+    fail(result.reason)
+    return
+  }
+  const st = useStore.getState()
+  const held = st.attachments[sessionId] ?? []
+  // Same path twice is one chip: dropping a file you already attached should not
+  // send the path to Claude twice.
+  const fresh = result.items.filter((i) => !held.some((h) => h.path === i.path))
+  if (fresh.length) st.setAttachments(sessionId, [...held, ...fresh])
+}
+
+/** Attach a drop to the conversation view's composer rather than typing it. */
+export async function attachDropToComposer(sessionId: string, dt: DataTransfer): Promise<void> {
+  try {
+    const files = await filesFromDrop(dt)
+    if (!files.length) {
+      fail('that drop carried no files — only files and folders can be attached')
+      return
+    }
+    intoComposer(sessionId, await window.terminator.attachFiles(sessionId, files, 'caller'))
+  } catch (e) {
+    fail(String(e).slice(0, 200))
+  }
+}
+
+/** Attach the clipboard's image to the composer (the caller has checked there is one). */
+export async function attachClipboardToComposer(sessionId: string): Promise<void> {
+  try {
+    intoComposer(sessionId, await window.terminator.attachClipboardImage(sessionId, 'caller'))
+  } catch (e) {
+    fail(String(e).slice(0, 200))
+  }
+}
+
+/** Attach files the composer got from a paste — they arrive as bytes, not paths. */
+export async function attachFilesToComposer(
+  sessionId: string,
+  files: AttachFileInput[],
+): Promise<void> {
+  try {
+    if (!files.length) return
+    intoComposer(sessionId, await window.terminator.attachFiles(sessionId, files, 'caller'))
+  } catch (e) {
+    fail(String(e).slice(0, 200))
+  }
+}
+
+/**
  * What a drop actually carries. A file dragged from a file manager has a real
  * path and is referenced where it lies; one dragged out of a browser has no path,
  * only bytes, so those are read here and written out on the main side.
