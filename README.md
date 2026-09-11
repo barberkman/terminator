@@ -227,10 +227,12 @@ path is ever shown, so it also opens it:
   selected — Finder on macOS, your file manager elsewhere.
 - **Right-click the card** for both, plus **Copy path**.
 
-Pointing at a toast, or tabbing onto it, **pauses its countdown**, which picks up where it left
-off when you leave — five seconds is no time at all to read a path and aim at a button. A card
-held that way still goes after about half a minute, so a cursor parked in the corner can't leave
-one sitting there. **Tab** reaches the folder and dismiss buttons; **Enter** on the card opens the
+Every toast shows how long it has left, as a hairline draining along the bottom of the card.
+Pointing at a toast, or tabbing onto it, **pauses its countdown** — the bar stops where it is, and
+picks up from there when you leave, rather than starting over. Five seconds is no time at all to
+read a path and aim at a button, and a bar that stops is the clearest way to say so. A card held
+that way still goes after about half a minute, so a cursor parked in the corner can't leave one
+sitting there. **Tab** reaches the folder and dismiss buttons; **Enter** on the card opens the
 file.
 
 A toast with nothing behind it — a failed attach, or a drop of several files at once, which names

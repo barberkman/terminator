@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { openAttachment, revealAttachment } from '../attach'
 import { fileManagerVerb, openLabel, toastMenu } from '../menus'
 import { type ToastItem, useStore } from '../state/store'
-import { C, accentA, dangerA } from '../theme'
+import { C, accentA, dangerA, ink } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { MenuPanel } from './ContextMenu'
 
@@ -183,6 +183,11 @@ function Toast({
         else onMenu(r ? r.left + 20 : 0, r ? r.top + 20 : 0)
       }}
       style={{
+        // The positioning context for the hide-timer bar at the bottom. No
+        // `overflow: hidden` to go with it: the bar is inset clear of the corner
+        // radius, so there is nothing to clip, and clipping the card would be one
+        // more thing for a future focus ring to trip over.
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         gap: 10,
@@ -226,6 +231,43 @@ function Toast({
           discover a control by pointing at it, and the card has the room. */}
       {act && <CardButton icon="folder" title={fileManagerVerb()} bad={bad} onClick={reveal} />}
       <CardButton icon="close" title="Dismiss" bad={bad} onClick={() => dismiss(toast.id)} />
+      {/* How long is left, and — by stopping — that something is holding it. The
+          pause was invisible before this: pointing at a card silently stopped its
+          clock, which read as luck rather than as a promise.
+          aria-hidden because the stack is a live region: a bar ticking inside one
+          would be announced as it moved, and it says nothing the text doesn't.
+          Track and fill match the app's only other bar, the footer's usage meter. */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          // Inset to the card's own padding rather than run edge to edge. Full
+          // width, the bar touches the left tone stripe and becomes one L-shaped
+          // mark with it — and the last fifth of the countdown, the part that
+          // matters most, reads as a hook on the stripe rather than a timer
+          // nearly out. Held off the bottom corners too, so the radius never
+          // eats its ends. The result is the footer's usage meter: a small
+          // discrete pill that can only be a meter.
+          left: 13,
+          right: 13,
+          bottom: 5,
+          height: 2,
+          borderRadius: 1,
+          overflow: 'hidden',
+          background: ink(0.1),
+        }}
+      >
+        <div
+          className="cc-toast-timer"
+          data-held={held ? 'true' : 'false'}
+          // The duration is a real CSSProperties key, so the one number React has
+          // to hand CSS crosses over without a custom property or a cast.
+          style={{
+            animationDuration: `${TTL[toast.tone]}ms`,
+            background: bad ? C.danger : C.accent,
+          }}
+        />
+      </div>
     </div>
   )
 }

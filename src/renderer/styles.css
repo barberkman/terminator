@@ -155,6 +155,30 @@ textarea {
   outline-offset: 1px;
 }
 
+/* The hide timer, as a hairline draining along the bottom of the card.
+   A CSS animation rather than a JS loop for two reasons. Four cards can be on
+   screen, and moving two pixels is no reason to re-render the stack sixty times a
+   second. And `animation-play-state: paused` freezes the animation exactly where
+   it stands and resumes from there — which is already the countdown's own rule,
+   that the time is a budget being spent rather than a timer that restarts. The
+   two clocks pause on the same flag, so they stay in step.
+   Longhands on purpose: the duration comes in as an inline style, and the
+   `animation` shorthand here would reset it out from under React. */
+@keyframes cc-toast-timer {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.cc-toast-timer {
+  height: 100%;
+  transform-origin: left center;
+  animation-name: cc-toast-timer;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+.cc-toast-timer[data-held='true'] {
+  animation-play-state: paused;
+}
+
 /* Reveal the row's remove (x) button on hover */
 .cc-row .cc-x {
   opacity: 0;
