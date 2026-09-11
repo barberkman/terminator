@@ -5,6 +5,23 @@ import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import * as registry from '../term/registry'
 
+/**
+ * The header's icon buttons (lock, transcript, branch, folder, git, power).
+ *
+ * The border is three longhands rather than the `border` shorthand on purpose.
+ * Palette tokens are `var()` references, so a `border: 1px solid var(…)` shorthand
+ * is stored as a pending-substitution value that the whole declaration shares —
+ * and the transcript toggle, the one button that overrides `borderColor` while
+ * it's on, would leave it in ruins on the way back: React clears the now-absent
+ * `borderColor` key, that takes the pending substitution with it, and React skips
+ * re-applying `border` because its string never changed. What's left is a button
+ * with no border declaration at all, wearing the UA's pale default one — which
+ * reads exactly like a stuck "pressed" ring. A longhand `borderColor` is present
+ * in every state, so it's updated instead of removed, and nothing can shred.
+ *
+ * `outline: none` drops the UA focus ring, the way every other interactive style
+ * in the renderer does; these buttons are pointer targets, not a keyboard path.
+ */
 function iconBtn(extra?: React.CSSProperties): React.CSSProperties {
   return {
     display: 'flex',
@@ -13,10 +30,13 @@ function iconBtn(extra?: React.CSSProperties): React.CSSProperties {
     width: sz(30),
     height: sz(30),
     borderRadius: 7,
-    border: `1px solid ${C.border2}`,
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: C.border2,
     background: 'transparent',
     color: C.textSubtle,
     cursor: 'pointer',
+    outline: 'none',
     ...extra,
   }
 }
