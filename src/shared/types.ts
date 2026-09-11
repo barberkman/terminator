@@ -374,6 +374,12 @@ export interface Settings {
   customTheme?: ThemeOverrides
   /** Which Settings sections are expanded. A missing key means collapsed. */
   settingsOpen?: Record<string, boolean>
+  /**
+   * Offer to relaunch the sessions left over from the previous run, once, at
+   * startup. Off by default: a fresh app start spawns nothing on its own, and the
+   * prompt only ever starts the sessions you tick in it.
+   */
+  relaunchOnStartup: boolean
   /** Electron accelerator for the global show/hide hotkey. Empty = disabled. */
   globalToggleShortcut: string
   /** Electron accelerator to toggle the Notes overlay (renderer-side). Empty = disabled. */

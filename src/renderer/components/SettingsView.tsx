@@ -30,8 +30,8 @@ const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited', 'idl
  */
 const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'worktreesRoot', 'notifications', 'terminalFont',
-  'fontSize', 'iconScale', 'sidebarSide', 'globalToggleShortcut', 'notesShortcut', 'attachments',
-  'links', 'settingsOpen', 'usageRefreshSeconds',
+  'fontSize', 'iconScale', 'sidebarSide', 'relaunchOnStartup', 'globalToggleShortcut',
+  'notesShortcut', 'attachments', 'links', 'settingsOpen', 'usageRefreshSeconds',
 ] as const satisfies readonly (keyof Settings)[]
 
 /** Ids only have to be unique within the list and stable across edits. */
@@ -487,6 +487,27 @@ export function SettingsView(): React.JSX.Element | null {
               </Field>
             </>
           ))}
+
+          {section(
+            'startup',
+            'STARTUP',
+            draft.relaunchOnStartup ? 'offer to relaunch last time’s sessions' : 'start with nothing running',
+            (
+              <Field
+                label="WHEN THE APP STARTS"
+                hint="Sessions are remembered across restarts but come back not running. With this on, startup asks once which of them to bring back — every box ticked, untick what you don’t want — and starts only those, off screen, resuming each Claude conversation. Off, nothing starts on its own and each session waits behind its own Relaunch button."
+              >
+                <Choice
+                  value={draft.relaunchOnStartup ?? false}
+                  onPick={(relaunchOnStartup) => patch({ relaunchOnStartup })}
+                  options={[
+                    { value: true, label: 'Ask what to relaunch' },
+                    { value: false, label: 'Start nothing' },
+                  ]}
+                />
+              </Field>
+            ),
+          )}
 
           {section('appearance', 'APPEARANCE', `${draft.fontSize} · ${draft.iconScale}% · sidebar ${draft.sidebarSide ?? 'left'}`, (
             <>

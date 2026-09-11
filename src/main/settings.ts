@@ -39,6 +39,7 @@ export function defaultSettings(): Settings {
     iconScale: 100,
     sidebarSide: 'left',
     theme: DEFAULT_THEME_ID,
+    relaunchOnStartup: false,
     globalToggleShortcut: 'F12',
     notesShortcut: 'CommandOrControl+Shift+N',
     notes: '',

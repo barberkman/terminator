@@ -38,6 +38,9 @@ npm run typecheck  # tsc, no emit
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
 - **Mode switch**: one click toggles a Claude session between normal and read-only, **continuing
   the same conversation** (it relaunches with `--resume`).
+- **Pick up where you left off**: sessions survive a restart, but come back not running. Turn
+  the startup prompt on and each start offers them back in one dialog, every box ticked — untick
+  the ones you don't want. Off by default. See below.
 - **Read the conversation**: flip a Claude pane from the live terminal to its conversation as
   a document — Claude's answers rendered as markdown, with a copy button on every code block.
   See below.
@@ -102,6 +105,7 @@ gaps.
   do before, where the only way out of a running session was deleting it. **Start** brings it
   back (resuming the conversation, for Claude), and **Relaunch** does both. Starting a session
   that isn't in a pane is fine: it runs off-screen and its output is waiting when you open it.
+  **Relaunching at startup** (below) is the same Start, offered for everything at once.
 - **New session here** starts one of the four types on the same project immediately — no dialog,
   no re-picking the folder. **More options…** opens the normal New Session dialog with the
   project already filled in, for when you want a name, a worktree or a branch.
@@ -306,6 +310,31 @@ Elsewhere in the app: **Ctrl/Cmd+N** new session, **Ctrl/Cmd+B** toggle sidebar,
 jump to a session, **Esc** closes the top modal. The global show/hide hotkey (default `F12`)
 and the notes hotkey (default `Ctrl/Cmd+Shift+N`) are configurable in Settings.
 
+## Relaunching at startup
+
+Sessions are remembered across restarts, but they come back **not running** — nothing is
+launched behind your back, and each one waits behind its own **Relaunch** button. Switch
+Settings → **STARTUP** to *Ask what to relaunch* and the app offers them back instead, once,
+when it starts:
+
+- One dialog lists everything that could be brought back, **every box ticked**, with each
+  session's name and project (two sessions called `api` in two projects is the normal case).
+  Untick what you'd rather leave alone and confirm; **Not now** — or **Esc** — relaunches
+  nothing.
+- Ticked sessions start exactly the way Start in the sidebar does: **off screen**, so the
+  layout and the focused pane are left alone, and a Claude session comes back **resuming its
+  conversation**, the same as the pane's own Relaunch. Open its pane whenever you like — the
+  output it printed while off screen is waiting there.
+- Unticked sessions are untouched: still not running, still one click from **Relaunch** in the
+  pane or **Start** in the sidebar.
+- Launches are spaced out rather than fired at once, so confirming with a dozen Claude sessions
+  ticked doesn't fork a dozen processes in the same instant.
+- Editor sessions are never listed — they have no process, and restore immediately usable.
+
+The dialog is skipped entirely when the setting is off, or when nothing is left over to offer.
+Every box starts ticked every time: last run's choices say nothing about what you want back
+today.
+
 ## Settings
 
 Settings live in a JSON file in the app's user-data directory (editable in-app via the gear
@@ -318,6 +347,8 @@ set to — and which ones you left open is remembered:
 - `defaultShell`, `gitGuiCommand`, `worktreesRoot`, `projects`.
 - `theme` — the active colour theme (see below), and `customTheme` for per-token overrides.
   Themes of your own live in their own file, `themes.json`, alongside this one.
+- `relaunchOnStartup` — offer to relaunch last time's sessions when the app starts (default
+  `false`). See **Relaunching at startup** above.
 - `usageRefreshSeconds` — how often the footer's usage meter re-reads the clock
   (default 30, range 5–300). A display tick only; it never asks Claude for anything.
 - `settingsOpen` — which Settings sections are expanded. Absent means collapsed.
@@ -423,5 +454,8 @@ optional per-type overrides via `notifications.perType`. A runnable example is i
 Electron + React + Vite (electron-vite), `@xterm/xterm` for the terminals, `@lydell/node-pty`
 for the PTYs. The main process owns session state, PTYs, the hook/statusLine server, settings,
 and persistence; the renderer mirrors session metadata and owns the keep-alive xterm instances.
+That split is why the startup relaunch prompt lives in the renderer: a session's terminal has to
+exist before its PTY starts or its first output has nowhere to land, and only the renderer can
+make one.
 The visual design lives in [`design/reference.html`](design/reference.html) — a static mockup of
 the default theme, not wired into the build.
