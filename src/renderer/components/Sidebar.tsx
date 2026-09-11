@@ -89,7 +89,6 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
   const focusedId = useStore((s) => s.panes[s.focused])
   const openSession = useStore((s) => s.openSession)
   const setConfirm = useStore((s) => s.setConfirm)
-  const setBranchFor = useStore((s) => s.setBranchFor)
   const toggleGroup = useStore((s) => s.toggleGroup)
   const reorderWithinGroup = useStore((s) => s.reorderWithinGroup)
   // `editingId` is global, so the surface has to match too — otherwise a session
@@ -317,19 +316,6 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
         >
           <Icon name="branch" size={11} />
           {branches}
-        </button>
-      )}
-      {session.kind === 'claude' && (
-        <button
-          className="cc-x"
-          onClick={(e) => {
-            e.stopPropagation()
-            setBranchFor(session.id)
-          }}
-          title="Branch this conversation"
-          style={iconBtn()}
-        >
-          <Icon name="branch" size={13} />
         </button>
       )}
       <button
