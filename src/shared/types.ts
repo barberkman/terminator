@@ -238,6 +238,13 @@ export type AttachResult =
   | { ok: true; items: AttachedItem[]; note?: string }
   | { ok: false; reason: string }
 
+/**
+ * Acting on an attachment from its toast. Nothing opens silently here either:
+ * either it launched, or there's a reason to show — an attachment already pruned
+ * out from under the toast being the one that happens in ordinary use.
+ */
+export type AttachOpenResult = { ok: true } | { ok: false; reason: string }
+
 // ---- Links (clickable URLs in terminal output) -----------------------------
 
 /** One browser a link can be opened with. */
@@ -545,6 +552,27 @@ export interface TerminatorApi {
   attachFiles(id: string, files: AttachFileInput[]): Promise<AttachResult>
   /** Absolute path of a dropped File ('' when it has none, e.g. a browser drag). */
   pathForFile(file: File): string
+  /**
+   * Open an attachment from its toast. Images go to the OS handler, a folder opens
+   * as a folder, and everything else honours the configured external editor, falling
+   * back to the OS handler when none is set — a pasted screenshot has no business
+   * opening in a code editor, and a text file has no business ignoring a preference
+   * the user already expressed.
+   *
+   * This can't go through `openFileInEditor`: that re-resolves the path against the
+   * session's own folder, and attachments live outside every session root. Instead
+   * main only accepts a path it handed back from an attach itself, so what the
+   * renderer passes is a receipt, not permission to open anything.
+   */
+  openAttachment(path: string): Promise<AttachOpenResult>
+  /** Show an attachment in the OS file manager, selected. Same receipt rule. */
+  revealAttachment(path: string): Promise<AttachOpenResult>
+  /**
+   * The host platform, for the few places the wording differs by OS — the file
+   * manager is Explorer on Windows and Finder on macOS, and calling it the wrong
+   * one is worse than not naming it.
+   */
+  readonly platform: NodeJS.Platform
 }
 
 /** `fontSize` value that corresponds to 100% zoom (the as-designed sizing). */

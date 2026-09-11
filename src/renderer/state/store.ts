@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Session, Settings, UsageSnapshot } from '../../shared/types'
+import type { AttachedItem, Session, Settings, UsageSnapshot } from '../../shared/types'
 import { type CustomTheme, setCustomThemes as publishThemes } from '../../shared/themes'
 import type { IconName } from '../icons'
 import * as editor from '../editor/registry'
@@ -65,6 +65,19 @@ export interface ToastItem {
   thumb?: string
   /** Glyph for a toast that isn't about an attachment. Defaults to the paperclip. */
   icon?: IconName
+  /**
+   * The attachment this toast can act on — the path main will accept back. Its
+   * absence is what makes a card inert rather than disabled: a toast with nothing
+   * to open loses the button entirely instead of greying one out, the same bargain
+   * the context menu makes by having no `disabled` variant at all.
+   *
+   * Only a single-item attach sets it. A multi-item one lists names rather than a
+   * path, and an error has nothing to point at.
+   *
+   * `kind` is here to word the label, not to decide anything: main re-reads what's
+   * actually on disk before it opens, so this copy is never load-bearing.
+   */
+  action?: { path: string; kind: AttachedItem['kind'] }
 }
 
 export interface ProjectGroup {

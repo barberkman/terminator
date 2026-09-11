@@ -136,6 +136,25 @@ textarea {
   to { opacity: 1; }
 }
 
+/* An attachment toast's body is a button when there's something to open. The base
+   background belongs here rather than inline alongside the layout, because an
+   inline background would outrank the :hover rule however specific that rule was
+   made — the lift would simply never appear. Colours are still the theme's own
+   variables, the same bargain .cv-tool:hover makes. */
+.cc-toast-body {
+  background: transparent;
+}
+.cc-toast-body:hover {
+  background: rgba(var(--c-ink-rgb), 0.08);
+}
+/* :focus-visible, not :focus — clicking the body to open a file shouldn't leave a
+   ring behind on a card that is already on its way out. */
+.cc-toast-body:focus-visible,
+.cc-toast-btn:focus-visible {
+  outline: 1px solid rgba(var(--c-accent-rgb), 0.6);
+  outline-offset: 1px;
+}
+
 /* Reveal the row's remove (x) button on hover */
 .cc-row .cc-x {
   opacity: 0;

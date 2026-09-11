@@ -12,15 +12,20 @@
 //     app-owned folder under userData, never inside one of the user's repos.
 //   • Nothing is inserted silently. Every call returns either the items that were
 //     attached (with a thumbnail, when one can be made) or the reason it failed.
+//
+// Attachments are also *openable* afterwards, from the toast that announced them —
+// see `openAttachment` at the bottom of this file for the rule that makes a path
+// from the renderer safe to act on.
 
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { app, clipboard, nativeImage } from 'electron'
-import type { AttachFileInput, AttachResult, AttachedItem } from '../shared/types'
+import { app, clipboard, nativeImage, shell } from 'electron'
+import type { AttachFileInput, AttachOpenResult, AttachResult, AttachedItem } from '../shared/types'
 import * as ptyMgr from './pty-manager'
 import { getSession } from './state'
 import { loadSettings } from './settings'
 import { quoteFor } from './shell'
+import { editorArgv, editorName, launchDetached } from './links'
 
 /** Extensions Claude can look at as images (and that we can thumbnail). */
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'])
@@ -198,9 +203,11 @@ export function attachClipboardImage(id: string): AttachResult {
 
   typeIntoSession(id, t.kind, [path])
   pruneAttachments()
+  const items = [itemFor(path)]
+  remember(items)
   return {
     ok: true,
-    items: [itemFor(path)],
+    items,
     note: t.kind === 'shell' ? 'saved and typed at the prompt' : undefined,
   }
 }
@@ -241,6 +248,7 @@ export function attachFiles(id: string, files: AttachFileInput[]): AttachResult 
   }
 
   const items = paths.map(itemFor)
+  remember(items)
   typeIntoSession(id, t.kind, paths)
   pruneAttachments()
   const dirs = items.filter((i) => i.kind === 'dir').length
@@ -249,4 +257,112 @@ export function attachFiles(id: string, files: AttachFileInput[]): AttachResult 
     items,
     note: dirs ? 'folders are referenced as paths, not expanded' : undefined,
   }
+}
+
+// ---- acting on an attachment from its toast --------------------------------
+//
+// The toast that announces an attachment can open it, or show it in the file
+// manager. Both take a path from the renderer, and a path from the renderer is
+// never enough on its own — the whole app is built the other way round, with the
+// renderer naming a session or a choice and main resolving the path itself.
+//
+// It can't be resolved from an id here: a dropped file is referenced where it
+// lies, so an attachment's path is genuinely arbitrary and containment in
+// `attachmentsDir()` would reject every drop. What makes it safe instead is that
+// main only accepts a path it *minted itself* moments earlier: every successful
+// attach records what it handed back, and nothing else is openable. The string
+// crossing the bridge is a receipt for that, not permission to open a path.
+//
+// Opaque ids were considered and dropped: the toast already prints the path and
+// its menu has to copy it, so the indirection would buy nothing.
+
+/** Ceiling on the receipt book, matching the attachments folder's own file cap. */
+const MAX_OPENABLE = MAX_FILES
+
+/** Paths handed back by a successful attach, oldest first (Set insertion order). */
+const openable = new Set<string>()
+
+function remember(items: AttachedItem[]): void {
+  for (const item of items) {
+    // Re-inserting has to move it to the newest end, or a path attached twice
+    // would still be evicted on its first insertion's schedule.
+    openable.delete(item.path)
+    openable.add(item.path)
+  }
+  while (openable.size > MAX_OPENABLE) {
+    const oldest = openable.values().next().value
+    if (oldest === undefined) break
+    openable.delete(oldest)
+  }
+}
+
+/**
+ * What's actually on disk at an openable path, or the reason there is nothing to
+ * open. The two refusals are kept apart because they mean different things: one
+ * says the renderer named something this process never handed out, the other that
+ * the file has gone since. The second is ordinary — `pruneAttachments()` runs on
+ * every attach, so a toast can outlive its own file — and only the second is
+ * worth a user ever reading.
+ */
+function openableTarget(
+  path: string,
+): { isDir: boolean; isImage: boolean } | { reason: string } {
+  // Exact match against the string we handed out. There is nothing to normalise
+  // here — normalising could only widen what gets in.
+  if (!openable.has(path)) return { reason: "that isn't one of this run's attachments" }
+  try {
+    return { isDir: statSync(path).isDirectory(), isImage: IMAGE_EXT.has(ext(path)) }
+  } catch {
+    return { reason: "it isn't on disk any more — moved, renamed, or cleared out" }
+  }
+}
+
+/** Hand a path to the OS and say what went wrong if it refused it. */
+async function openWithOs(path: string): Promise<AttachOpenResult> {
+  // Resolves to '' on success, an error string on failure. worktree.ts discards
+  // that because opening a session folder is best-effort; here the click came
+  // from a toast, so a silent nothing would read as the feature being broken.
+  const error = await shell.openPath(path)
+  if (error) return { ok: false, reason: error.slice(0, 160) }
+  return { ok: true }
+}
+
+/**
+ * Open an attachment. An image goes to the OS handler — a pasted screenshot has
+ * no business opening in a code editor — and so does a folder, which opens as
+ * itself. Everything else honours the editor configured for file links, falling
+ * back to the OS handler when none is set, so a preference the user already
+ * expressed for text files is neither ignored nor required.
+ *
+ * The kind is read off the disk rather than taken from the caller: the renderer's
+ * copy of it is one more thing that would have to be trusted for no reason.
+ */
+export async function openAttachment(path: string): Promise<AttachOpenResult> {
+  const target = openableTarget(path)
+  if ('reason' in target) return { ok: false, reason: target.reason }
+
+  if (target.isDir || target.isImage) return openWithOs(path)
+
+  const { editor } = loadSettings().links
+  const command = editor?.command?.trim()
+  if (!command) return openWithOs(path)
+
+  const exe = ptyMgr.expandHome(command) || command
+  const name = editorName(command)
+  const error = await launchDetached(exe, editorArgv(editor.args ?? [], path))
+  if (error) return { ok: false, reason: `${name} wouldn't start: ${error.slice(0, 140)}` }
+  return { ok: true }
+}
+
+/**
+ * Show an attachment in the OS file manager, selected — including a folder, which
+ * is revealed in its parent rather than opened (opening it is what the toast's
+ * body does). `showItemInFolder` is synchronous and reports nothing, so the stat
+ * inside `openableTarget` is the only failure this can honestly surface.
+ */
+export function revealAttachment(path: string): AttachOpenResult {
+  const target = openableTarget(path)
+  if ('reason' in target) return { ok: false, reason: target.reason }
+  shell.showItemInFolder(path)
+  return { ok: true }
 }

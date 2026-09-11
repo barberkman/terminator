@@ -13,7 +13,7 @@ import type {
   TaskCommand,
   TranscriptPrompt,
 } from '../shared/types'
-import { attachClipboardImage, attachFiles } from './attachments'
+import { attachClipboardImage, attachFiles, openAttachment, revealAttachment } from './attachments'
 import { openInEditor, openLink, resolveOutputPath } from './links'
 import * as ptyMgr from './pty-manager'
 import * as fsService from './fs-service'
@@ -200,6 +200,12 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     Channels.attachFiles,
     (_e, { id, files }: { id: string; files: AttachFileInput[] }) => attachFiles(id, files),
   )
+  // Acting on an attachment from its toast. Same posture as linkOpenFile, reached a
+  // different way: the path can't be re-resolved from a session id (a dropped file
+  // lies outside every session root), so instead only a path this process handed
+  // back from an attach is accepted — see openAttachment.
+  ipcMain.handle(Channels.attachOpen, (_e, path: string) => openAttachment(path))
+  ipcMain.handle(Channels.attachReveal, (_e, path: string) => revealAttachment(path))
 
   // ---- links (clickable URLs / paths in terminal output) ----
   // The URL is re-validated inside openLink: what the renderer saw on screen is

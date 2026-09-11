@@ -1,8 +1,9 @@
-import type { FolderChoice, Session, Settings } from '../shared/types'
+import type { AttachedItem, FolderChoice, Session, Settings } from '../shared/types'
 import type { IconName } from './icons'
 import type { MenuNode } from './components/ContextMenu'
 import { TYPES, TYPE_MAP, type TypeKey } from './sessionTypes'
 import * as registry from './term/registry'
+import { externalEditor } from './term/links'
 import { PANE_LABELS, useStore, type LayoutName, type MenuTarget } from './state/store'
 
 // ---- actions ---------------------------------------------------------------
@@ -41,9 +42,64 @@ export function startFromSidebar(id: string): void {
   void window.terminator.startSession(id, cols, rows)
 }
 
-function copyPath(path: string, what: string): void {
+export function copyPath(path: string, what: string): void {
   window.terminator.clipboardWrite(path)
   useStore.getState().pushToast({ tone: 'ok', text: `Copied ${what}`, sub: path, icon: 'copy' })
+}
+
+/**
+ * What "open" means for this attachment, said out loud. A pasted screenshot going
+ * to the system viewer and a dropped .md going to your editor are different enough
+ * promises that the card shouldn't make one label cover both — and naming the
+ * editor matches how a file link in terminal output already offers itself.
+ */
+export function openLabel(kind: AttachedItem['kind']): string {
+  if (kind === 'dir') return 'Open folder'
+  if (kind === 'image') return 'Open image'
+  const editor = externalEditor()
+  return editor ? `Open in ${editor}` : 'Open file'
+}
+
+/** What the OS calls the thing that shows a file in a folder. */
+export function fileManagerVerb(): string {
+  if (window.terminator.platform === 'win32') return 'Show in Explorer'
+  if (window.terminator.platform === 'darwin') return 'Reveal in Finder'
+  return 'Show in folder'
+}
+
+/**
+ * The menu on an attachment toast. Same three verbs the card itself offers, for
+ * the same reason the terminal's file links have a menu: the primary click has to
+ * pick one meaning, and this is where the others live. Copy path is the one that
+ * only exists here — the toast prints the path but you can't select text on a card
+ * that's about to disappear.
+ */
+export function toastMenu(
+  action: { path: string; kind: AttachedItem['kind'] },
+  run: { open: () => void; reveal: () => void },
+): MenuNode[] {
+  return [
+    // The path, the way the terminal's own link menu heads itself with its target.
+    { kind: 'heading', label: action.path },
+    {
+      kind: 'item',
+      id: 'open',
+      label: openLabel(action.kind),
+      icon: action.kind === 'dir' ? 'folder' : 'file',
+      run: run.open,
+    },
+    { kind: 'item', id: 'reveal', label: fileManagerVerb(), icon: 'folder', run: run.reveal },
+    { kind: 'sep' },
+    {
+      // Copying doesn't dismiss the card: it's usually the step before doing
+      // something with the path yourself, and it raises its own toast anyway.
+      kind: 'item',
+      id: 'copy',
+      label: 'Copy path',
+      icon: 'copy',
+      run: () => copyPath(action.path, 'attachment path'),
+    },
+  ]
 }
 
 /** Build/Run for a project, reusing that project's one terminal per task. */
