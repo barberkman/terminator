@@ -64,9 +64,10 @@ function defaultBrowser(): { id: string; name: string } | undefined {
 
 /**
  * The external editor's display name, or '' when none is configured — which is
- * also the switch between the two ways a clicked path can open.
+ * also the switch between the two ways a clicked path can open. Exported because
+ * an attachment toast offers the same verb and has to name the same program.
  */
-function externalEditor(): string {
+export function externalEditor(): string {
   const command = settings.editor?.command?.trim() ?? ''
   if (!command) return ''
   const base = command.split(/[/\\]/).filter(Boolean).pop() ?? ''

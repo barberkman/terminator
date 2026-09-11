@@ -217,6 +217,31 @@ Every attach raises a toast naming what landed — with a thumbnail for an image
 can't show you one — and anything that *can't* be attached raises the reason instead of failing
 quietly.
 
+**The toast is the way back to the file.** For a single attachment the card is the only place its
+path is ever shown, so it also opens it:
+
+- **Click the card** — an image opens in whatever you view images with, a folder opens as a
+  folder, and anything else opens in the editor from Settings → **EXTERNAL EDITOR** (the one
+  clicked paths in output already use), or your default program when none is set.
+- **Click the folder button**, beside the dismiss ×, to show it in Explorer with the file
+  selected — Finder on macOS, your file manager elsewhere.
+- **Right-click the card** for both, plus **Copy path**.
+
+Every toast shows how long it has left, as a hairline draining along the bottom of the card.
+Pointing at a toast, or tabbing onto it, **pauses its countdown** — the bar stops where it is, and
+picks up from there when you leave, rather than starting over. Five seconds is no time at all to
+read a path and aim at a button, and a bar that stops is the clearest way to say so. A card held
+that way still goes after about half a minute, so a cursor parked in the corner can't leave one
+sitting there. **Tab** reaches the folder and dismiss buttons; **Enter** on the card opens the
+file.
+
+A toast with nothing behind it — a failed attach, or a drop of several files at once, which names
+them rather than pointing at one — is just a message: no folder button, and clicking it does
+nothing. Nothing is greyed out; it simply isn't there. Only an attachment from *this* run of the
+app opens this way: the card hands its path back and the main process checks it against the paths
+it handed out, so nothing else opens however real it looks, and one that has since been moved or
+pruned says so rather than opening whatever is there now.
+
 Pasted images are written to `attachments/` inside the app's user-data directory — never into a
 project, so they can't show up in a `git status` — and pruned at startup once they pass
 Settings → **KEEP PASTED IMAGES FOR** (7 days by default, 0 to keep them). The folder is also

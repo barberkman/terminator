@@ -93,6 +93,8 @@ const api: TerminatorApi = {
   attachClipboardImage: (id: string) => ipcRenderer.invoke(Channels.attachClipboard, id),
   attachFiles: (id: string, files: AttachFileInput[]) =>
     ipcRenderer.invoke(Channels.attachFiles, { id, files }),
+  openAttachment: (path: string) => ipcRenderer.invoke(Channels.attachOpen, path),
+  revealAttachment: (path: string) => ipcRenderer.invoke(Channels.attachReveal, path),
   // Electron 32 removed File.path; this is the supported replacement. Returns ''
   // for anything that isn't a real file on disk (e.g. dragged out of a browser).
   pathForFile: (file: File) => {
@@ -102,6 +104,10 @@ const api: TerminatorApi = {
       return ''
     }
   },
+
+  // No IPC: the platform never changes under a running window, and the renderer
+  // only needs it to name the file manager (Explorer / Finder) correctly.
+  platform: process.platform,
 }
 
 contextBridge.exposeInMainWorld('terminator', api)

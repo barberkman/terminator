@@ -47,8 +47,13 @@ export function webUrl(raw: string): string | null {
   return url.toString()
 }
 
-/** Spawn detached, and wait just long enough to learn whether it started. */
-function launch(exe: string, args: string[]): Promise<string | null> {
+/**
+ * Spawn detached, and wait just long enough to learn whether it started. Resolves
+ * null on success, the reason otherwise. Exported because opening an attachment
+ * launches the same configured editor the same way — no shell, one argv element
+ * per argument — and that guarantee is worth stating in one place only.
+ */
+export function launchDetached(exe: string, args: string[]): Promise<string | null> {
   return new Promise((done) => {
     let child: ReturnType<typeof spawn>
     try {
@@ -95,7 +100,7 @@ export async function openLink(raw: string, browserId?: string): Promise<OpenLin
   }
 
   const exe = expandHome(browser.command.trim()) || browser.command.trim()
-  const error = await launch(exe, [...browser.args, url])
+  const error = await launchDetached(exe, [...browser.args, url])
   if (error) return { ok: false, reason: `${browser.name} wouldn't start: ${error.slice(0, 140)}` }
   return { ok: true, browser: browser.name }
 }
@@ -172,7 +177,10 @@ export async function openInEditor(input: OpenFileInput): Promise<OpenFileResult
 
   const exe = expandHome(command) || command
   const name = editorName(command)
-  const error = await launch(exe, editorArgv(editor.args ?? [], abs, input.line, input.column))
+  const error = await launchDetached(
+    exe,
+    editorArgv(editor.args ?? [], abs, input.line, input.column),
+  )
   if (error) return { ok: false, reason: `${name} wouldn't start: ${error.slice(0, 140)}` }
   return { ok: true, editor: name }
 }

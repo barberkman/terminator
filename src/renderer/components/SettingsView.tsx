@@ -807,8 +807,8 @@ export function SettingsView(): React.JSX.Element | null {
                     />
                     <div style={{ fontSize: 10.5, color: C.dim }}>
                       {editorLabel
-                        ? `A clicked path opens ${editorLabel}. Right-click one for an editor pane instead.`
-                        : 'A clicked path opens an in-app Editor pane covering that project.'}
+                        ? `A clicked path opens ${editorLabel}, and so does a non-image attachment from its toast. Right-click a path for an editor pane instead.`
+                        : 'A clicked path opens an in-app Editor pane covering that project, and an attachment opened from its toast goes to your default program.'}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: 10.5, color: C.faint2 }}>
                       {EDITOR_EXAMPLES.map(([name, args]) => (

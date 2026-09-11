@@ -10,8 +10,37 @@ import { useStore } from './state/store'
 /** A pathless drop we're willing to read into memory before giving up. */
 const MAX_INLINE_BYTES = 25 * 1024 * 1024
 
+function failed(text: string, sub: string): void {
+  useStore.getState().pushToast({ tone: 'error', text, sub })
+}
+
 function fail(sub: string): void {
-  useStore.getState().pushToast({ tone: 'error', text: "Couldn't attach", sub })
+  failed("Couldn't attach", sub)
+}
+
+/**
+ * Open an attachment from the toast that announced it. Which program that means is
+ * decided in the main process from what's actually on disk — an image goes to the
+ * OS viewer, anything else to the configured editor — so there's nothing to choose
+ * here beyond reporting a refusal.
+ */
+export async function openAttachment(path: string): Promise<void> {
+  try {
+    const res = await window.terminator.openAttachment(path)
+    if (!res.ok) failed("Couldn't open that attachment", res.reason)
+  } catch (e) {
+    failed("Couldn't open that attachment", String(e).slice(0, 200))
+  }
+}
+
+/** Show an attachment in the OS file manager, selected. */
+export async function revealAttachment(path: string): Promise<void> {
+  try {
+    const res = await window.terminator.revealAttachment(path)
+    if (!res.ok) failed("Couldn't show that attachment", res.reason)
+  } catch (e) {
+    failed("Couldn't show that attachment", String(e).slice(0, 200))
+  }
 }
 
 function report(result: AttachResult): void {
@@ -30,6 +59,10 @@ function report(result: AttachResult): void {
     text: one ? `Attached ${one.name}` : `Attached ${items.length} items`,
     sub,
     thumb: items.find((i) => i.thumb)?.thumb,
+    // Only the single-item case has one thing to point at. A multi-item attach
+    // could offer its common parent directory instead, but "open" would stop
+    // meaning one file, so it stays a plain report.
+    action: one ? { path: one.path, kind: one.kind } : undefined,
   })
 }
 

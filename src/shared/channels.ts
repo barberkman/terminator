@@ -38,6 +38,8 @@ export const Channels = {
   // attachments (paste / drag-and-drop into a session)
   attachClipboard: 'attach:clipboard',
   attachFiles: 'attach:files',
+  attachOpen: 'attach:open',
+  attachReveal: 'attach:reveal',
 
   // links (clickable URLs / paths in terminal output)
   linkOpen: 'link:open',
