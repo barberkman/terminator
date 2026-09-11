@@ -8,6 +8,7 @@ import { Footer } from './components/Footer'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { NewSessionModal } from './components/NewSessionModal'
 import { BranchModal } from './components/BranchModal'
+import { RelaunchPrompt } from './components/RelaunchPrompt'
 import { SessionContextMenu } from './components/SessionContextMenu'
 import { SettingsView } from './components/SettingsView'
 import { ThemeEditorView } from './components/ThemeEditorView'
@@ -121,7 +122,7 @@ export function App(): React.JSX.Element {
       const m = /^Digit([1-9])$/.exec(e.code)
       if (!m) return
       const st = useStore.getState()
-      if (st.showNew || st.showSettings || st.themeEditorFor || st.branchFor || st.contextMenu) return // don't switch underneath a modal
+      if (st.showNew || st.showSettings || st.themeEditorFor || st.branchFor || st.relaunchOffer || st.contextMenu) return // don't switch underneath a modal
       const list = buildGroups(st.order, st.sessions).flatMap((g) => g.sessions)
       const target = list[Number(m[1]) - 1]
       if (!target) return
@@ -142,7 +143,7 @@ export function App(): React.JSX.Element {
       if (e.key !== 'Escape') return
       const st = useStore.getState()
       // Close the highest-stacked overlay by zIndex: ContextMenu(78) > Notes(60) >
-      // Confirm(55) > ThemeEditor(52) > Settings/New/Branch(50). The menu normally
+      // Confirm(55) > ThemeEditor(52) > Settings/New/Branch/Relaunch(50). The menu normally
       // handles its own Escape (capture phase, so it runs before this and stops
       // propagation); this branch is the fallback for when focus has drifted off
       // the panel. The theme editor sits above Settings, which stays open with its
@@ -154,6 +155,9 @@ export function App(): React.JSX.Element {
       else if (st.showSettings) st.setShowSettings(false)
       else if (st.showNew) st.setShowNew(false)
       else if (st.branchFor) st.setBranchFor(null)
+      // Esc on the startup prompt means "not now", same as its Cancel: nothing is
+      // relaunched, and every session keeps its own Relaunch where it always was.
+      else if (st.relaunchOffer) st.setRelaunchOffer(null)
       // No modal open: Esc inside a pane's conversation goes back to its terminal.
       // Only when the key came from the conversation itself, so a bare Esc typed
       // at a terminal (or in vim) still reaches the program, as it always did.
@@ -178,7 +182,7 @@ export function App(): React.JSX.Element {
       const st = useStore.getState()
       const accel = st.settings?.notesShortcut ?? ''
       if (!accel || !matchesAccelerator(e, accel)) return
-      if (st.showNew || st.showSettings || st.themeEditorFor || st.confirm || st.branchFor || st.contextMenu) return // don't toggle underneath another modal
+      if (st.showNew || st.showSettings || st.themeEditorFor || st.confirm || st.branchFor || st.relaunchOffer || st.contextMenu) return // don't toggle underneath another modal
       e.preventDefault()
       e.stopPropagation()
       st.setShowNotes(!st.showNotes)
@@ -217,6 +221,7 @@ export function App(): React.JSX.Element {
       <ConfirmDialog />
       <NewSessionModal />
       <BranchModal />
+      <RelaunchPrompt />
       <SettingsView />
       <ThemeEditorView />
       <NotesView />

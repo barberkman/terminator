@@ -31,8 +31,11 @@ async function createSessionIn(
  * (`registry.wireGlobalStreams`), and output for a session with no terminal is
  * dropped on the floor with no main-side scrollback to recover it from.
  * getOrCreate parks one in the offscreen holder, which is exactly what it's for.
+ *
+ * Exported because the startup relaunch prompt starts sessions the same way — off
+ * screen, terminal first — and that reason is written down here.
  */
-function startFromSidebar(id: string): void {
+export function startFromSidebar(id: string): void {
   registry.getOrCreate(id)
   const { cols, rows } = registry.refit(id)
   void window.terminator.startSession(id, cols, rows)

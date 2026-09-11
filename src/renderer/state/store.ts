@@ -101,6 +101,12 @@ interface StoreState {
   /** Session whose conversation the branch picker is open for. */
   branchFor: string | null
   /**
+   * Sessions the startup prompt is offering to relaunch, in sidebar order. Null
+   * whenever the prompt isn't up — which is every run unless `relaunchOnStartup`
+   * is on and `init` found something left over from last time.
+   */
+  relaunchOffer: string[] | null
+  /**
    * Sessions whose pane is showing the conversation instead of the terminal.
    * Keyed by session id, not pane index, so the choice follows a session when it
    * moves panes — and the terminal underneath is never torn down either way.
@@ -139,6 +145,7 @@ interface StoreState {
   setShowNotes(v: boolean): void
   setThemeEditorFor(id: string | null): void
   setBranchFor(id: string | null): void
+  setRelaunchOffer(ids: string[] | null): void
   toggleTranscript(id: string): void
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
@@ -168,6 +175,7 @@ export const useStore = create<StoreState>((set, get) => ({
   showNotes: false,
   themeEditorFor: null,
   branchFor: null,
+  relaunchOffer: null,
   transcripts: {},
   sidebarHidden: false,
   editingId: null,
@@ -202,7 +210,19 @@ export const useStore = create<StoreState>((set, get) => ({
       order.push(s.id)
     }
     const panes = order.length ? [order[0]] : ['']
-    set({ sessions, order, settings, panes, usage })
+    // Opt-in, and only when there is something to offer: with the setting off, or
+    // nothing left over from last time, startup is exactly what it always was.
+    const restorable = settings.relaunchOnStartup
+      ? order.filter((id) => isRestorable(sessions[id]))
+      : []
+    set({
+      sessions,
+      order,
+      settings,
+      panes,
+      usage,
+      relaunchOffer: restorable.length ? restorable : null,
+    })
 
     window.terminator.onSessionUpdated((s) => get().upsert(s))
     window.terminator.onSessionRemoved((id) => get().remove(id))
@@ -380,6 +400,9 @@ export const useStore = create<StoreState>((set, get) => ({
   setBranchFor(id) {
     set({ branchFor: id })
   },
+  setRelaunchOffer(ids) {
+    set({ relaunchOffer: ids })
+  },
   toggleTranscript(id) {
     set((st) => ({ transcripts: { ...st.transcripts, [id]: !st.transcripts[id] } }))
   },
@@ -412,6 +435,16 @@ export const useStore = create<StoreState>((set, get) => ({
     set((st) => ({ toasts: st.toasts.filter((t) => t.id !== id) }))
   },
 }))
+
+/**
+ * Whether a session is one the startup prompt can bring back: it has a process
+ * behind it (an editor session has none — it restores immediately usable), it
+ * isn't running, and it ran at least once, so starting it is a *re*-start. That
+ * last pair is the same test the pane's own Relaunch overlay uses.
+ */
+export function isRestorable(s: Session | undefined): boolean {
+  return !!s && s.kind !== 'editor' && !s.alive && s.everStarted
+}
 
 /** Whether `id` sits anywhere under `ancestorId` in the branch tree. */
 function isDescendantOf(id: string, ancestorId: string, sessions: Record<string, Session>): boolean {
