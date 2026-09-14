@@ -135,8 +135,8 @@ drag-to-reorder are untouched.
 
 ## Branching a conversation
 
-The branch button (pane header, or a session row on hover) opens the session's prompts with a
-cut line you move between them: everything above comes along, everything below stays with the
+**Branch this conversation…** in a session's right-click menu opens its prompts with a cut
+line you move between them: everything above comes along, everything below stays with the
 parent. Confirm and you get a **new session** — not a rewind — so the original conversation
 keeps running beside it, each with its own status dot, metrics and pane.
 
