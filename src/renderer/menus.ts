@@ -164,7 +164,7 @@ function joinGroups(groups: MenuNode[][]): MenuNode[] {
   return out
 }
 
-/** The four session types, as menu rows that create in `project` immediately. */
+/** The five session types, as menu rows that create in `project` immediately. */
 function typeItems(project: { name: string; path: string }, keyPrefix: string): MenuNode[] {
   return TYPES.map((t) => ({
     kind: 'item' as const,

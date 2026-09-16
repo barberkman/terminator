@@ -292,7 +292,10 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
           onFocus={(e) => e.target.select()}
           onBlur={() => {
             typing.current = false
-            setDraft(current)
+            // Only fall back to a page there actually is. A pane opened from the
+            // menu has none, and wiping the address on the way to clicking
+            // something else would throw away the only thing you'd typed.
+            if (current) setDraft(current)
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') go(draft)

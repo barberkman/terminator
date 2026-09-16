@@ -33,7 +33,8 @@ npm run typecheck  # tsc, no emit
 - **Main area** shows open sessions as live terminal panes, with a layout switcher for viewing
   **1 / 2 / 4** sessions at once. Off-screen sessions keep running.
 - **New session**: pick a folder, name it, choose a type — **Claude**, **Claude (read-only)**,
-  or **Terminal** — and optionally create a **git worktree** on a new branch.
+  **Terminal**, **Editor** or **Browser** — and optionally create a **git worktree** on a new
+  branch.
 - **Status** updates live. Claude sessions report rich states (working / waiting / idle /
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
 - **Mode switch**: one click toggles a Claude session between normal and read-only, **continuing
@@ -97,8 +98,8 @@ mean opening the session in a pane and double-clicking its title.
 
 The menu is built per session rather than fixed and greyed out, so what you see is what you can
 do. Claude-only entries (mode switch, branch) are absent on a terminal row; **Start** and
-**Stop** are never both there; worktree entries only exist when there's a worktree; an editor
-session — which has no process at all — has no Start/Stop/Relaunch. A terminal row's menu is
+**Stop** are never both there; worktree entries only exist when there's a worktree; an editor or
+browser session — neither of which has a process at all — has no Start/Stop/Relaunch. A terminal row's menu is
 visibly shorter than a Claude row's, and whole groups disappear together rather than leaving
 gaps.
 
@@ -107,8 +108,8 @@ gaps.
   back (resuming the conversation, for Claude), and **Relaunch** does both. Starting a session
   that isn't in a pane is fine: it runs off-screen and its output is waiting when you open it.
   **Relaunching at startup** (below) is the same Start, offered for everything at once.
-- **New session here** starts one of the four types on the same project immediately — no dialog,
-  no re-picking the folder. **More options…** opens the normal New Session dialog with the
+- **New session here** starts one of the five types on the same project immediately — no dialog,
+  no re-picking the folder. That's the way to open a **Browser** pane without a link to click. **More options…** opens the normal New Session dialog with the
   project already filled in, for when you want a name, a worktree or a branch.
 - **Open in split** picks which pane it lands in, rather than the app choosing. It only appears
   when there's more than one split to choose between — and it's the only opening entry, since
@@ -347,10 +348,15 @@ TERMINAL OUTPUT**.
 A pane that shows a web page, for when leaving the app is the annoying part — a diagram Claude
 generated, say, which lives behind a claude.ai login and so can't just be opened anywhere.
 
-- **How one opens** — click a link with the in-app browser set as your Default, or right-click
-  any link and pick it. The pane opens in the project the link came from, and that project reuses
-  the one browser session, the way Build and Run reuse a project's one terminal — so a second
-  link replaces the page rather than filling the grid with near-identical tabs.
+- **How one opens** — three ways. Click a link with the in-app browser set as your Default; or
+  right-click any link and pick it; or open an empty one with no link at all, from the sidebar's
+  **New session here** → **Browser** or the New Session dialog, and type an address.
+- **A link opens a new pane every time**, the way a browser opens a new tab, so the page you were
+  already reading stays where it is. The pane belongs to the project the link came from and lands
+  under it in the sidebar as **Web**, then **Web 2**, and so on.
+- **They're sessions, so they stay.** Closing the pane leaves the session in the sidebar, and it
+  comes back after a restart on the page it was showing. Remove one the way you'd remove any
+  other. Nothing about a browser pane starts or stops, so its menu offers no Start or Relaunch.
 - **It stays signed in** — the browser keeps its own cookies and site data, in its own storage
   apart from anything the app itself stores. Sign in to Claude once and you're still signed in
   after a restart. Closing the pane doesn't sign you out; only Settings does.
@@ -421,7 +427,8 @@ when it starts:
   pane or **Start** in the sidebar.
 - Launches are spaced out rather than fired at once, so confirming with a dozen Claude sessions
   ticked doesn't fork a dozen processes in the same instant.
-- Editor sessions are never listed — they have no process, and restore immediately usable.
+- Editor and browser sessions are never listed — they have no process, and restore immediately
+  usable.
 
 The dialog is skipped entirely when the setting is off, or when nothing is left over to offer.
 Every box starts ticked every time: last run's choices say nothing about what you want back

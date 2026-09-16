@@ -94,6 +94,39 @@ function initialActivity(kind: CreateSessionInput['kind']): string {
   return 'ready'
 }
 
+/**
+ * What a session is called when nothing named it.
+ *
+ * Browser sessions are the only kind that piles up inside one project — every
+ * clicked link makes another, and you can open them from the menu besides — so
+ * they are the only kind that has to number itself.
+ *
+ * The scope is `projectName`, not `projectPath`, because the name only has to be
+ * unique where you can see both of them at once — and the sidebar groups by name.
+ * The two aren't interchangeable: a session started from a worktree's submenu keeps
+ * its project's name but carries the worktree's path (see `foldersOf` in menus.ts),
+ * so scoping by path would put two "Web" rows under one heading.
+ *
+ * Every name in the group counts, not just the browser ones: a session can be
+ * renamed to anything, and stepping over a name already on screen costs nothing.
+ *
+ * It lives here rather than in each caller because there are three of them — the
+ * sidebar menu, the New Session dialog and a clicked link — and a name that
+ * depended on which one you used would be a bug nobody could see.
+ */
+function defaultName(kind: CreateSessionInput['kind'], projectName: string): string {
+  if (kind === 'shell') return 'shell'
+  if (kind !== 'browser') return projectName
+  const taken = new Set(
+    [...sessions.values()].filter((s) => s.projectName === projectName).map((s) => s.name),
+  )
+  if (!taken.has('Web')) return 'Web'
+  for (let n = 2; n < 500; n++) {
+    if (!taken.has(`Web ${n}`)) return `Web ${n}`
+  }
+  return 'Web'
+}
+
 /** Branch metadata, set only by the branch path in ipc.ts. */
 export interface BranchMeta {
   parentId: string
@@ -136,7 +169,7 @@ export function createSession(input: CreateSessionInput, branch?: BranchMeta): S
   const projectName = input.projectName?.trim() || basename(projectPath) || 'project'
   const session: Session = {
     id,
-    name: input.name?.trim() || input.task || (input.kind === 'shell' ? 'shell' : projectName),
+    name: input.name?.trim() || input.task || defaultName(input.kind, projectName),
     kind: input.kind,
     mode: input.kind === 'claude' ? input.mode : 'normal',
     task: input.task,

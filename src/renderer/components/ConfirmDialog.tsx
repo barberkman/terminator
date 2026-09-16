@@ -1,3 +1,4 @@
+import { isProcessless } from '../../shared/types'
 import { C, dangerA } from '../theme'
 import { useStore } from '../state/store'
 
@@ -85,6 +86,7 @@ export function ConfirmDialog(): React.JSX.Element | null {
   // that doesn't, rather than reading `.id` off a shape that hasn't got one.
   const sessionId = confirm && confirm.kind !== 'browserClear' ? confirm.id : ''
   const worktreePath = useStore((s) => (sessionId ? s.sessions[sessionId]?.worktreePath : undefined))
+  const kind = useStore((s) => (sessionId ? s.sessions[sessionId]?.kind : undefined))
   if (!confirm) return null
 
   const close = () => setConfirm(null)
@@ -147,10 +149,13 @@ export function ConfirmDialog(): React.JSX.Element | null {
   return (
     <Dialog
       title={confirm.kind === 'close' ? 'Close session?' : 'Remove session?'}
+      // An editor or browser pane has no process, so offering to stop one would be
+      // describing something that isn't going to happen.
       body={
-        worktreePath
-          ? `Stop “${name}” and remove it from the list. You'll be asked about its git worktree next.`
-          : `Stop “${name}” and remove it from the list.`
+        (kind && isProcessless(kind)
+          ? `Remove “${name}” from the list.`
+          : `Stop “${name}” and remove it from the list.`) +
+        (worktreePath ? " You'll be asked about its git worktree next." : '')
       }
       confirmLabel={confirm.kind === 'close' ? 'Close' : 'Remove'}
       cancelLabel="Cancel"

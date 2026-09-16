@@ -277,9 +277,14 @@ function projectForBrowser(fromId?: string): { name: string; path: string } | un
 }
 
 /**
- * Show a URL in a browser pane, reusing this project's one browser session — the
- * same bargain Build and Run strike with a project's one terminal. A fresh pane per
- * link would fill the grid with near-identical tabs and the sidebar with them.
+ * Show a URL in a browser pane — a new one each time, the way a browser opens a new
+ * tab rather than replacing the page you were already reading. The pane belongs to
+ * the project the link was printed in, so it groups under it in the sidebar and has
+ * a real folder to belong to.
+ *
+ * The cost is that they accumulate: a browser session is a session like any other,
+ * so closing the pane leaves it in the sidebar, and it comes back after a restart
+ * until you remove it.
  */
 async function openInAppBrowser(url: string, fromId?: string): Promise<void> {
   const project = projectForBrowser(fromId)
@@ -287,19 +292,10 @@ async function openInAppBrowser(url: string, fromId?: string): Promise<void> {
     toastError("Couldn't open the link", 'open a session first — a browser pane opens in its project')
     return
   }
-  const existing = Object.values(useStore.getState().sessions).find(
-    (x) => x.kind === 'browser' && x.projectPath === project.path,
-  )
   try {
-    if (existing) {
-      await window.terminator.setSessionUrl(existing.id, url)
-      useStore.getState().openSession(existing.id)
-      return
-    }
     const made = await window.terminator.createSession({
       kind: 'browser',
       mode: 'normal',
-      name: 'Web',
       projectName: project.name,
       projectPath: project.path,
       url,
