@@ -8,6 +8,7 @@ import { attachDrop, attachDropToComposer } from '../attach'
 import { PaneHeader } from './PaneHeader'
 import { TerminalView } from './TerminalView'
 import { EditorPaneBody } from './EditorPaneBody'
+import { BrowserPaneBody } from './BrowserPaneBody'
 import { ConversationView } from './ConversationView'
 
 /** True for a drag carrying files — a sidebar session drag carries text/plain. */
@@ -183,6 +184,34 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
         >
           New session
         </button>
+      </div>
+    )
+  }
+
+  // Browser sessions have no PTY either: a web page, and the same reasons to skip
+  // TerminalView and the relaunch overlay as an editor pane.
+  if (session.kind === 'browser') {
+    return (
+      <div
+        data-pane-index={index}
+        data-pane-focused={focused ? 1 : 0}
+        data-pane-session={session.name}
+        onMouseDownCapture={() => focusPane(index)}
+        {...dropProps}
+        style={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          minHeight: 0,
+          background: C.bg,
+          overflow: 'hidden',
+          ...frame,
+        }}
+      >
+        {over && <DropVeil bad label="Browser panes can't take attachments" />}
+        <PaneHeader session={session} active={focused} />
+        <BrowserPaneBody session={session} />
       </div>
     )
   }

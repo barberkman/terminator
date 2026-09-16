@@ -33,7 +33,8 @@ npm run typecheck  # tsc, no emit
 - **Main area** shows open sessions as live terminal panes, with a layout switcher for viewing
   **1 / 2 / 4** sessions at once. Off-screen sessions keep running.
 - **New session**: pick a folder, name it, choose a type — **Claude**, **Claude (read-only)**,
-  or **Terminal** — and optionally create a **git worktree** on a new branch.
+  **Terminal**, **Editor** or **Browser** — and optionally create a **git worktree** on a new
+  branch.
 - **Status** updates live. Claude sessions report rich states (working / waiting / idle /
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
 - **Mode switch**: one click toggles a Claude session between normal and read-only, **continuing
@@ -97,8 +98,8 @@ mean opening the session in a pane and double-clicking its title.
 
 The menu is built per session rather than fixed and greyed out, so what you see is what you can
 do. Claude-only entries (mode switch, branch) are absent on a terminal row; **Start** and
-**Stop** are never both there; worktree entries only exist when there's a worktree; an editor
-session — which has no process at all — has no Start/Stop/Relaunch. A terminal row's menu is
+**Stop** are never both there; worktree entries only exist when there's a worktree; an editor or
+browser session — neither of which has a process at all — has no Start/Stop/Relaunch. A terminal row's menu is
 visibly shorter than a Claude row's, and whole groups disappear together rather than leaving
 gaps.
 
@@ -107,8 +108,8 @@ gaps.
   back (resuming the conversation, for Claude), and **Relaunch** does both. Starting a session
   that isn't in a pane is fine: it runs off-screen and its output is waiting when you open it.
   **Relaunching at startup** (below) is the same Start, offered for everything at once.
-- **New session here** starts one of the four types on the same project immediately — no dialog,
-  no re-picking the folder. **More options…** opens the normal New Session dialog with the
+- **New session here** starts one of the five types on the same project immediately — no dialog,
+  no re-picking the folder. That's the way to open a **Browser** pane without a link to click. **More options…** opens the normal New Session dialog with the
   project already filled in, for when you want a name, a worktree or a branch.
 - **Open in split** picks which pane it lands in, rather than the app choosing. It only appears
   when there's more than one split to choose between — and it's the only opening entry, since
@@ -296,8 +297,12 @@ browser you picked, so a link from Claude no longer needs selecting, copying and
   re-split on its spaces. **Browse…** picks it from disk. With the list empty, links open in your
   OS default browser.
 - **More than one** — mark one as **Default** for a plain click, and **right-click any link** for
-  the rest: every configured browser, the system default, and Copy link. That's the way to open
-  something in a normal window when your default is incognito, without a trip through Settings.
+  the rest: the in-app browser, every configured browser, the system default, and Copy link.
+  That's the way to open something in a normal window when your default is incognito, without a
+  trip through Settings.
+- **Or don't leave at all** — the first row in that list is the **in-app browser**, which opens
+  the link in a pane instead of handing it to a program. Make it the Default and every clicked
+  link stays in the app. See **In-app browser** below.
 - **Before you click** — hovering shows the full URL and which browser will open it. Worth reading
   when the link came from output you don't control.
 - **Selecting still works** — a click only opens a link if it *was* a click: no drag between press
@@ -308,6 +313,10 @@ browser you picked, so a link from Claude no longer needs selecting, copying and
   process before anything launches, and reaches the browser as a single argument, so terminal
   output can't open a `file:`, reach a custom scheme handler, or smuggle in flags of its own.
   Programs that emit real OSC 8 hyperlinks go through the same check.
+- **In a conversation too** — a link in Claude's answer, read in the conversation view, opens the
+  same way a link in the terminal does: same check, same chosen browser, same right-click menu.
+  Bare URLs in the text are links there as well, so the same URL doesn't behave one way in a pane
+  and another way in that pane's own conversation.
 
 **File paths** in output (`src/app.ts`, `src/app.ts:42`) are links too, and open in an editor
 rather than a browser — with `:42` putting the cursor on that line. Only paths that actually
@@ -334,6 +343,45 @@ TERMINAL OUTPUT**.
   argument. So output can't talk the app into opening something the session couldn't already
   reach.
 
+## In-app browser
+
+A pane that shows a web page, for when leaving the app is the annoying part — a diagram Claude
+generated, say, which lives behind a claude.ai login and so can't just be opened anywhere.
+
+- **How one opens** — three ways. Click a link with the in-app browser set as your Default; or
+  right-click any link and pick it; or open an empty one with no link at all, from the sidebar's
+  **New session here** → **Browser** or the New Session dialog, and type an address.
+- **A link opens a new pane every time**, the way a browser opens a new tab, so the page you were
+  already reading stays where it is. The pane belongs to the project the link came from and lands
+  under it in the sidebar as **Web**, then **Web 2**, and so on.
+- **They're sessions, so they stay.** Closing the pane leaves the session in the sidebar, and it
+  comes back after a restart on the page it was showing. Remove one the way you'd remove any
+  other. Nothing about a browser pane starts or stops, so its menu offers no Start or Relaunch.
+- **It stays signed in** — the browser keeps its own cookies and site data, in its own storage
+  apart from anything the app itself stores. Sign in to Claude once and you're still signed in
+  after a restart. Closing the pane doesn't sign you out; only Settings does.
+- **Clearing it** — Settings → **IN-APP BROWSER**. *Clear cache* keeps you signed in and is the
+  one to reach for when a page is stale; *Sign out of everything* drops the cookies; *Clear
+  everything* drops the lot and puts it back to how it was before you first opened a page. The
+  collapsed section shows how much is cached.
+- **Signing in with Google may not work.** Google refuses OAuth to anything it can tell is an
+  embedded browser, and it tells by the user agent. The browser reports a plain Chrome one — the
+  Electron and app tokens taken out of the string Electron already builds — which is usually
+  enough, and Settings → **USER AGENT** overrides it if a site still turns you away. It is not
+  guaranteed, and it's against Google's policy for embedded browsers, so it can stop working.
+  Claude's email login always works, and every browser pane has an **Open in your browser** button
+  for when the answer is just to leave.
+- **The chrome** — back, forward, reload/stop, an address bar you can type into, copy link, and
+  open in your browser. The page's title sits along the bottom. **F5** reloads, whether the focus
+  is in the page or in the address bar. (Not Ctrl+R: the app's own menu already spends that on
+  reloading the whole window.)
+- **Still only http and https**, and the check is the same one a clicked link passes.
+  Navigations and redirects are re-checked in the main process, and a page that tries to leave
+  for anything else simply doesn't go. The page is refused every permission it asks for, a
+  download asks you where to put it, and popups — which is what a Google sign-in is — are
+  allowed but pinned to the same storage, so the cookie they set is the one the pane reads.
+  A pane that didn't ask for that storage isn't allowed to open at all.
+
 ## Keyboard & mouse
 
 In a terminal pane:
@@ -354,6 +402,8 @@ In a terminal pane:
 - **Drop a file** on a pane to hand it to that session.
 - **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
   still reaches the program in the pane, untouched.)
+
+In a browser pane: **F5** reloads the page, from the page itself or from the pane's chrome.
 
 In the sidebar: **right-click** a session row, a collapsed-rail tab or a project header for its
 menu (see **Session menus** above); arrows and Enter move and pick, **Esc** closes one level.
@@ -381,7 +431,8 @@ when it starts:
   pane or **Start** in the sidebar.
 - Launches are spaced out rather than fired at once, so confirming with a dozen Claude sessions
   ticked doesn't fork a dozen processes in the same instant.
-- Editor sessions are never listed — they have no process, and restore immediately usable.
+- Editor and browser sessions are never listed — they have no process, and restore immediately
+  usable.
 
 The dialog is skipped entirely when the setting is off, or when nothing is left over to offer.
 Every box starts ticked every time: last run's choices say nothing about what you want back
@@ -408,7 +459,10 @@ set to — and which ones you left open is remembered:
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.
 - `links.browsers` (each `{ id, name, command, args }`), `links.defaultBrowserId`,
   `links.enabled`, `links.openFilePaths`, `links.editor` (`{ command, args }`) — see **Links**
-  above.
+  above. `defaultBrowserId` also takes the reserved value `in-app`, which is the in-app browser;
+  it is not in `browsers`, having no program to store.
+- `browser.userAgent` — what the in-app browser calls itself. Empty (the default) derives a
+  Chrome-like one from Electron's own. See **In-app browser** above.
 
 ## Themes
 

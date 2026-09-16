@@ -69,6 +69,8 @@ export function NewSessionModal(): React.JSX.Element | null {
 
   const namePlaceholder = useMemo(() => {
     if (kind === 'shell') return 'shell'
+    // Same name a link-opened one gets; main numbers it if the project has one already.
+    if (kind === 'browser') return 'Web'
     return basename(folder) || 'session'
   }, [kind, folder])
 
@@ -103,7 +105,9 @@ export function NewSessionModal(): React.JSX.Element | null {
     const picked = await window.terminator.pickFolder()
     if (picked) {
       setFolder(picked)
-      if (!name) setName(basename(picked))
+      // Not for a browser session: the folder only decides which group it lands
+      // in, and naming it after one would take it out of the Web / Web 2 run.
+      if (!name && kind !== 'browser') setName(basename(picked))
     }
   }
 
@@ -311,7 +315,12 @@ export function NewSessionModal(): React.JSX.Element | null {
                 return (
                   <div
                     key={t.key}
-                    onClick={() => setKind(t.key)}
+                    onClick={() => {
+                      setKind(t.key)
+                      // The toggle below is hidden for a browser session, so a tick
+                      // left over from another kind would be submitted unseen.
+                      if (t.key === 'browser') setWorktree(false)
+                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -341,60 +350,65 @@ export function NewSessionModal(): React.JSX.Element | null {
             </div>
           </div>
 
-          <div>
-            <div onClick={() => setWorktree((v) => !v)} style={{ display: 'flex', alignItems: 'center', gap: 11, cursor: 'pointer' }}>
-              <span
-                style={{
-                  width: 36,
-                  height: 20,
-                  borderRadius: 12,
-                  flex: 'none',
-                  background: worktree ? C.accent : ink(0.14),
-                  position: 'relative',
-                  transition: 'background 0.15s ease',
-                }}
-              >
+          {/* A browser session never touches the filesystem, so a worktree for
+              one would be a branch nothing could ever be committed on. The other
+              kinds all have a use for it, including the editor. */}
+          {kind !== 'browser' && (
+            <div>
+              <div onClick={() => setWorktree((v) => !v)} style={{ display: 'flex', alignItems: 'center', gap: 11, cursor: 'pointer' }}>
                 <span
                   style={{
-                    position: 'absolute',
-                    top: 2,
-                    left: worktree ? 18 : 2,
-                    width: 16,
-                    height: 16,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    transition: 'left 0.15s ease',
+                    width: 36,
+                    height: 20,
+                    borderRadius: 12,
+                    flex: 'none',
+                    background: worktree ? C.accent : ink(0.14),
+                    position: 'relative',
+                    transition: 'background 0.15s ease',
                   }}
-                />
-              </span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12.5, color: C.textHi }}>Create git worktree</div>
-                <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>Isolate this session on its own branch</div>
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 2,
+                      left: worktree ? 18 : 2,
+                      width: 16,
+                      height: 16,
+                      borderRadius: '50%',
+                      background: '#fff',
+                      transition: 'left 0.15s ease',
+                    }}
+                  />
+                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12.5, color: C.textHi }}>Create git worktree</div>
+                  <div style={{ fontSize: 11, color: C.dim, marginTop: 1 }}>Isolate this session on its own branch</div>
+                </div>
               </div>
+              {worktree && (
+                <div
+                  style={{
+                    marginTop: 11,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 9,
+                    padding: '9px 12px',
+                    background: C.input,
+                    border: `1px solid ${C.border2}`,
+                    borderRadius: 9,
+                  }}
+                >
+                  <span style={{ fontSize: 12.5, color: C.muted }}>branch</span>
+                  <input
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value)}
+                    placeholder="feature/my-work"
+                    style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: C.accentSoft, font: 'inherit', fontSize: 12.5 }}
+                  />
+                </div>
+              )}
             </div>
-            {worktree && (
-              <div
-                style={{
-                  marginTop: 11,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  padding: '9px 12px',
-                  background: C.input,
-                  border: `1px solid ${C.border2}`,
-                  borderRadius: 9,
-                }}
-              >
-                <span style={{ fontSize: 12.5, color: C.muted }}>branch</span>
-                <input
-                  value={branch}
-                  onChange={(e) => setBranch(e.target.value)}
-                  placeholder="feature/my-work"
-                  style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: C.accentSoft, font: 'inherit', fontSize: 12.5 }}
-                />
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '18px 20px 20px', marginTop: 6 }}>

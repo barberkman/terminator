@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { pruneAttachments } from './attachments'
+import { applyWebviewPolicy, configureBrowserSession } from './browser'
+import { openLink } from './links'
 import { registerIpc } from './ipc'
 import { killAll } from './pty-manager'
 import { closeAll as closeFsWatchers, setWindow as setFsWindow } from './fs-service'
@@ -43,8 +45,37 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Browser panes are <webview> elements. See browser.ts for why a DOM element
+      // rather than a WebContentsView, and for the guards that make this safe: the
+      // tag only lets the renderer *ask* for an embedded page — what that page is
+      // allowed to be is decided below and in browser.ts, never by the renderer.
+      webviewTag: true,
     },
   })
+
+  // The renderer writes the <webview> attributes, so main gets the last word on
+  // them — the same posture links.ts takes towards a URL it was handed. That is what
+  // makes `webviewTag: true` above affordable: the tag lets the renderer *ask* for a
+  // guest, it doesn't let it define one. The policy itself lives in browser.ts, with
+  // the rest of what a guest is allowed to be.
+  win.webContents.on('will-attach-webview', (event, prefs, params) => {
+    if (!applyWebviewPolicy(prefs, params)) event.preventDefault()
+  })
+
+  // Nothing opens a window off the app's own renderer. Electron's default for an
+  // unhandled window.open is a BrowserWindow that inherits this window's
+  // webPreferences — preload included — so a `target="_blank"` in a transcript
+  // could put an arbitrary page in a window holding `window.terminator`. A link
+  // leaves by the same door as every other link instead.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    void openLink(url)
+    return { action: 'deny' }
+  })
+
+  // And the app's own window never navigates off index.html. The drag handlers in
+  // App.tsx already swallow stray file drops for this reason; this is the backstop
+  // under them, for the routes they don't see.
+  win.webContents.on('will-navigate', (e) => e.preventDefault())
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -59,6 +90,8 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   await startReportServer()
+  // Before any window exists, so no page can render ahead of its guards.
+  configureBrowserSession()
   loadPersisted()
   // Pasted images are the only files the app leaves lying around; clear out the
   // stale ones before anything can add more.

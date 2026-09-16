@@ -9,6 +9,7 @@ export const Channels = {
   sessionStart: 'session:start',
   sessionRemove: 'session:remove',
   sessionRename: 'session:rename',
+  sessionSetUrl: 'session:setUrl',
   sessionSetMode: 'session:setMode',
   sessionStop: 'session:stop',
   sessionRelaunch: 'session:relaunch',
@@ -46,6 +47,10 @@ export const Channels = {
   linkOpen: 'link:open',
   linkResolvePath: 'link:resolvePath',
   linkOpenFile: 'link:openFile',
+
+  // the in-app browser's persistent session (Settings -> IN-APP BROWSER)
+  browserCacheSize: 'browser:cacheSize',
+  browserClear: 'browser:clear',
 
   // filesystem (editor sessions)
   fsList: 'fs:list',

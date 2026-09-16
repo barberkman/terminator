@@ -56,6 +56,8 @@ export function defaultSettings(): Settings {
       // in an in-app Editor pane covering that project.
       editor: { command: '', args: [] },
     },
+    // Empty = derive a Chrome-like UA from Electron's own. See browser.ts.
+    browser: { userAgent: '' },
   }
 }
 
@@ -84,6 +86,7 @@ function merge(base: Settings, patch: Partial<Settings>): Settings {
     // browsers[] is replaced wholesale (it's a list, not a set of fields), which
     // is what makes removing one in Settings actually remove it.
     links: { ...base.links, ...(patch.links ?? {}) },
+    browser: { ...base.browser, ...(patch.browser ?? {}) },
     usageRefreshSeconds: clampRefresh(
       'usageRefreshSeconds' in patch ? patch.usageRefreshSeconds : base.usageRefreshSeconds,
     ),

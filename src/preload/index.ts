@@ -5,6 +5,7 @@ import type {
   AttachDeliver,
   AttachFileInput,
   BranchSessionInput,
+  BrowserClearWhat,
   CreateSessionInput,
   FolderChoice,
   FsChange,
@@ -32,6 +33,7 @@ const api: TerminatorApi = {
   startSession: (id, cols, rows) => ipcRenderer.invoke(Channels.sessionStart, { id, cols, rows }),
   removeSession: (id) => ipcRenderer.invoke(Channels.sessionRemove, id),
   renameSession: (id, name) => ipcRenderer.invoke(Channels.sessionRename, { id, name }),
+  setSessionUrl: (id, url) => ipcRenderer.invoke(Channels.sessionSetUrl, { id, url }),
   setMode: (id, mode: SessionMode) => ipcRenderer.invoke(Channels.sessionSetMode, { id, mode }),
   stopSession: (id) => ipcRenderer.invoke(Channels.sessionStop, id),
   relaunchSession: (id) => ipcRenderer.invoke(Channels.sessionRelaunch, id),
@@ -91,6 +93,9 @@ const api: TerminatorApi = {
   resolveOutputPath: (sessionId: string, token: string) =>
     ipcRenderer.invoke(Channels.linkResolvePath, { sessionId, token }),
   openFileInEditor: (input: OpenFileInput) => ipcRenderer.invoke(Channels.linkOpenFile, input),
+
+  browserCacheSize: () => ipcRenderer.invoke(Channels.browserCacheSize),
+  clearBrowserData: (what: BrowserClearWhat) => ipcRenderer.invoke(Channels.browserClear, what),
 
   attachClipboardImage: (id: string, deliver?: AttachDeliver) =>
     ipcRenderer.invoke(Channels.attachClipboard, { id, deliver }),

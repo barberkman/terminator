@@ -1,3 +1,4 @@
+import { isProcessless } from '../../shared/types'
 import { C, dangerA } from '../theme'
 import { useStore } from '../state/store'
 
@@ -81,10 +82,36 @@ function Dialog({ title, body, confirmLabel, cancelLabel, onConfirm, onCancel }:
 export function ConfirmDialog(): React.JSX.Element | null {
   const confirm = useStore((s) => s.confirm)
   const setConfirm = useStore((s) => s.setConfirm)
-  const worktreePath = useStore((s) => (confirm ? s.sessions[confirm.id]?.worktreePath : undefined))
+  // Only the session prompts have an id to look up; ask for nothing on the one
+  // that doesn't, rather than reading `.id` off a shape that hasn't got one.
+  const sessionId = confirm && confirm.kind !== 'browserClear' ? confirm.id : ''
+  const worktreePath = useStore((s) => (sessionId ? s.sessions[sessionId]?.worktreePath : undefined))
+  const kind = useStore((s) => (sessionId ? s.sessions[sessionId]?.kind : undefined))
   if (!confirm) return null
 
   const close = () => setConfirm(null)
+
+  if (confirm.kind === 'browserClear') {
+    const signOut = confirm.what === 'cookies'
+    return (
+      <Dialog
+        title={signOut ? 'Sign out of everything?' : 'Clear everything?'}
+        body={
+          signOut
+            ? "Drop every cookie the in-app browser is holding. You'll be signed out of Claude in it, and of anything else you signed into there, until you sign in again."
+            : "Drop everything the in-app browser is holding: cookies, every site's stored data, and the cache. It goes back to how it was before you first opened a page in it."
+        }
+        confirmLabel={signOut ? 'Sign out' : 'Clear everything'}
+        cancelLabel="Cancel"
+        onConfirm={async () => {
+          await window.terminator.clearBrowserData(confirm.what)
+          close()
+        }}
+        onCancel={close}
+      />
+    )
+  }
+
   const { id, name } = confirm
 
   // Worktree prompt — shown on its own, or after a close/remove (removeAfter).
@@ -122,10 +149,13 @@ export function ConfirmDialog(): React.JSX.Element | null {
   return (
     <Dialog
       title={confirm.kind === 'close' ? 'Close session?' : 'Remove session?'}
+      // An editor or browser pane has no process, so offering to stop one would be
+      // describing something that isn't going to happen.
       body={
-        worktreePath
-          ? `Stop “${name}” and remove it from the list. You'll be asked about its git worktree next.`
-          : `Stop “${name}” and remove it from the list.`
+        (kind && isProcessless(kind)
+          ? `Remove “${name}” from the list.`
+          : `Stop “${name}” and remove it from the list.`) +
+        (worktreePath ? " You'll be asked about its git worktree next." : '')
       }
       confirmLabel={confirm.kind === 'close' ? 'Close' : 'Remove'}
       cancelLabel="Cancel"

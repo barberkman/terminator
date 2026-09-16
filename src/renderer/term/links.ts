@@ -1,5 +1,10 @@
 import type { IBufferRange, ILink, ILinkHandler, ILinkProvider, Terminal } from '@xterm/xterm'
-import type { LinkSettings } from '../../shared/types'
+import {
+  IN_APP_BROWSER_ID,
+  IN_APP_BROWSER_NAME,
+  type LinkSettings,
+} from '../../shared/types'
+import { webUrl, webUrlRe } from '../../shared/url'
 import { useStore } from '../state/store'
 import * as editors from '../editor/registry'
 import { C, FONT } from '../theme'
@@ -18,7 +23,11 @@ import { C, FONT } from '../theme'
 //      names both the target and the browser that will open it.
 //
 // Opening itself belongs to the main process (main/links.ts), which re-validates
-// every URL: what is on screen is output from someone else's program.
+// every URL: what is on screen is output from someone else's program. The one
+// exception is the in-app browser, which is a pane to raise rather than a program
+// to launch — so the renderer resolves that target itself, and runs the identical
+// `webUrl` check from shared/ on the way, because it is the only route into the app
+// that never reaches main/links.ts and must not also be the only one that skips it.
 
 /** Movement between press and release, past which it was a drag, not a click. */
 const DRAG_SLOP = 4
@@ -33,12 +42,15 @@ const DOUBLE_CLICK_MS = 250
 /** How far a wrapped-line group is followed in each direction. */
 const MAX_WRAP_ROWS = 8
 
-const URL_RE = /\bhttps?:\/\/[^\s<>"'`\\^{}|]+/g
+const URL_RE = webUrlRe()
 /** Path-ish tokens: at least one separator, so bare words are never candidates. */
 const PATH_RE = /(?:~\/|\.{1,2}\/|\/)?[\w.@+-]+(?:\/[\w.@+-]+)+(?::\d+(?::\d+)?)?/g
 
 export type LinkTarget =
-  | { kind: 'web'; url: string }
+  // `sessionId` is whose project a browser pane opens under — a link is printed
+  // *somewhere*, and that somewhere is the only sensible home for the pane showing
+  // it. Optional because a link in the notes overlay has no session behind it.
+  | { kind: 'web'; url: string; sessionId?: string }
   | { kind: 'file'; sessionId: string; path: string; line?: number; column?: number; label: string }
 
 let settings: LinkSettings = {
@@ -57,9 +69,15 @@ export function setLinkSettings(next: LinkSettings): void {
   }
 }
 
-/** The browser a plain click uses, or undefined for the OS default handler. */
-function defaultBrowser(): { id: string; name: string } | undefined {
-  return settings.browsers.find((b) => b.id === settings.defaultBrowserId)
+/**
+ * The target a plain click uses, named, or undefined for the OS default handler.
+ * The in-app browser is one of these like any other: it is a reserved id rather
+ * than a flag, so everywhere a browser is chosen it is simply another choice.
+ */
+function defaultTarget(): { id: string; name: string } | undefined {
+  const id = settings.defaultBrowserId
+  if (id === IN_APP_BROWSER_ID) return { id, name: IN_APP_BROWSER_NAME }
+  return settings.browsers.find((b) => b.id === id)
 }
 
 /**
@@ -240,14 +258,92 @@ function toastError(text: string, sub: string): void {
   useStore.getState().pushToast({ tone: 'error', text, sub })
 }
 
-/** Hand a URL to the main process, which decides whether it opens at all. */
-export async function openWeb(url: string, browserId?: string): Promise<void> {
+/**
+ * The project a browser pane should open under: the one the link came from, else
+ * whatever is in the focused pane, else any session at all. A browser session needs
+ * a real folder like every other — `createSession` resolves an empty path to the
+ * process's own working directory, and a session rooted there is a session rooted
+ * somewhere nobody chose.
+ */
+function projectForBrowser(fromId?: string): { name: string; path: string } | undefined {
+  const st = useStore.getState()
+  const focusedId = st.panes[st.focused]
+  const candidate =
+    (fromId ? st.sessions[fromId] : undefined) ??
+    (focusedId ? st.sessions[focusedId] : undefined) ??
+    Object.values(st.sessions).find((x) => !!x.projectPath)
+  if (!candidate?.projectPath) return undefined
+  return { name: candidate.projectName, path: candidate.projectPath }
+}
+
+/**
+ * Show a URL in a browser pane — a new one each time, the way a browser opens a new
+ * tab rather than replacing the page you were already reading. The pane belongs to
+ * the project the link was printed in, so it groups under it in the sidebar and has
+ * a real folder to belong to.
+ *
+ * The cost is that they accumulate: a browser session is a session like any other,
+ * so closing the pane leaves it in the sidebar, and it comes back after a restart
+ * until you remove it.
+ */
+async function openInAppBrowser(url: string, fromId?: string): Promise<void> {
+  const project = projectForBrowser(fromId)
+  if (!project) {
+    toastError("Couldn't open the link", 'open a session first — a browser pane opens in its project')
+    return
+  }
+  try {
+    const made = await window.terminator.createSession({
+      kind: 'browser',
+      mode: 'normal',
+      projectName: project.name,
+      projectPath: project.path,
+      url,
+    })
+    const st = useStore.getState()
+    st.upsert(made)
+    st.openSession(made.id)
+  } catch (e) {
+    toastError("Couldn't open the link", String(e).slice(0, 200))
+  }
+}
+
+/**
+ * Open a web link, wherever it was clicked.
+ *
+ * `browserId` picks the target: `undefined` means "whatever a plain click does",
+ * `''` means the OS handler whatever the default is, and anything else is an id.
+ * The in-app browser is the one target resolved here rather than in main — it is a
+ * pane to raise, not a program to launch — and it gets the same `webUrl` check main
+ * would have run, so no route into the app skips the validation.
+ */
+export async function openWeb(url: string, browserId?: string, sessionId?: string): Promise<void> {
+  const wanted = browserId === undefined ? settings.defaultBrowserId : browserId
+  if (wanted === IN_APP_BROWSER_ID) {
+    const safe = webUrl(url)
+    if (!safe) {
+      toastError("Couldn't open the link", 'only http and https links can be opened')
+      return
+    }
+    await openInAppBrowser(safe, sessionId)
+    return
+  }
   try {
     const res = await window.terminator.openLink(url, browserId)
     if (!res.ok) toastError("Couldn't open the link", res.reason)
   } catch (e) {
     toastError("Couldn't open the link", String(e).slice(0, 200))
   }
+}
+
+/**
+ * Leave the app with this URL. The browser pane's own escape hatch, and the answer
+ * when a site refuses to run in an embedded browser at all — so it must never route
+ * back inside: if the default *is* the in-app browser, the OS handler is the only
+ * honest reading of "not here".
+ */
+export async function openOutsideApp(url: string): Promise<void> {
+  await openWeb(url, settings.defaultBrowserId === IN_APP_BROWSER_ID ? '' : undefined)
 }
 
 function baseName(p: string): string {
@@ -311,7 +407,7 @@ export function openFileTarget(target: Extract<LinkTarget, { kind: 'file' }>): v
 }
 
 function open(target: LinkTarget, browserId?: string): void {
-  if (target.kind === 'web') void openWeb(target.url, browserId)
+  if (target.kind === 'web') void openWeb(target.url, browserId, target.sessionId)
   else openFileTarget(target)
 }
 
@@ -334,10 +430,11 @@ function describe(target: LinkTarget): { text: string; sub: string } {
         : 'Click to open in an editor pane · right-click for more',
     }
   }
-  const browser = defaultBrowser()
+  const browser = defaultTarget()
   const where = browser ? browser.name : 'your default browser'
-  const more = settings.browsers.length > (browser ? 1 : 0) ? ' · right-click for others' : ''
-  return { text: target.url, sub: `Click to open in ${where}${more}` }
+  // The in-app row and the system-default row always exist, so there is always
+  // somewhere else to send it — no need to work out whether the menu is worth it.
+  return { text: target.url, sub: `Click to open in ${where} · right-click for others` }
 }
 
 export function hideTooltip(): void {
@@ -432,8 +529,15 @@ function menuItem(label: string, note: string | undefined, onPick: () => void): 
  * selection, or fall through to the program in the pane).
  */
 export function openMenuForHovered(ev: MouseEvent): boolean {
-  const target = hovered
-  if (!settings.enabled || !target) return false
+  // `enabled` governs links in *terminal output*, so the check belongs to this
+  // entry point and not to the shared body below — a link in a transcript isn't
+  // terminal output, and turning that setting off shouldn't silently break its menu.
+  if (!settings.enabled || !hovered) return false
+  return openMenuForTarget(ev, hovered)
+}
+
+/** The same menu, for a target the caller already has (a rendered markdown link). */
+export function openMenuForTarget(ev: MouseEvent, target: LinkTarget): boolean {
   closeMenu()
   hideTooltip()
 
@@ -451,12 +555,20 @@ export function openMenuForHovered(ev: MouseEvent): boolean {
   el.appendChild(heading)
 
   if (target.kind === 'web') {
+    // First, because it's the one that doesn't leave the app.
+    el.appendChild(
+      menuItem(
+        `Open in ${IN_APP_BROWSER_NAME}`,
+        settings.defaultBrowserId === IN_APP_BROWSER_ID ? 'default' : undefined,
+        () => void openWeb(target.url, IN_APP_BROWSER_ID, target.sessionId),
+      ),
+    )
     for (const b of settings.browsers) {
       el.appendChild(
         menuItem(
           `Open in ${b.name}`,
           b.id === settings.defaultBrowserId ? 'default' : undefined,
-          () => void openWeb(target.url, b.id),
+          () => void openWeb(target.url, b.id, target.sessionId),
         ),
       )
     }
@@ -465,7 +577,7 @@ export function openMenuForHovered(ev: MouseEvent): boolean {
         'Open in system default',
         settings.defaultBrowserId ? undefined : 'default',
         // '' asks for no configured browser, whatever the default is set to.
-        () => void openWeb(target.url, ''),
+        () => void openWeb(target.url, '', target.sessionId),
       ),
     )
     el.appendChild(
@@ -569,7 +681,7 @@ function makeProvider(sessionId: string, term: Terminal): ILinkProvider {
         const range = rangeFor(group, m.index, m.index + url.length - 1)
         if (!range) continue
         taken.push([m.index, m.index + url.length - 1])
-        links.push(makeLink(term, range, url, { kind: 'web', url }))
+        links.push(makeLink(term, range, url, { kind: 'web', url, sessionId }))
       }
 
       if (!settings.openFilePaths) {
@@ -628,16 +740,16 @@ function makeProvider(sessionId: string, term: Terminal): ILinkProvider {
  * link" outright. Same guards and the same validation on the way out;
  * `allowNonHttpProtocols` stays off so a sequence can't name a scheme of its own.
  */
-export function oscLinkHandler(term: Terminal): ILinkHandler {
+export function oscLinkHandler(sessionId: string, term: Terminal): ILinkHandler {
   return {
     allowNonHttpProtocols: false,
     activate: (ev, text) => {
       if (!settings.enabled || !wasRealClick(term, ev)) return
       hideTooltip()
-      void openWeb(text)
+      void openWeb(text, undefined, sessionId)
     },
     hover: (ev, text) => {
-      hovered = { kind: 'web', url: text }
+      hovered = { kind: 'web', url: text, sessionId }
       showTooltip(term, ev, hovered)
     },
     leave: () => {

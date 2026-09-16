@@ -131,7 +131,7 @@ export function getOrCreate(id: string): Entry {
   })
   // OSC 8 hyperlinks — text a program explicitly marked as a link. Detection of
   // plain URLs in output is a link provider, registered in attachLinks below.
-  term.options.linkHandler = links.oscLinkHandler(term)
+  term.options.linkHandler = links.oscLinkHandler(id, term)
   const fit = new FitAddon()
   term.loadAddon(fit)
 

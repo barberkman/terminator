@@ -211,6 +211,11 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
               <Icon name="editor" size={12} />
             </span>
           )}
+          {session.kind === 'browser' && (
+            <span style={{ display: 'flex', color: C.kindIcon, flex: 'none' }}>
+              <Icon name="globe" size={12} />
+            </span>
+          )}
           {editing ? (
             <input
               ref={nameRef}
