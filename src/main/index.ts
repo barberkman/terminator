@@ -1,10 +1,8 @@
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { pruneAttachments } from './attachments'
-import { configureBrowserSession } from './browser'
+import { applyWebviewPolicy, configureBrowserSession } from './browser'
 import { openLink } from './links'
-import { BROWSER_PARTITION } from '../shared/types'
-import { webUrl } from '../shared/url'
 import { registerIpc } from './ipc'
 import { killAll } from './pty-manager'
 import { closeAll as closeFsWatchers, setWindow as setFsWindow } from './fs-service'
@@ -56,24 +54,12 @@ function createWindow(): void {
   })
 
   // The renderer writes the <webview> attributes, so main gets the last word on
-  // them — the same posture links.ts takes towards a URL it was handed. Everything
-  // the tag asked for is discarded rather than checked: a preload is the only route
-  // a guest has to Node, so there must not be one, and the partition is ours or the
-  // guest doesn't attach. That is what makes `webviewTag: true` above affordable —
-  // the tag lets the renderer *ask* for a guest, it doesn't let it define one.
+  // them — the same posture links.ts takes towards a URL it was handed. That is what
+  // makes `webviewTag: true` above affordable: the tag lets the renderer *ask* for a
+  // guest, it doesn't let it define one. The policy itself lives in browser.ts, with
+  // the rest of what a guest is allowed to be.
   win.webContents.on('will-attach-webview', (event, prefs, params) => {
-    delete prefs.preload
-    prefs.nodeIntegration = false
-    prefs.nodeIntegrationInSubFrames = false
-    prefs.contextIsolation = true
-    prefs.sandbox = true
-    prefs.webSecurity = true
-    prefs.allowRunningInsecureContent = false
-    params.partition = BROWSER_PARTITION
-    // about:blank is allowed because a pane attaches before it has a page; every
-    // navigation after that is policed by will-navigate in browser.ts.
-    const src = typeof params.src === 'string' ? params.src : ''
-    if (src && src !== 'about:blank' && !webUrl(src)) event.preventDefault()
+    if (!applyWebviewPolicy(prefs, params)) event.preventDefault()
   })
 
   // Nothing opens a window off the app's own renderer. Electron's default for an

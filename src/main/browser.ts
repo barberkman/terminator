@@ -21,7 +21,14 @@
 // partition is guarded, and the app's own window — which is on the default
 // session — is never touched by any of it.
 
-import { app, session, shell, type Event, type Session, type WebContents } from 'electron'
+import {
+  app,
+  session,
+  type Event,
+  type Session,
+  type WebContents,
+  type WebPreferences,
+} from 'electron'
 import { BROWSER_PARTITION, type BrowserClearWhat } from '../shared/types'
 import { webUrl } from './links'
 import { loadSettings } from './settings'
@@ -60,6 +67,41 @@ export function applyBrowserUserAgent(): void {
 }
 
 /**
+ * Main's last word on what a <webview> is allowed to be, applied before the guest
+ * attaches. Everything the renderer asked for is discarded rather than checked: a
+ * preload is the only route a guest has to Node, so there must not be one, and the
+ * partition is ours or it doesn't attach.
+ *
+ * The user agent belongs here and not only on the session. A guest's UA is fixed
+ * from the tag when it attaches, so a session-level default never reaches its first
+ * request — and the first request is the one that decides whether a sign-in is
+ * allowed to start. Setting it later, on the contents, is already too late.
+ *
+ * The partition is the one thing here that is checked rather than corrected. By the
+ * time this fires the guest's session has already been chosen, so writing
+ * `params.partition` doesn't move it — a guest that asked for nothing quietly keeps
+ * the app's own session, which is the opposite of what this file is for. So a guest
+ * that didn't ask for ours doesn't attach at all.
+ *
+ * Returns false when the guest should be refused outright.
+ */
+export function applyWebviewPolicy(prefs: WebPreferences, params: Record<string, string>): boolean {
+  delete prefs.preload
+  prefs.nodeIntegration = false
+  prefs.nodeIntegrationInSubFrames = false
+  prefs.contextIsolation = true
+  prefs.sandbox = true
+  prefs.webSecurity = true
+  prefs.allowRunningInsecureContent = false
+  if (params.partition !== BROWSER_PARTITION) return false
+  params.useragent = browserUserAgent()
+  // about:blank is allowed because a pane attaches before it has a page; every
+  // navigation after that is policed by `guard` below.
+  const src = params.src ?? ''
+  return !src || src === 'about:blank' || !!webUrl(src)
+}
+
+/**
  * One-time setup for the browser partition, plus the guards. Called at startup
  * rather than when the first pane opens, so a page can never render ahead of the
  * rules that constrain it.
@@ -73,13 +115,12 @@ export function configureBrowserSession(): void {
   // feature that quietly doesn't work. One line to loosen if that ever bites.
   ses.setPermissionRequestHandler((_c, _permission, done) => done(false))
 
-  // No download UI here, and a file appearing somewhere unannounced is the wrong
-  // surprise. Hand it to the OS browser, which has both the UI and the prompt.
-  ses.on('will-download', (e, item) => {
-    e.preventDefault()
-    const url = webUrl(item.getURL())
-    if (url) void shell.openExternal(url)
-  })
+  // Downloads are deliberately left to Electron's default, which is to ask where
+  // to save. There is no download UI here, so the OS dialog is the whole of the
+  // consent — and it is the only option that also works for the blob: URL a page
+  // uses to hand you something it built itself, which is exactly how a diagram
+  // offers to save as SVG. Refusing outright would make that a dead end; refusing
+  // *quietly*, which is what refusing a blob: by URL check amounts to, would be worse.
 
   app.on('web-contents-created', (_e, contents) => {
     // Session identity is the test: it catches every <webview> and every popup

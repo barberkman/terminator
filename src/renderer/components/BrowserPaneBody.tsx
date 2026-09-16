@@ -99,22 +99,33 @@ function ChromeButton({
 
 export function BrowserPaneBody({ session }: { session: Session }): React.JSX.Element {
   const ref = useRef<WebviewTag | null>(null)
-  // Read once: the attribute is only honoured at attach time, and rebinding it
-  // would turn an unrelated re-render into a navigation.
-  const initialSrc = useRef(session.url ?? '')
+  // The first URL this pane ever sees, and then never again: `src` is only honoured
+  // when the guest attaches, and rebinding it would turn an unrelated re-render into
+  // a navigation. Everything after the first goes through `loadURL`.
+  const [src, setSrc] = useState(session.url ?? '')
   const zoom = useStore((s) => (s.settings?.fontSize ?? UI_BASE_FONT_SIZE) / UI_BASE_FONT_SIZE)
   const pushToast = useStore((s) => s.pushToast)
 
   const [ready, setReady] = useState(false)
   const [current, setCurrent] = useState(session.url ?? '')
   const [draft, setDraft] = useState(session.url ?? '')
-  const [typing, setTyping] = useState(false)
+  // A ref, not state: nothing renders from it, and the guest's own navigation
+  // events read it — from inside listeners bound once, which a state value would
+  // have gone stale in.
+  const typing = useRef(false)
   const [title, setTitle] = useState('')
   const [loading, setLoading] = useState(false)
   const [nav, setNav] = useState({ back: false, forward: false })
   const [failure, setFailure] = useState<{ text: string; url: string } | null>(null)
 
-  const has = !!initialSrc.current
+  const has = !!src
+
+  // A pane can open before it has a page — restored without one, or opened empty —
+  // so the guest mounts when the first URL arrives rather than only at mount. The
+  // guard is what keeps `src` a one-time value.
+  useEffect(() => {
+    if (!src && session.url) setSrc(session.url)
+  }, [src, session.url])
 
   // The guest's own events. Attached once: `ref.current` is stable for the life of
   // the pane, and re-attaching on every state change would leak listeners.
@@ -134,10 +145,7 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
       setCurrent(url)
       setFailure(null)
       // Don't overwrite a URL the user is halfway through typing.
-      setTyping((t) => {
-        if (!t) setDraft(url)
-        return t
-      })
+      if (!typing.current) setDraft(url)
       refreshNav()
       // Remember where we are, so a restart reopens here. Main re-validates it:
       // this URL came from a page, and a page picks its own navigations.
@@ -232,7 +240,9 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
       })
       return
     }
-    setTyping(false)
+    typing.current = false
+    // With no guest yet, the session's URL is how it gets one: the effect above
+    // mounts the tag, and `src` carries it.
     if (ready && ref.current) void ref.current.loadURL(url)
     else void window.terminator.setSessionUrl(session.id, url)
   }
@@ -276,12 +286,12 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
         <input
           value={draft}
           onChange={(e) => {
-            setTyping(true)
+            typing.current = true
             setDraft(e.target.value)
           }}
           onFocus={(e) => e.target.select()}
           onBlur={() => {
-            setTyping(false)
+            typing.current = false
             setDraft(current)
           }}
           onKeyDown={(e) => {
@@ -290,7 +300,7 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
             // stop it before App.tsx's chain reads it as closing something.
             if (e.key === 'Escape') {
               e.stopPropagation()
-              setTyping(false)
+              typing.current = false
               setDraft(current)
               e.currentTarget.blur()
             }
@@ -336,7 +346,7 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
         {has ? (
           <webview
             ref={ref}
-            src={initialSrc.current}
+            src={src}
             partition={BROWSER_PARTITION}
             // Claude's Google sign-in is a popup. Without this, window.open returns
             // null and the button appears to do nothing; main pins the popup to the

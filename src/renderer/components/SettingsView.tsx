@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
+  IN_APP_BROWSER_ID,
+  IN_APP_BROWSER_NAME,
   USAGE_REFRESH_DEFAULT,
   USAGE_REFRESH_MAX,
   USAGE_REFRESH_MIN,
@@ -31,12 +33,78 @@ const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited', 'idl
 const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'worktreesRoot', 'notifications', 'terminalFont',
   'fontSize', 'iconScale', 'sidebarSide', 'relaunchOnStartup', 'globalToggleShortcut',
-  'notesShortcut', 'attachments', 'links', 'settingsOpen', 'usageRefreshSeconds',
+  'notesShortcut', 'attachments', 'links', 'browser', 'settingsOpen', 'usageRefreshSeconds',
 ] as const satisfies readonly (keyof Settings)[]
+
+/** Cache size, at the resolution anyone reads it: "is that a lot?" */
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  const units = ['KB', 'MB', 'GB']
+  let v = n / 1024
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`
+}
 
 /** Ids only have to be unique within the list and stable across edits. */
 function newBrowserId(): string {
   return `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+}
+
+/**
+ * The in-app browser, as a row in the same list.
+ *
+ * It isn't a `BrowserOption` — there's no executable to store and nothing to edit —
+ * so it's drawn rather than mapped, and can't be renamed or removed. But it carries
+ * the same Default button as its neighbours, because being the default is the whole
+ * of what there is to configure, and making that choice somewhere else would leave
+ * two places to look for the answer to one question.
+ */
+function InAppBrowserRow({
+  isDefault,
+  onMakeDefault,
+}: {
+  isDefault: boolean
+  onMakeDefault: () => void
+}): React.JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: 10,
+        borderRadius: 9,
+        border: `1px solid ${isDefault ? C.accentBorder : C.border2}`,
+        background: isDefault ? accentA(0.05) : 'transparent',
+      }}
+    >
+      <span style={{ display: 'flex', color: C.kindIcon, flex: 'none' }}>
+        <Icon name="globe" size={14} />
+      </span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 12.5, color: C.textHi }}>In-app browser</div>
+        <div style={{ fontSize: 10.5, color: C.dim }}>
+          Opens in a pane instead of leaving the app. Keeps its own sign-ins.
+        </div>
+      </div>
+      <button
+        onClick={onMakeDefault}
+        title={isDefault ? 'Clicked links open here' : 'Open clicked links in the app'}
+        style={{
+          ...smallBtn,
+          border: `1px solid ${isDefault ? C.accentBorder : C.border2}`,
+          background: isDefault ? accentA(0.12) : 'transparent',
+          color: isDefault ? C.accentSoft : C.muted,
+        }}
+      >
+        {isDefault ? '✓ Default' : 'Make default'}
+      </button>
+    </div>
+  )
 }
 
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta'])
@@ -261,6 +329,9 @@ export function SettingsView(): React.JSX.Element | null {
   // null when the import sheet is shut; the pasted text while it's open.
   const [importText, setImportText] = useState<string | null>(null)
   const [importError, setImportError] = useState('')
+  const [cacheSize, setCacheSize] = useState<number | null>(null)
+  const setConfirm = useStore((s) => s.setConfirm)
+  const confirm = useStore((s) => s.confirm)
 
   // Re-seeded when the panel opens, and deliberately not when `settings` changes
   // underneath: duplicating a theme writes settings while the panel is up, and
@@ -276,6 +347,16 @@ export function SettingsView(): React.JSX.Element | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show])
 
+  // Re-read once on open, and again whenever a confirm closes — the two
+  // destructive clears run from that dialog, so that's when the number moves.
+  useEffect(() => {
+    if (!show || confirm) return
+    void window.terminator
+      .browserCacheSize()
+      .then(setCacheSize)
+      .catch(() => setCacheSize(null))
+  }, [show, confirm])
+
   if (!show || !draft) return null
 
   const patch = (p: Partial<Settings>) => setDraft({ ...draft, ...p })
@@ -287,9 +368,10 @@ export function SettingsView(): React.JSX.Element | null {
   }
 
   const patchLinks = (p: Partial<Settings['links']>) => patch({ links: { ...draft.links, ...p } })
-  const defaultBrowserName = draft.links?.browsers.find(
-    (b) => b.id === draft.links.defaultBrowserId,
-  )?.name
+  const inAppDefault = draft.links?.defaultBrowserId === IN_APP_BROWSER_ID
+  const defaultBrowserName = inAppDefault
+    ? IN_APP_BROWSER_NAME
+    : draft.links?.browsers.find((b) => b.id === draft.links.defaultBrowserId)?.name
   // Same name the tooltip and the right-click menu show: the executable's basename.
   const editorLabel = (draft.links?.editor?.command ?? '')
     .trim()
@@ -726,6 +808,16 @@ export function SettingsView(): React.JSX.Element | null {
                   hint="The program and its arguments are kept apart and handed straight to the process, so a path with spaces (Program Files) needs no quoting. A plain click uses the default; right-click a link for the rest. With no browser here, links open in your OS default."
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <InAppBrowserRow
+                      isDefault={inAppDefault}
+                      onMakeDefault={() =>
+                        patchLinks({
+                          // Clicking the default again hands links back to the OS,
+                          // the same as clicking a configured browser's does.
+                          defaultBrowserId: inAppDefault ? '' : IN_APP_BROWSER_ID,
+                        })
+                      }
+                    />
                     {(draft.links?.browsers ?? []).map((b, i) => (
                       <BrowserRow
                         key={b.id}
@@ -775,9 +867,11 @@ export function SettingsView(): React.JSX.Element | null {
                       + Add browser
                     </button>
                     <div style={{ fontSize: 10.5, color: C.dim }}>
-                      {defaultBrowserName
-                        ? `A plain click opens ${defaultBrowserName}.`
-                        : 'A plain click opens your OS default browser.'}
+                      {inAppDefault
+                        ? 'A plain click opens the link here, in a browser pane.'
+                        : defaultBrowserName
+                          ? `A plain click opens ${defaultBrowserName}.`
+                          : 'A plain click opens your OS default browser.'}
                     </div>
                   </div>
                 </Field>
@@ -818,6 +912,68 @@ export function SettingsView(): React.JSX.Element | null {
                       ))}
                     </div>
                   </div>
+                </Field>
+              </>
+            ),
+          )}
+
+          {section(
+            'browser',
+            'IN-APP BROWSER',
+            `${inAppDefault ? 'default for links' : 'on right-click'} · ${
+              cacheSize === null ? '…' : formatBytes(cacheSize)
+            } cached`,
+            (
+              <>
+                <Field
+                  label="STORED DATA"
+                  hint="The in-app browser keeps its own cookies and site data, apart from anything the app itself stores — which is what lets you sign in to Claude once and still be signed in after a restart. This is where you undo that."
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => {
+                          void window.terminator
+                            .clearBrowserData('cache')
+                            .then(() => window.terminator.browserCacheSize())
+                            .then(setCacheSize)
+                            .catch(() => setCacheSize(null))
+                        }}
+                        style={smallBtn}
+                      >
+                        Clear cache
+                      </button>
+                      <button
+                        onClick={() => setConfirm({ kind: 'browserClear', what: 'cookies' })}
+                        style={{ ...smallBtn, color: C.danger }}
+                      >
+                        Sign out of everything
+                      </button>
+                      <button
+                        onClick={() => setConfirm({ kind: 'browserClear', what: 'all' })}
+                        style={{ ...smallBtn, color: C.danger }}
+                      >
+                        Clear everything
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: C.dim }}>
+                      {cacheSize === null
+                        ? 'Clearing the cache keeps you signed in; the other two do not.'
+                        : `${formatBytes(cacheSize)} cached. Clearing that keeps you signed in; the other two do not.`}
+                    </div>
+                  </div>
+                </Field>
+
+                <Field
+                  label="USER AGENT"
+                  hint="Leave blank for a Chrome-like one derived from Electron's own, with the tokens that name this as an embedded browser taken out — which is what lets a Google sign-in run at all. Set it by hand if a site still turns you away. Pages already open keep the old one until they navigate."
+                >
+                  <input
+                    style={inputStyle}
+                    placeholder="(derived from Electron's own)"
+                    value={draft.browser?.userAgent ?? ''}
+                    onChange={(e) => patch({ browser: { ...draft.browser, userAgent: e.target.value } })}
+                  />
                 </Field>
               </>
             ),

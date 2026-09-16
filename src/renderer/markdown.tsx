@@ -8,7 +8,48 @@
 // `.md-inline-code`, so a caller only has to put `.md-body` on its container.
 
 import { useState } from 'react'
+import { webUrl, webUrlRe } from '../shared/url'
 import { C } from './theme'
+import { openMenuForTarget, openWeb, trimUrl } from './term/links'
+
+/**
+ * A link in rendered markdown. Never a plain anchor.
+ *
+ * `target="_blank"` handed the URL to Electron's window-open path, and this text
+ * came out of a transcript — that is, out of some program's output, which this app
+ * has exactly one rule about. So the href goes through the same `webUrl` the main
+ * process runs, and the click leaves by the same `openWeb` a URL clicked in a
+ * terminal pane does: the same targets, the same configured default, the same
+ * right-click menu, the same toast when nothing opens.
+ *
+ * No session is threaded in. `openWeb` falls back to the focused pane when it isn't
+ * told one, and clicking a link in a conversation focuses that pane on the way —
+ * so a browser pane still opens under the right project without every markdown
+ * call site having to carry a session id it has no other use for.
+ *
+ * A URL that doesn't pass keeps its text and loses its link: the words are still
+ * the author's, they just aren't a door.
+ */
+function MdLink({ href, children }: { href: string; children: React.ReactNode }): React.JSX.Element {
+  const url = webUrl(href)
+  if (!url) return <span title={href}>{children}</span>
+  return (
+    <a
+      href={url}
+      title={url}
+      onClick={(e) => {
+        e.preventDefault()
+        void openWeb(url)
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        openMenuForTarget(e.nativeEvent, { kind: 'web', url })
+      }}
+    >
+      {children}
+    </a>
+  )
+}
 
 /** A fenced code block rendered with a hover-revealed Copy button (top-right). */
 export function CodeBlock({ text }: { text: string }): React.JSX.Element {
@@ -47,10 +88,22 @@ export function CodeBlock({ text }: { text: string }): React.JSX.Element {
 }
 
 // Matches the next inline token: `code`, **bold**/__bold__, *italic*/_italic_,
-// ~~strike~~, or (image!)/[link](url). Order matters — code and bold are tried
-// before italic so their markers aren't mistaken for single-emphasis markers.
-const INLINE_RE =
-  /(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|(~~[^~]+~~)|(!?\[[^\]]*\]\([^)]+\))|(\*[^*]+\*|_[^_]+_)/
+// ~~strike~~, (image!)/[link](url), or a bare URL. Order matters — code and bold
+// are tried before italic so their markers aren't mistaken for single-emphasis
+// markers, and the bare URL is last so `[text](url)` still wins over the URL
+// inside it (alternation is leftmost-first, and the link starts earlier).
+//
+// The URL pattern is the one terminal output is scanned with. Claude prints bare
+// URLs constantly, and the same text being a link in a pane and inert in that
+// pane's own conversation is the confusing half of not doing this.
+const INLINE_RE = new RegExp(
+  '(`[^`]+`)' +
+    '|(\\*\\*[^*]+\\*\\*|__[^_]+__)' +
+    '|(~~[^~]+~~)' +
+    '|(!?\\[[^\\]]*\\]\\([^)]+\\))' +
+    '|(\\*[^*]+\\*|_[^_]+_)' +
+    `|(${webUrlRe('').source})`,
+)
 
 /** Render markdown inline spans (emphasis, code, links) to React nodes. */
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
@@ -66,6 +119,8 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
     if (m.index > 0) nodes.push(rest.slice(0, m.index))
     const tok = m[0]
     const key = `${keyPrefix}-i${n++}`
+    // Usually the whole token; a bare URL gives back the punctuation it swallowed.
+    let consumed = tok.length
     if (tok.startsWith('`')) {
       const inner = tok.slice(1, -1)
       nodes.push(
@@ -87,15 +142,29 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       nodes.push(<img key={key} alt={mm[1]} src={mm[2]} />)
     } else if (tok.startsWith('[')) {
       const mm = /\[([^\]]*)\]\(([^)]+)\)/.exec(tok)!
-      nodes.push(
-        <a key={key} href={mm[2]} target="_blank" rel="noreferrer">
-          {renderInline(mm[1], key)}
-        </a>,
-      )
+      nodes.push(<MdLink key={key} href={mm[2]}>{renderInline(mm[1], key)}</MdLink>)
+    } else if (/^https?:\/\//.test(tok)) {
+      // Trimmed the same way a terminal trims one, so "see https://x/y." and
+      // "(https://x/y)" end a character early in both places. A link that behaves
+      // differently depending on where you read it is worse than no link.
+      const url = trimUrl(tok)
+      // `consumed` drives the loop, so a zero-length one would spin forever and
+      // take the window with it. trimUrl can't return '' today; this is here so
+      // that stays true of the loop rather than of a function somewhere else.
+      if (url) {
+        consumed = url.length
+        nodes.push(
+          <MdLink key={key} href={url}>
+            {url}
+          </MdLink>,
+        )
+      } else {
+        nodes.push(tok)
+      }
     } else {
       nodes.push(<em key={key}>{renderInline(tok.slice(1, -1), key)}</em>)
     }
-    rest = rest.slice(m.index + tok.length)
+    rest = rest.slice(m.index + consumed)
   }
   return nodes
 }

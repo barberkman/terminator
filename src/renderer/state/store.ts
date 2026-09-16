@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import {
   isProcessless,
   type AttachedItem,
+  type BrowserClearWhat,
   type Session,
   type Settings,
   type UsageSnapshot,
@@ -50,13 +51,23 @@ export interface NewPrefill {
  */
 export type EditSurface = 'pane' | 'sidebar'
 
-export interface ConfirmState {
-  kind: 'close' | 'remove' | 'worktree'
-  id: string
-  name: string
-  /** For a worktree prompt reached via close/remove: also remove the session after. */
-  removeAfter?: boolean
-}
+export type ConfirmState =
+  | {
+      kind: 'close' | 'remove' | 'worktree'
+      id: string
+      name: string
+      /** For a worktree prompt reached via close/remove: also remove the session after. */
+      removeAfter?: boolean
+    }
+  | {
+      /**
+       * Dropping the in-app browser's stored data — the one prompt here that isn't
+       * about a session. It earns a confirm because it throws away the login the
+       * browser pane exists to keep; clearing the cache alone doesn't, and doesn't ask.
+       */
+      kind: 'browserClear'
+      what: Exclude<BrowserClearWhat, 'cache'>
+    }
 
 /**
  * A prompt typed into the conversation view's composer and handed to the pty,
@@ -353,7 +364,12 @@ export const useStore = create<StoreState>((set, get) => ({
         pendings,
         attachments,
         focused: Math.min(st.focused, Math.max(0, panes.length - 1)),
-        confirm: st.confirm?.id === id ? null : st.confirm,
+        // A prompt about the session that just went away has nothing left to ask.
+        // The browser-clear prompt isn't about a session, so it survives.
+        confirm:
+          st.confirm && st.confirm.kind !== 'browserClear' && st.confirm.id === id
+            ? null
+            : st.confirm,
         contextMenu:
           st.contextMenu?.target.kind === 'sessions' && st.contextMenu.target.ids.includes(id)
             ? null

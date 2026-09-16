@@ -296,8 +296,12 @@ browser you picked, so a link from Claude no longer needs selecting, copying and
   re-split on its spaces. **Browse…** picks it from disk. With the list empty, links open in your
   OS default browser.
 - **More than one** — mark one as **Default** for a plain click, and **right-click any link** for
-  the rest: every configured browser, the system default, and Copy link. That's the way to open
-  something in a normal window when your default is incognito, without a trip through Settings.
+  the rest: the in-app browser, every configured browser, the system default, and Copy link.
+  That's the way to open something in a normal window when your default is incognito, without a
+  trip through Settings.
+- **Or don't leave at all** — the first row in that list is the **in-app browser**, which opens
+  the link in a pane instead of handing it to a program. Make it the Default and every clicked
+  link stays in the app. See **In-app browser** below.
 - **Before you click** — hovering shows the full URL and which browser will open it. Worth reading
   when the link came from output you don't control.
 - **Selecting still works** — a click only opens a link if it *was* a click: no drag between press
@@ -308,6 +312,10 @@ browser you picked, so a link from Claude no longer needs selecting, copying and
   process before anything launches, and reaches the browser as a single argument, so terminal
   output can't open a `file:`, reach a custom scheme handler, or smuggle in flags of its own.
   Programs that emit real OSC 8 hyperlinks go through the same check.
+- **In a conversation too** — a link in Claude's answer, read in the conversation view, opens the
+  same way a link in the terminal does: same check, same chosen browser, same right-click menu.
+  Bare URLs in the text are links there as well, so the same URL doesn't behave one way in a pane
+  and another way in that pane's own conversation.
 
 **File paths** in output (`src/app.ts`, `src/app.ts:42`) are links too, and open in an editor
 rather than a browser — with `:42` putting the cursor on that line. Only paths that actually
@@ -333,6 +341,38 @@ TERMINAL OUTPUT**.
   anything launches, against that session's own directory, and reaches the editor as a single
   argument. So output can't talk the app into opening something the session couldn't already
   reach.
+
+## In-app browser
+
+A pane that shows a web page, for when leaving the app is the annoying part — a diagram Claude
+generated, say, which lives behind a claude.ai login and so can't just be opened anywhere.
+
+- **How one opens** — click a link with the in-app browser set as your Default, or right-click
+  any link and pick it. The pane opens in the project the link came from, and that project reuses
+  the one browser session, the way Build and Run reuse a project's one terminal — so a second
+  link replaces the page rather than filling the grid with near-identical tabs.
+- **It stays signed in** — the browser keeps its own cookies and site data, in its own storage
+  apart from anything the app itself stores. Sign in to Claude once and you're still signed in
+  after a restart. Closing the pane doesn't sign you out; only Settings does.
+- **Clearing it** — Settings → **IN-APP BROWSER**. *Clear cache* keeps you signed in and is the
+  one to reach for when a page is stale; *Sign out of everything* drops the cookies; *Clear
+  everything* drops the lot and puts it back to how it was before you first opened a page. The
+  collapsed section shows how much is cached.
+- **Signing in with Google may not work.** Google refuses OAuth to anything it can tell is an
+  embedded browser, and it tells by the user agent. The browser reports a plain Chrome one — the
+  Electron and app tokens taken out of the string Electron already builds — which is usually
+  enough, and Settings → **USER AGENT** overrides it if a site still turns you away. It is not
+  guaranteed, and it's against Google's policy for embedded browsers, so it can stop working.
+  Claude's email login always works, and every browser pane has an **Open in your browser** button
+  for when the answer is just to leave.
+- **The chrome** — back, forward, reload/stop, an address bar you can type into, copy link, and
+  open in your browser. The page's title sits along the bottom.
+- **Still only http and https**, and the check is the same one a clicked link passes.
+  Navigations and redirects are re-checked in the main process, and a page that tries to leave
+  for anything else simply doesn't go. The page is refused every permission it asks for, a
+  download asks you where to put it, and popups — which is what a Google sign-in is — are
+  allowed but pinned to the same storage, so the cookie they set is the one the pane reads.
+  A pane that didn't ask for that storage isn't allowed to open at all.
 
 ## Keyboard & mouse
 
@@ -408,7 +448,10 @@ set to — and which ones you left open is remembered:
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.
 - `links.browsers` (each `{ id, name, command, args }`), `links.defaultBrowserId`,
   `links.enabled`, `links.openFilePaths`, `links.editor` (`{ command, args }`) — see **Links**
-  above.
+  above. `defaultBrowserId` also takes the reserved value `in-app`, which is the in-app browser;
+  it is not in `browsers`, having no program to store.
+- `browser.userAgent` — what the in-app browser calls itself. Empty (the default) derives a
+  Chrome-like one from Electron's own. See **In-app browser** above.
 
 ## Themes
 
