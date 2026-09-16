@@ -105,6 +105,7 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
   const [src, setSrc] = useState(session.url ?? '')
   const zoom = useStore((s) => (s.settings?.fontSize ?? UI_BASE_FONT_SIZE) / UI_BASE_FONT_SIZE)
   const pushToast = useStore((s) => s.pushToast)
+  const focusedHere = useStore((s) => s.panes[s.focused] === session.id)
 
   const [ready, setReady] = useState(false)
   const [current, setCurrent] = useState(session.url ?? '')
@@ -230,6 +231,44 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
     }
   }, [zoom, ready])
 
+  // The other half of F5. main/browser.ts catches it when the page has focus —
+  // the key never reaches this renderer then — and this catches it when the pane's
+  // own chrome has it: the address bar, or a pane you have only just opened and
+  // not yet clicked into.
+  //
+  // Bound only while this pane is the focused one, so F5 still reaches a program
+  // running in a terminal, and two open browser panes can't both answer one press.
+  useEffect(() => {
+    if (!focusedHere) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F5') return
+      const st = useStore.getState()
+      // Same list the other global keys check: don't act underneath a modal.
+      if (
+        st.showNew ||
+        st.showSettings ||
+        st.showNotes ||
+        st.confirm ||
+        st.themeEditorFor ||
+        st.branchFor ||
+        st.relaunchOffer ||
+        st.contextMenu
+      ) {
+        return
+      }
+      const wv = ref.current
+      if (!wv || !ready) return
+      e.preventDefault()
+      try {
+        wv.reload()
+      } catch {
+        // Guest torn down between the press and here.
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focusedHere, ready])
+
   const go = (text: string) => {
     const url = typedUrl(text)
     if (!url) {
@@ -278,7 +317,7 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
         />
         <ChromeButton
           icon={loading ? 'close' : 'restart'}
-          label={loading ? 'Stop' : 'Reload'}
+          label={loading ? 'Stop' : 'Reload (F5)'}
           disabled={!has}
           onClick={act((w) => (loading ? w.stop() : w.reload()))}
         />

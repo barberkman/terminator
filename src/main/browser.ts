@@ -149,6 +149,20 @@ function guard(contents: WebContents): void {
   // to here, and it would arrive with prefs main never saw.
   contents.on('will-attach-webview', (e) => e.preventDefault())
   contents.setUserAgent(browserUserAgent())
+
+  // F5 reloads the page. It has to be caught here, on the guest, because that is
+  // where the key goes: a guest is its own frame tree, so while the page has focus
+  // the renderer never sees a keydown at all and a listener there would look
+  // broken exactly when you'd reach for it. BrowserPaneBody catches the other
+  // half — F5 with the pane's own chrome focused, which main never sees.
+  //
+  // F5 rather than Ctrl+R because Electron's default menu already owns Ctrl+R and
+  // reloads the whole app window with it.
+  contents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown' || input.key !== 'F5') return
+    e.preventDefault()
+    contents.reload()
+  })
   // A popup's contents is type 'window', not 'webview'. It is on our partition, so
   // the session test above catches it — but only if the session is assigned by the
   // time that event fires, and this doesn't depend on that.

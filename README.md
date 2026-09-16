@@ -372,7 +372,9 @@ generated, say, which lives behind a claude.ai login and so can't just be opened
   Claude's email login always works, and every browser pane has an **Open in your browser** button
   for when the answer is just to leave.
 - **The chrome** — back, forward, reload/stop, an address bar you can type into, copy link, and
-  open in your browser. The page's title sits along the bottom.
+  open in your browser. The page's title sits along the bottom. **F5** reloads, whether the focus
+  is in the page or in the address bar. (Not Ctrl+R: the app's own menu already spends that on
+  reloading the whole window.)
 - **Still only http and https**, and the check is the same one a clicked link passes.
   Navigations and redirects are re-checked in the main process, and a page that tries to leave
   for anything else simply doesn't go. The page is refused every permission it asks for, a
@@ -400,6 +402,8 @@ In a terminal pane:
 - **Drop a file** on a pane to hand it to that session.
 - **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
   still reaches the program in the pane, untouched.)
+
+In a browser pane: **F5** reloads the page, from the page itself or from the pane's chrome.
 
 In the sidebar: **right-click** a session row, a collapsed-rail tab or a project header for its
 menu (see **Session menus** above); arrows and Enter move and pick, **Esc** closes one level.
