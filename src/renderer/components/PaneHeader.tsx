@@ -6,7 +6,7 @@ import { useStore } from '../state/store'
 import * as registry from '../term/registry'
 
 /**
- * The header's icon buttons (lock, transcript, branch, folder, git, power).
+ * The header's icon buttons (lock, transcript, folder, git, power).
  *
  * The border is three longhands rather than the `border` shorthand on purpose.
  * Palette tokens are `var()` references, so a `border: 1px solid var(…)` shorthand
@@ -172,7 +172,6 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
   const editing = useStore((s) => s.editingId === session.id)
   const startEdit = useStore((s) => s.startEdit)
   const setConfirm = useStore((s) => s.setConfirm)
-  const setBranchFor = useStore((s) => s.setBranchFor)
   const openSession = useStore((s) => s.openSession)
   const showTranscript = useStore((s) => !!s.transcripts[session.id])
   const toggleTranscript = useStore((s) => s.toggleTranscript)
@@ -392,15 +391,6 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
             )}
           >
             <Icon name={showTranscript ? 'terminal' : 'note'} size={15} />
-          </button>
-        )}
-        {isClaude && (
-          <button
-            onClick={() => setBranchFor(session.id)}
-            title="Branch this conversation from an earlier prompt"
-            style={iconBtn()}
-          >
-            <Icon name="branch" size={15} />
           </button>
         )}
         <button onClick={() => void window.terminator.openInFolder(session.id)} title="Open folder in file manager" style={iconBtn()}>
