@@ -17,8 +17,18 @@ export interface PtyExit {
 
 // ---- Sessions --------------------------------------------------------------
 
-export type SessionKind = 'claude' | 'shell' | 'editor'
+export type SessionKind = 'claude' | 'shell' | 'editor' | 'browser'
 export type SessionMode = 'normal' | 'readonly'
+
+/**
+ * Kinds with no process of their own. An editor pane renders the filesystem and a
+ * browser pane renders a page; neither has anything to start, stop or relaunch. Every
+ * place that offers those verbs — or decides a restored session came back "not
+ * running" — asks here rather than growing its own copy of the list.
+ */
+export function isProcessless(kind: SessionKind): boolean {
+  return kind === 'editor' || kind === 'browser'
+}
 
 /** Unified status. Claude uses all five; plain shells use busy(=running)/idle/closed. */
 export type SessionStatus = 'busy' | 'waiting' | 'idle' | 'error' | 'closed'
@@ -94,6 +104,12 @@ export interface Session {
   branch: string
   /** Set when the app created a git worktree for this session. */
   worktreePath?: string
+  /**
+   * The page a `browser` session is showing. Persisted, so a restart reopens where
+   * you were rather than on a blank pane — the browser equivalent of a terminal
+   * coming back with its scrollback.
+   */
+  url?: string
   status: SessionStatus
   /** Human-readable current activity, e.g. "waiting for input", "running tests". */
   activity: string
@@ -128,6 +144,8 @@ export interface CreateSessionInput {
   branch?: string
   /** Spawn a transient shell session that runs the configured build/run command. */
   task?: 'build' | 'run'
+  /** First page for a `browser` session. Ignored by every other kind. */
+  url?: string
 }
 
 /** One prompt the user typed, read out of a Claude session's transcript. */
@@ -320,6 +338,46 @@ export interface LinkSettings {
   editor: EditorOption
 }
 
+/**
+ * The reserved browser id meaning "don't launch anything — show it in an in-app
+ * browser pane". It deliberately isn't a `BrowserOption`: there is no executable to
+ * store, and the open happens in the renderer (mounting a pane) rather than in main.
+ * `openLink` refuses it outright for that reason — reaching main with this id means
+ * the renderer took the wrong fork, and falling back to the OS browser would hide it.
+ */
+export const IN_APP_BROWSER_ID = 'in-app'
+
+/** What to call it wherever a browser is named — tooltip, menu, Settings row. */
+export const IN_APP_BROWSER_NAME = 'this app'
+
+/**
+ * The Electron session partition the in-app browser runs on. Persistent, so a Claude
+ * login survives a restart — which is the whole point of having one — and separate
+ * from the app's own session, so a page can never reach the app's storage. It lives
+ * here rather than in main because the renderer needs the same string for the
+ * `<webview partition>` attribute and cannot import from `src/main`.
+ */
+export const BROWSER_PARTITION = 'persist:browser'
+
+/**
+ * Which of the in-app browser's stored data to drop. Three rather than one because
+ * they answer different questions: a stale page is `cache` and costs you nothing,
+ * while signing out is `cookies` and costs you the login this feature exists to keep.
+ */
+export type BrowserClearWhat = 'cache' | 'cookies' | 'all'
+
+/** The in-app browser. Its data lives in the partition; this is the one knob. */
+export interface BrowserSettings {
+  /**
+   * User agent for the in-app browser. Empty means a Chrome-like string derived from
+   * Electron's own, with the `Electron/…` and app tokens stripped out. That stripping
+   * is the point: Google refuses OAuth to anything it can identify as an embedded
+   * browser, and those tokens are how it identifies one. Set it by hand if a site
+   * still turns you away.
+   */
+  userAgent: string
+}
+
 /** Nothing opens silently: either it launched, or there's a reason to show. */
 export type OpenLinkResult = { ok: true; browser: string } | { ok: false; reason: string }
 
@@ -424,6 +482,7 @@ export interface Settings {
   usageRefreshSeconds: number
   attachments: AttachmentSettings
   links: LinkSettings
+  browser: BrowserSettings
 }
 
 // ---- Notifications ---------------------------------------------------------
@@ -475,6 +534,8 @@ export interface TerminatorApi {
   startSession(id: string, cols?: number, rows?: number): Promise<void>
   removeSession(id: string): Promise<void>
   renameSession(id: string, name: string): Promise<void>
+  /** Remember the page a browser session is on, so a restart reopens it there. */
+  setSessionUrl(id: string, url: string): Promise<void>
   setMode(id: string, mode: SessionMode): Promise<void>
   /** End a session's process on purpose, keeping the session. Lands 'closed', never 'error'. */
   stopSession(id: string): Promise<void>
@@ -575,6 +636,12 @@ export interface TerminatorApi {
    * on screen is a suggestion, not permission to open anything.
    */
   openFileInEditor(input: OpenFileInput): Promise<OpenFileResult>
+
+  // the in-app browser's persistent session (Settings → IN-APP BROWSER)
+  /** Bytes currently held by the in-app browser's HTTP cache, for the section summary. */
+  browserCacheSize(): Promise<number>
+  /** Drop the in-app browser's stored data. See `BrowserClearWhat` for what each drops. */
+  clearBrowserData(what: BrowserClearWhat): Promise<void>
 
   // attachments
   /** Save the clipboard image to disk and reference it in the session. */

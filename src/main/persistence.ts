@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import type { Session } from '../shared/types'
+import { isProcessless, type Session } from '../shared/types'
 
 // Persist just the durable session metadata. Runtime fields (status, alive,
 // metrics, notified) are intentionally not stored — restored sessions come back
@@ -15,12 +15,20 @@ const KEYS = [
   'projectPath',
   'branch',
   'worktreePath',
+  'url',
   'everStarted',
   'createdAt',
   'parentId',
   'branchedFrom',
   'branchPoint',
 ] as const
+
+/** How a restored session describes itself before anything has started it. */
+function restoredActivity(kind: Session['kind']): string {
+  if (kind === 'editor') return 'editing'
+  if (kind === 'browser') return 'browsing'
+  return 'not running'
+}
 
 function file(): string {
   return join(app.getPath('userData'), 'sessions.json')
@@ -42,10 +50,11 @@ export function loadPersistedSessions(): Session[] {
         projectPath: p.projectPath ?? '',
         branch: p.branch ?? 'main',
         worktreePath: p.worktreePath,
-        // Editor sessions have no process — they're immediately usable on restore,
-        // so they come back idle rather than "closed / needs relaunch".
-        status: p.kind === 'editor' ? 'idle' : 'closed',
-        activity: p.kind === 'editor' ? 'editing' : 'not running',
+        url: p.url,
+        // Editor and browser sessions have no process — they're immediately usable
+        // on restore, so they come back idle rather than "closed / needs relaunch".
+        status: isProcessless(p.kind ?? 'shell') ? 'idle' : 'closed',
+        activity: restoredActivity(p.kind ?? 'shell'),
         notified: false,
         alive: false,
         everStarted: p.everStarted ?? true,

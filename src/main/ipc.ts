@@ -4,6 +4,7 @@ import { DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
 import type {
   AttachDeliver,
   AttachFileInput,
+  BrowserClearWhat,
   BranchResult,
   BranchSessionInput,
   ConversationSlice,
@@ -16,7 +17,8 @@ import type {
   TranscriptPrompt,
 } from '../shared/types'
 import { attachClipboardImage, attachFiles, openAttachment, revealAttachment } from './attachments'
-import { openInEditor, openLink, resolveOutputPath } from './links'
+import { applyBrowserUserAgent, browserCacheSize, clearBrowserData } from './browser'
+import { openInEditor, openLink, resolveOutputPath, webUrl } from './links'
 import * as ptyMgr from './pty-manager'
 import * as fsService from './fs-service'
 import * as state from './state'
@@ -80,6 +82,15 @@ export function registerIpc(getWin: () => BrowserWindow): void {
       state.updateSession(id, { name })
     },
   )
+  // Written on every navigation in a browser pane, so a restart reopens the page
+  // you were on. Validated here for the same reason a link is: the renderer is
+  // reporting where a page went, and a page chooses that for itself.
+  ipcMain.handle(Channels.sessionSetUrl, (_e, { id, url }: { id: string; url: string }) => {
+    const s = state.getSession(id)
+    if (!s || s.kind !== 'browser') return
+    const safe = webUrl(url)
+    if (safe) state.updateSession(id, { url: safe })
+  })
   ipcMain.handle(
     Channels.sessionSetMode,
     (_e, { id, mode }: { id: string; mode: SessionMode }) => {
@@ -242,6 +253,10 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   // folder inside openInEditor before anything is launched.
   ipcMain.handle(Channels.linkOpenFile, (_e, input: OpenFileInput) => openInEditor(input))
 
+  // ---- the in-app browser's stored data (Settings -> IN-APP BROWSER) ----
+  ipcMain.handle(Channels.browserCacheSize, () => browserCacheSize())
+  ipcMain.handle(Channels.browserClear, (_e, what: BrowserClearWhat) => clearBrowserData(what))
+
   // ---- filesystem (editor sessions) ----
   // Root is resolved here from the session id — never trusted from the renderer.
   const editorRoot = (sessionId: string): string | null => {
@@ -295,6 +310,9 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const next = saveSettings(patch)
     // Re-register the global hotkey in case it changed.
     applyGlobalShortcut(getWin)
+    // And push the user agent, in case that changed — pages already open keep the
+    // old one until they navigate, which is the same deal a real browser offers.
+    applyBrowserUserAgent()
     return next
   })
   ipcMain.handle(Channels.themesGet, () => loadCustomThemes())

@@ -30,6 +30,10 @@ export type IconName =
   | 'pencil'
   | 'restart'
   | 'send'
+  | 'globe'
+  | 'back'
+  | 'forward'
+  | 'external'
 
 export function Icon({ name, size = 15 }: { name: IconName; size?: number }): React.JSX.Element {
   const common = {
@@ -71,6 +75,36 @@ export function Icon({ name, size = 15 }: { name: IconName; size?: number }): Re
         <svg {...common}>
           <path d="M20 12a8 8 0 1 1-2.6-5.9" />
           <path d="M20 4v5h-5" />
+        </svg>
+      )
+    case 'globe':
+      return (
+        <svg {...common}>
+          <circle cx={12} cy={12} r={9} />
+          <path d="M3 12h18" />
+          <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z" />
+        </svg>
+      )
+    case 'back':
+      return (
+        <svg {...common}>
+          <path d="M19 12H5" />
+          <path d="M12 19l-7-7 7-7" />
+        </svg>
+      )
+    case 'forward':
+      return (
+        <svg {...common}>
+          <path d="M5 12h14" />
+          <path d="M12 5l7 7-7 7" />
+        </svg>
+      )
+    case 'external':
+      return (
+        <svg {...common}>
+          <path d="M14 4h6v6" />
+          <path d="M20 4l-9 9" />
+          <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
         </svg>
       )
     case 'check':

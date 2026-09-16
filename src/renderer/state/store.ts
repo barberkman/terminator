@@ -1,5 +1,11 @@
 import { create } from 'zustand'
-import type { AttachedItem, Session, Settings, UsageSnapshot } from '../../shared/types'
+import {
+  isProcessless,
+  type AttachedItem,
+  type Session,
+  type Settings,
+  type UsageSnapshot,
+} from '../../shared/types'
 import { type CustomTheme, setCustomThemes as publishThemes } from '../../shared/themes'
 import type { IconName } from '../icons'
 import * as editor from '../editor/registry'
@@ -533,12 +539,13 @@ export const useStore = create<StoreState>((set, get) => ({
 
 /**
  * Whether a session is one the startup prompt can bring back: it has a process
- * behind it (an editor session has none — it restores immediately usable), it
+ * behind it (editor and browser sessions have none — they restore immediately
+ * usable), it
  * isn't running, and it ran at least once, so starting it is a *re*-start. That
  * last pair is the same test the pane's own Relaunch overlay uses.
  */
 export function isRestorable(s: Session | undefined): boolean {
-  return !!s && s.kind !== 'editor' && !s.alive && s.everStarted
+  return !!s && !isProcessless(s.kind) && !s.alive && s.everStarted
 }
 
 /** Whether `id` sits anywhere under `ancestorId` in the branch tree. */

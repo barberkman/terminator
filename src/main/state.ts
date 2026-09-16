@@ -90,6 +90,7 @@ export function getSession(id: string): Session | undefined {
 function initialActivity(kind: CreateSessionInput['kind']): string {
   if (kind === 'shell') return 'idle'
   if (kind === 'editor') return 'editing'
+  if (kind === 'browser') return 'browsing'
   return 'ready'
 }
 
@@ -143,6 +144,7 @@ export function createSession(input: CreateSessionInput, branch?: BranchMeta): S
     projectPath,
     branch: input.worktree ? input.branch?.trim() || 'work' : 'main',
     worktreePath: undefined,
+    url: input.kind === 'browser' ? input.url : undefined,
     status: 'idle',
     activity: initialActivity(input.kind),
     notified: false,

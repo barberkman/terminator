@@ -194,8 +194,9 @@ function target(
 ): { kind: 'claude' | 'shell' } | { error: string } {
   const s = getSession(id)
   if (!s) return { error: 'that session is gone' }
-  if (s.kind === 'editor') {
-    return { error: 'an editor pane has no session to attach to — use a Claude or terminal pane' }
+  if (s.kind === 'editor' || s.kind === 'browser') {
+    const what = s.kind === 'editor' ? 'an editor pane' : 'a browser pane'
+    return { error: `${what} has no session to attach to — use a Claude or terminal pane` }
   }
   if (deliver === 'pty' && !s.alive) {
     return { error: `${s.name} isn't running — relaunch it first` }

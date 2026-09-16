@@ -18,34 +18,28 @@
 // its own argv element.
 
 import { spawn } from 'node:child_process'
+import { webUrl } from '../shared/url'
 import { statSync } from 'node:fs'
 import { isAbsolute, resolve, sep } from 'node:path'
 import { shell } from 'electron'
-import type { BrowserOption, OpenFileInput, OpenFileResult, OpenLinkResult } from '../shared/types'
+import {
+  IN_APP_BROWSER_ID,
+  type BrowserOption,
+  type OpenFileInput,
+  type OpenFileResult,
+  type OpenLinkResult,
+} from '../shared/types'
 import { loadSettings } from './settings'
 import { expandHome } from './pty-manager'
 import { getSession } from './state'
 
-/** Long enough for any real link, short enough that nothing silly gets launched. */
-const MAX_URL_LENGTH = 2048
-/** Same idea for a path-like token out of the scrollback. */
+/** Same idea as MAX_URL_LENGTH, for a path-like token out of the scrollback. */
 const MAX_PATH_LENGTH = 1024
 
-/**
- * The only URLs this app will open. Returns the normalised form to launch with,
- * or null — callers must treat null as "refuse", never as "pass it through".
- */
-export function webUrl(raw: string): string | null {
-  if (!raw || raw.length > MAX_URL_LENGTH) return null
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-  return url.toString()
-}
+// The rule itself moved to shared/url.ts once the in-app browser needed to run it
+// without going through this process. Re-exported here because this file's
+// guarantees are the ones written down, and its callers shouldn't have to care.
+export { webUrl } from '../shared/url'
 
 /**
  * Spawn detached, and wait just long enough to learn whether it started. Resolves
@@ -71,9 +65,16 @@ export function launchDetached(exe: string, args: string[]): Promise<string | nu
   })
 }
 
+/**
+ * `undefined` means "whatever the default is"; `''` means "no configured browser,
+ * whatever the default is" — which is what the right-click menu's *Open in system
+ * default* asks for, and it only works if the two are told apart before the falsy
+ * check. Anything else is a browser id, and an unknown one falls through to the OS
+ * handler rather than failing.
+ */
 function findBrowser(id: string | undefined): BrowserOption | undefined {
   const { links } = loadSettings()
-  const wanted = id || links.defaultBrowserId
+  const wanted = id === undefined ? links.defaultBrowserId : id
   if (!wanted) return undefined
   return links.browsers.find((b) => b.id === wanted)
 }
@@ -87,6 +88,15 @@ export async function openLink(raw: string, browserId?: string): Promise<OpenLin
   const url = webUrl(raw)
   if (!url) {
     return { ok: false, reason: 'only http and https links can be opened from terminal output' }
+  }
+
+  // The in-app browser is a pane, not a program. Opening one is the renderer's job
+  // and it never calls here for it, so arriving with that id means the renderer took
+  // the wrong fork — and falling through to `shell.openExternal` would bury that in
+  // a link that quietly opened in the wrong place.
+  const wanted = browserId === undefined ? loadSettings().links.defaultBrowserId : browserId
+  if (wanted === IN_APP_BROWSER_ID) {
+    return { ok: false, reason: 'the in-app browser opens in a pane, not through here' }
   }
 
   const browser = findBrowser(browserId)

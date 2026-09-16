@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron'
-import type { SessionMode, TaskCommand } from '../shared/types'
+import { isProcessless, type SessionMode, type TaskCommand } from '../shared/types'
 import { loadSettings } from './settings'
 import * as ptyMgr from './pty-manager'
 import {
@@ -24,10 +24,10 @@ export interface StartOpts {
 export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {}): void {
   const s = getSession(id)
   if (!s || s.alive) return
-  // Editor sessions have no process — they render an in-app file browser/editor,
-  // never a PTY. Return before any launch logic (otherwise a non-shell kind would
-  // fall through to the Claude branch below).
-  if (s.kind === 'editor') return
+  // Editor and browser sessions have no process — one renders an in-app file
+  // browser/editor, the other a web page. Return before any launch logic (otherwise
+  // a non-shell kind would fall through to the Claude branch below).
+  if (isProcessless(s.kind)) return
   const settings = loadSettings()
   const cwd = s.worktreePath || s.projectPath
   // A start from the sidebar has no pane to measure; lastSizeOf remembers the
@@ -152,10 +152,10 @@ export function stopSession(id: string): void {
   ptyMgr.killPty(id)
 }
 
-/** Restart a session's process. Starts it if it isn't running. Editors have none. */
+/** Restart a session's process. Starts it if it isn't running. Some kinds have none. */
 export function relaunchSession(win: BrowserWindow, id: string): void {
   const s = getSession(id)
-  if (!s || s.kind === 'editor') return
+  if (!s || isProcessless(s.kind)) return
   if (!s.alive) {
     resetTerminal(id)
     startSession(win, id, ptyMgr.lastSizeOf(id))

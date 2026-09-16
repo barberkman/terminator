@@ -1,4 +1,4 @@
-import type { AttachedItem, FolderChoice, Session, Settings } from '../shared/types'
+import { isProcessless, type AttachedItem, type FolderChoice, type Session, type Settings } from '../shared/types'
 import type { IconName } from './icons'
 import type { MenuNode } from './components/ContextMenu'
 import { TYPES, TYPE_MAP, type TypeKey } from './sessionTypes'
@@ -447,8 +447,9 @@ function folderSection(ctx: MenuCtx): MenuNode[] {
 function processSection(ctx: MenuCtx): MenuNode[] {
   if (ctx.sessions.length !== 1) return []
   const s = ctx.sessions[0]
-  // An editor pane has no process at all, so Start/Stop/Relaunch would be lies.
-  if (s.kind === 'editor') return []
+  // An editor or browser pane has no process at all, so Start/Stop/Relaunch
+  // would be lies.
+  if (isProcessless(s.kind)) return []
   // Never both: `alive` is the only truth here — a restored session comes back
   // everStarted: true but not running.
   if (!s.alive) {
