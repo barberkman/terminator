@@ -22,6 +22,30 @@ export interface WebviewTag extends HTMLElement {
   canGoBack(): boolean
   canGoForward(): boolean
   setZoomFactor(factor: number): void
+  /** Returns a request id; the answer arrives later on `found-in-page`. */
+  findInPage(text: string, options?: FindInPageOptions): number
+  stopFindInPage(action: 'clearSelection' | 'keepSelection' | 'activateSelection'): void
+  /** This guest's webContents id — how a pane recognises a key main forwarded to it. */
+  getWebContentsId(): number
+}
+
+export interface FindInPageOptions {
+  forward?: boolean
+  /**
+   * Electron's naming is the wrong way round from what it reads like: `true`
+   * *begins* a new find session and `false` continues the last one. So a new or
+   * edited query passes true, and stepping passes false.
+   */
+  findNext?: boolean
+  matchCase?: boolean
+}
+
+/** What the guest hands back on `found-in-page`. */
+export interface FoundInPageResult {
+  requestId: number
+  activeMatchOrdinal: number
+  matches: number
+  finalUpdate: boolean
 }
 
 declare global {

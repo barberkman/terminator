@@ -642,6 +642,15 @@ export interface TerminatorApi {
   browserCacheSize(): Promise<number>
   /** Drop the in-app browser's stored data. See `BrowserClearWhat` for what each drops. */
   clearBrowserData(what: BrowserClearWhat): Promise<void>
+  /**
+   * Ctrl/Cmd+F pressed inside an in-app browser page, reported with the guest's
+   * webContents id. Broadcast to the window rather than addressed to a pane,
+   * because main knows nothing about panes: each browser pane compares the id
+   * against its own <webview>. The other half of the key — pressed with the
+   * pane's own chrome focused — never reaches main at all and is bound in the
+   * component, exactly as F5 is.
+   */
+  onBrowserFind(cb: (guestId: number) => void): () => void
 
   // attachments
   /** Save the clipboard image to disk and reference it in the session. */

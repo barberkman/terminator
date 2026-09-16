@@ -51,6 +51,9 @@ export const Channels = {
   // the in-app browser's persistent session (Settings -> IN-APP BROWSER)
   browserCacheSize: 'browser:cacheSize',
   browserClear: 'browser:clear',
+  // main -> renderer: Ctrl/Cmd+F pressed inside a guest page. The payload is the
+  // guest's webContents id; the pane that owns that guest opens its find bar.
+  browserFind: 'browser:find',
 
   // filesystem (editor sessions)
   fsList: 'fs:list',

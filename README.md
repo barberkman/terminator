@@ -195,6 +195,16 @@ too — the session is driven from the same place it's read.
   *compacting* — with how long it has been at it. It's up from the moment you press Enter, before
   Claude has even acknowledged the prompt, because that gap is exactly when a quiet view looks
   broken.
+- **Find what you're looking for.** **Ctrl/Cmd+F** opens a find box: every match tinted, the one
+  you're on filled in, **Enter** and **Shift+Enter** to step through them, **Esc** to close.
+  Because this is a document and not a scrollback, the search reaches the first message however
+  many hours ago that was. It searches what you're *reading* — your prompts, Claude's prose, the
+  one-line summary of each tool call — and the working folded behind those lines isn't part of
+  the document. So rather than quietly miss it, the box counts it: *12 more in tool calls*, and
+  one click brings them in, turning Tools on and opening the rows that matched, output and all.
+  Close the find and they fold back the way you left them. The count keeps up while the session
+  writes, and jumping back to an old match drops tail-follow exactly as scrolling up does — so
+  **New messages** takes over rather than yanking you away from what you just found.
 - **Reply without leaving.** **Enter** sends, **Shift+Enter** starts a new line, and a multi-line
   message arrives as one prompt with its line breaks intact — it's typed into Claude's own input
   box, so nothing about the session is special-cased. Sending mid-turn is fine: Claude queues it,
@@ -374,7 +384,10 @@ generated, say, which lives behind a claude.ai login and so can't just be opened
 - **The chrome** — back, forward, reload/stop, an address bar you can type into, copy link, and
   open in your browser. The page's title sits along the bottom. **F5** reloads, whether the focus
   is in the page or in the address bar. (Not Ctrl+R: the app's own menu already spends that on
-  reloading the whole window.)
+  reloading the whole window.) **Ctrl/Cmd+F** finds in the page, and works from either side the
+  same way. The searching is Chromium's own, so the counter and the highlighting are the ones
+  every browser has already taught you — and a page that wanted Ctrl+F for a find of its own
+  doesn't get it, which is also what a real browser does.
 - **Still only http and https**, and the check is the same one a clicked link passes.
   Navigations and redirects are re-checked in the main process, and a page that tries to leave
   for anything else simply doesn't go. The page is refused every permission it asks for, a
@@ -402,8 +415,13 @@ In a terminal pane:
 - **Drop a file** on a pane to hand it to that session.
 - **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
   still reaches the program in the pane, untouched.)
+- **Ctrl/Cmd+F** in a conversation opens its find box. **Esc** then closes the box rather than
+  the view, so the way out is one more Esc. Everywhere else in a terminal pane Ctrl+F is left
+  alone and still reaches the program running in it — as it does in an editor pane, where it
+  opens the editor's own search.
 
-In a browser pane: **F5** reloads the page, from the page itself or from the pane's chrome.
+In a browser pane: **F5** reloads the page and **Ctrl/Cmd+F** finds in it, either one from the
+page itself or from the pane's chrome.
 
 In the sidebar: **right-click** a session row, a collapsed-rail tab or a project header for its
 menu (see **Session menus** above); arrows and Enter move and pick, **Esc** closes one level.
