@@ -134,6 +134,10 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
   // quick succession are two searches in flight, and without this the slower one
   // lands last and leaves a counter describing the query before the one you typed.
   const findReq = useRef(0)
+  // The text the guest's current find session was opened on. Asking Chromium to
+  // continue a session against text it never saw is meaningless, and a stale bar
+  // can ask: a navigation tears the session down underneath one.
+  const lastQuery = useRef('')
   // This pane's guest, so it can tell a key main forwarded *to it* from one meant
   // for the other browser pane.
   const guestId = useRef(0)
@@ -146,8 +150,14 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
    * the highlight it paints is not ours to theme. The counter that comes back is
    * the one every browser shows, which is the upside of the same bargain.
    *
-   * `fresh` starts a new find session; stepping continues the last one. Electron
-   * spells that `findNext`, which reads like the opposite of what it does.
+   * `fresh` opens a new find session — what a new or edited query wants; stepping
+   * continues the one already open. Electron spells the latter `findNext`, and its
+   * own docs get this backwards ("should be `true` for initial requests") one line
+   * above stating the default is `false` — which is what `findInPage(text)` with no
+   * options, the canonical first search, therefore passes. The default is the truth:
+   * `false` begins a session, `true` advances within it. Inverting these two makes
+   * every press of Next restart the search, which reads as a counter that will not
+   * climb past the second match.
    */
   const runFind = useCallback((text: string, fresh: boolean, forward = true) => {
     const wv = ref.current
@@ -158,12 +168,16 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
       } catch {
         // Guest torn down; nothing to clear.
       }
+      lastQuery.current = ''
       findReq.current = 0
       setFindHits(NO_HITS)
       return
     }
+    // Only a step against the text the session actually holds may continue it.
+    const carryOn = !fresh && text === lastQuery.current
     try {
-      findReq.current = wv.findInPage(text, { findNext: fresh, forward })
+      findReq.current = wv.findInPage(text, { findNext: carryOn, forward })
+      lastQuery.current = text
     } catch {
       // Guest not attached yet, or torn down between the keystroke and here.
     }
@@ -264,7 +278,14 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
       // Anything but the request we're waiting on is a straggler from a query
       // that has already been typed over.
       if (!r || r.requestId !== findReq.current) return
-      setFindHits({ index: r.activeMatchOrdinal, total: r.matches })
+      // One request reports several times as Chromium scopes a long page, and an
+      // early report can carry a count with no active match yet. Drawing that as
+      // 0/17 is a frame of "found nothing" at the moment something was found, so
+      // the ordinal holds its last real value and only a genuine zero clears it.
+      setFindHits((prev) => ({
+        index: r.matches ? r.activeMatchOrdinal || prev.index : 0,
+        total: r.matches,
+      }))
     }
     const onFail = (e: GuestEvent) => {
       // A dead image is not a dead page, and ERR_ABORTED is the navigation you

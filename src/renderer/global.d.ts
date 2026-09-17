@@ -32,9 +32,16 @@ export interface WebviewTag extends HTMLElement {
 export interface FindInPageOptions {
   forward?: boolean
   /**
-   * Electron's naming is the wrong way round from what it reads like: `true`
-   * *begins* a new find session and `false` continues the last one. So a new or
-   * edited query passes true, and stepping passes false.
+   * `false` (the default) *begins* a find session — mark everything, go to the
+   * first match; `true` continues the open one, advancing by `forward`. So a new
+   * or edited query passes false, and stepping passes true.
+   *
+   * Worth stating outright because Electron's own docs say the opposite —
+   * "should be `true` for initial requests, and `false` for follow-up requests" —
+   * one line above declaring the default `false`. Since the canonical first
+   * search is `findInPage(text)` with no options at all, that default *is* what
+   * an initial request sends, and the prose is simply wrong. Believing it makes
+   * every step restart the search.
    */
   findNext?: boolean
   matchCase?: boolean
