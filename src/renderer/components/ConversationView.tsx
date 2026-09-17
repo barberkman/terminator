@@ -6,7 +6,9 @@ import { CodeBlock, renderMarkdown } from '../markdown'
 import { quotePaths } from '../../shared/prompt-path'
 import * as registry from '../term/registry'
 import { useStore, type PendingPrompt } from '../state/store'
+import { useDomFind, useFindKeys } from '../find'
 import { Composer, blockedReason } from './Composer'
+import { FindBar } from './FindBar'
 
 /**
  * How often the view asks for what's been appended. Claude writes a transcript
@@ -152,22 +154,28 @@ function CopyButton({
 /** "…and 4200 more characters" — said out loud rather than silently swallowed. */
 function ClippedNote({ shown }: { shown: number }): React.JSX.Element {
   return (
-    <div style={{ fontSize: 10.5, color: C.faint2, marginTop: 4 }}>
+    <div data-find-skip style={{ fontSize: 10.5, color: C.faint2, marginTop: 4 }}>
       Cut after {shown.toLocaleString()} characters — read the rest in the terminal or the file.
     </div>
   )
 }
 
-function ToolOutputBlock({ output }: { output: ToolOutput }): React.JSX.Element {
+function ToolOutputBlock({ output, revealed }: { output: ToolOutput; revealed?: boolean }): React.JSX.Element {
   const [full, setFull] = useState(false)
   const lines = useMemo(() => output.text.split('\n'), [output.text])
   const long = lines.length > OUTPUT_PREVIEW_LINES
-  const shown = full || !long ? output.text : lines.slice(0, OUTPUT_PREVIEW_LINES).join('\n')
+  // `revealed` is the find's override, not a replacement for `full`: the match it
+  // is showing you may be on line 200, and when the find closes the block goes
+  // back to however you had left it.
+  const shown = full || revealed || !long ? output.text : lines.slice(0, OUTPUT_PREVIEW_LINES).join('\n')
 
   return (
     <div style={{ marginTop: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-        <span style={{ fontSize: 9.5, letterSpacing: 0.6, fontWeight: 700, color: output.isError ? C.danger : C.dim }}>
+        <span
+          data-find-skip
+          style={{ fontSize: 9.5, letterSpacing: 0.6, fontWeight: 700, color: output.isError ? C.danger : C.dim }}
+        >
           {output.isError ? 'ERROR' : 'OUTPUT'}
         </span>
         {long && (
@@ -218,11 +226,15 @@ function ToolOutputBlock({ output }: { output: ToolOutput }): React.JSX.Element 
 const ToolRow = memo(function ToolRow({
   item,
   output,
+  revealed,
 }: {
   item: Extract<ConversationItem, { kind: 'tool' }>
   output?: ToolOutput
+  /** The find has a match in here and is holding it open. */
+  revealed?: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const shown = open || revealed
   return (
     <div style={{ margin: '3px 0' }}>
       <div
@@ -243,7 +255,7 @@ const ToolRow = memo(function ToolRow({
             display: 'flex',
             flex: 'none',
             color: C.faint2,
-            transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transform: shown ? 'rotate(0deg)' : 'rotate(-90deg)',
             transition: 'transform 0.12s ease',
           }}
         >
@@ -273,11 +285,17 @@ const ToolRow = memo(function ToolRow({
           {item.summary}
         </span>
       </div>
-      {open && (
-        <div style={{ padding: '4px 8px 10px 28px' }}>
+      {shown && (
+        // The working, not the reading. Excluded from the find by default so that
+        // what a search covers doesn't depend on which rows you happen to have
+        // open — and so the matches in here can be counted separately and offered.
+        <div data-find-aside style={{ padding: '4px 8px 10px 28px' }}>
           {item.fields.map((f, i) => (
             <div key={`${item.id}-f${i}`} style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 9.5, letterSpacing: 0.6, fontWeight: 700, color: C.dim, marginBottom: 4 }}>
+              <div
+                data-find-skip
+                style={{ fontSize: 9.5, letterSpacing: 0.6, fontWeight: 700, color: C.dim, marginBottom: 4 }}
+              >
                 {f.label.toUpperCase()}
               </div>
               {f.code ? (
@@ -289,7 +307,7 @@ const ToolRow = memo(function ToolRow({
             </div>
           ))}
           {output ? (
-            <ToolOutputBlock output={output} />
+            <ToolOutputBlock output={output} revealed={revealed} />
           ) : (
             <div style={{ fontSize: 11.5, color: C.faint2, marginTop: 6 }}>Still running…</div>
           )}
@@ -302,10 +320,14 @@ const ToolRow = memo(function ToolRow({
 /** Claude's reasoning, folded away — there when you want it, silent when you don't. */
 const ThinkingRow = memo(function ThinkingRow({
   item,
+  revealed,
 }: {
   item: Extract<ConversationItem, { kind: 'thinking' }>
+  /** The find has a match in here and is holding it open. */
+  revealed?: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const shown = open || revealed
   return (
     <div style={{ margin: '3px 0' }}>
       <div
@@ -326,7 +348,7 @@ const ThinkingRow = memo(function ThinkingRow({
             display: 'flex',
             flex: 'none',
             color: C.faint2,
-            transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transform: shown ? 'rotate(0deg)' : 'rotate(-90deg)',
             transition: 'transform 0.12s ease',
           }}
         >
@@ -335,13 +357,15 @@ const ThinkingRow = memo(function ThinkingRow({
         <span style={{ display: 'flex', flex: 'none', color: C.faint2 }}>
           <Icon name="sparkle" size={12} />
         </span>
-        <span style={{ fontSize: 11.5, fontStyle: 'italic' }}>Thinking</span>
+        <span data-find-skip style={{ fontSize: 11.5, fontStyle: 'italic' }}>
+          Thinking
+        </span>
         <span style={{ marginLeft: 'auto' }}>
           <CopyButton text={item.text} />
         </span>
       </div>
-      {open && (
-        <div className="md-body" style={{ padding: '2px 8px 8px 28px', color: C.body }}>
+      {shown && (
+        <div data-find-aside className="md-body" style={{ padding: '2px 8px 8px 28px', color: C.body }}>
           {renderMarkdown(item.text)}
         </div>
       )}
@@ -367,8 +391,12 @@ const PromptBlock = memo(function PromptBlock({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ fontSize: 9.5, letterSpacing: 0.7, fontWeight: 700, color: C.accentSoft }}>YOU</span>
-        <span style={{ fontSize: 10.5, color: C.faint2 }}>{clock(item.ts)}</span>
+        <span data-find-skip style={{ fontSize: 9.5, letterSpacing: 0.7, fontWeight: 700, color: C.accentSoft }}>
+          YOU
+        </span>
+        <span data-find-skip style={{ fontSize: 10.5, color: C.faint2 }}>
+          {clock(item.ts)}
+        </span>
         <span style={{ marginLeft: 'auto' }}>
           <CopyButton text={item.text} label="Copy prompt" />
         </span>
@@ -419,8 +447,10 @@ const PendingBlock = memo(function PendingBlock({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ fontSize: 9.5, letterSpacing: 0.7, fontWeight: 700, color: C.accentSoft }}>YOU</span>
-        <span style={{ fontSize: 10.5, color: C.faint2, fontStyle: 'italic' }}>
+        <span data-find-skip style={{ fontSize: 9.5, letterSpacing: 0.7, fontWeight: 700, color: C.accentSoft }}>
+          YOU
+        </span>
+        <span data-find-skip style={{ fontSize: 10.5, color: C.faint2, fontStyle: 'italic' }}>
           {unsure ? 'not seen yet' : busy ? 'queued' : 'sending…'}
         </span>
       </div>
@@ -437,7 +467,10 @@ const PendingBlock = memo(function PendingBlock({
         {item.text}
       </div>
       {unsure && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 10.5, color: C.muted }}>
+        <div
+          data-find-skip
+          style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 10.5, color: C.muted }}
+        >
           <span style={{ flex: 1, minWidth: 0 }}>
             This hasn’t turned up in the conversation — check the terminal.
           </span>
@@ -524,6 +557,74 @@ function replyText(turn: Turn): string {
  */
 function visibleBody(turn: Turn, showTools: boolean): ConversationItem[] {
   return showTools ? turn.body : turn.body.filter((i) => i.kind !== 'tool')
+}
+
+/** Matches the find can't reach, and the items holding them. */
+interface AsideMatches {
+  count: number
+  ids: ReadonlySet<string>
+}
+
+const NO_IDS: ReadonlySet<string> = new Set()
+const NO_ASIDES: AsideMatches = { count: 0, ids: NO_IDS }
+
+/**
+ * The text of an item that the find leaves out — the working.
+ *
+ * This is the exact complement of what the DOM walk skips: the bodies marked
+ * `data-find-aside`, plus — when the Tools toggle is off — the tool rows that
+ * aren't rendered at all, summary line and all. Being a complement is the point.
+ * A match is either on screen or counted here, never both, so "3/8, +12 more"
+ * adds up rather than double-counting the row you happen to have open.
+ *
+ * The output is taken in full, not at the 14-line preview the block shows: a
+ * match on line 200 is a real match, and the reveal expands the block to it.
+ */
+function asideText(
+  item: ConversationItem,
+  outputs: Record<string, ToolOutput>,
+  showTools: boolean,
+): string {
+  if (item.kind === 'thinking') return item.text
+  if (item.kind !== 'tool') return ''
+  const parts: string[] = []
+  if (!showTools) parts.push(item.name, item.summary)
+  for (const f of item.fields) parts.push(f.text)
+  const out = outputs[item.toolId]
+  if (out) parts.push(out.text)
+  return parts.join('\n')
+}
+
+/** How many times `needle` occurs in `hay`, without building an array of matches. */
+function occurrences(hay: string, needle: string): number {
+  let n = 0
+  for (let at = hay.indexOf(needle); at !== -1; at = hay.indexOf(needle, at + needle.length)) n++
+  return n
+}
+
+/**
+ * What a search would find in the working, and which rows hold it. The count is
+ * what the find bar offers; the ids are what it opens when the offer is taken.
+ */
+function asideMatches(
+  items: ConversationItem[],
+  outputs: Record<string, ToolOutput>,
+  showTools: boolean,
+  query: string,
+): AsideMatches {
+  const needle = query.toLowerCase()
+  if (!needle) return NO_ASIDES
+  let count = 0
+  const ids = new Set<string>()
+  for (const item of items) {
+    const text = asideText(item, outputs, showTools)
+    if (!text) continue
+    const n = occurrences(text.toLowerCase(), needle)
+    if (!n) continue
+    count += n
+    ids.add(item.id)
+  }
+  return count ? { count, ids } : NO_ASIDES
 }
 
 /**
@@ -614,6 +715,10 @@ function WorkingRow({
   const dot = status === 'waiting' ? 'waiting' : 'busy'
   return (
     <div
+      // The view narrating itself — "using Bash", and a clock that rewrites every
+      // second. Searching a conversation for `bash` should find the command, not
+      // this line describing it.
+      data-find-skip
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -665,6 +770,7 @@ function TurnBlock({
   showTools,
   onShowWorking,
   working,
+  revealed,
 }: {
   turn: Turn
   outputs: Record<string, ToolOutput>
@@ -672,6 +778,8 @@ function TurnBlock({
   onShowWorking: () => void
   /** This is the newest turn and the session is still going — WorkingRow speaks for it. */
   working: boolean
+  /** Items the find is holding open because a match is inside them. */
+  revealed: ReadonlySet<string>
 }): React.JSX.Element {
   const reply = replyText(turn)
   const body = visibleBody(turn, showTools)
@@ -681,7 +789,9 @@ function TurnBlock({
       {turn.prompt && <PromptBlock item={turn.prompt} />}
       {!!reply && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 4px 2px' }}>
-          <span style={{ fontSize: 9.5, letterSpacing: 0.7, fontWeight: 700, color: C.dim }}>CLAUDE</span>
+          <span data-find-skip style={{ fontSize: 9.5, letterSpacing: 0.7, fontWeight: 700, color: C.dim }}>
+            CLAUDE
+          </span>
           <span style={{ marginLeft: 'auto' }}>
             <CopyButton text={reply} label="Copy reply" title="Copy everything Claude wrote in this turn" />
           </span>
@@ -689,8 +799,17 @@ function TurnBlock({
       )}
       {body.map((item) => {
         if (item.kind === 'text') return <MessageText key={item.id} item={item} />
-        if (item.kind === 'thinking') return <ThinkingRow key={item.id} item={item} />
-        if (item.kind === 'tool') return <ToolRow key={item.id} item={item} output={outputs[item.toolId]} />
+        if (item.kind === 'thinking')
+          return <ThinkingRow key={item.id} item={item} revealed={revealed.has(item.id)} />
+        if (item.kind === 'tool')
+          return (
+            <ToolRow
+              key={item.id}
+              item={item}
+              output={outputs[item.toolId]}
+              revealed={revealed.has(item.id)}
+            />
+          )
         return null
       })}
       {!working && !body.length && hidden > 0 && (
@@ -759,6 +878,19 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
   // `?? NO_PENDING` outside the selector: returning a fresh array from inside one
   // would loop useSyncExternalStore.
   const pendings = useStore((s) => s.pendings[sessionId]) ?? NO_PENDING
+
+  // The find bar. Open-ness lives in the store because a window has one find bar,
+  // so opening one in another pane closes this. The query is local: Esc unmounts
+  // this view, and a search you have finished with should not outlive it.
+  const focusedHere = useStore((s) => s.panes[s.focused] === sessionId)
+  const findOpen = useStore((s) => s.findFor === sessionId)
+  const setFindFor = useStore((s) => s.setFindFor)
+  const [findQuery, setFindQuery] = useState('')
+  // Whether the working has been brought into the search. Off until asked for:
+  // opening every matching tool call the moment you typed would relayout the
+  // document under someone who is reading it.
+  const [includeAsides, setIncludeAsides] = useState(false)
+  const findInput = useRef<HTMLInputElement>(null)
 
   const pull = useCallback(async () => {
     if (busy.current) return
@@ -966,6 +1098,53 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
     return () => clearInterval(timer)
   }, [pendings.length, sessionId])
 
+  // Passing an empty query while the bar is shut is what releases the highlights,
+  // so there's no separate teardown to forget.
+  const find = useDomFind(scroller, findOpen ? findQuery : '', includeAsides)
+
+  const asides = useMemo(
+    () => (findOpen && findQuery ? asideMatches(items, outputs, showTools, findQuery) : NO_ASIDES),
+    [findOpen, findQuery, items, outputs, showTools],
+  )
+  // Rows the find is holding open. Empty until the offer is taken — and a stable
+  // reference when it is empty, because ToolRow and ThinkingRow are memoized and a
+  // fresh Set per render would defeat that.
+  const revealed = includeAsides ? asides.ids : NO_IDS
+
+  const openFind = useCallback(() => {
+    setFindFor(sessionId)
+    // After the bar exists. Focusing an input that hasn't rendered yet is the
+    // quiet way for a shortcut to look like it did nothing.
+    requestAnimationFrame(() => {
+      findInput.current?.focus()
+      findInput.current?.select()
+    })
+  }, [sessionId, setFindFor])
+
+  const closeFind = useCallback(() => {
+    setFindFor(null)
+    setFindQuery('')
+    setIncludeAsides(false)
+    // Focus has to land back *inside* the view. App.tsx finds the conversation to
+    // leave by walking up from the key event's target, so with focus left on
+    // <body> the next Esc would have nothing to walk from and the way back to the
+    // terminal would quietly stop working.
+    composer.current?.focus()
+  }, [setFindFor])
+
+  useFindKeys(focusedHere, openFind)
+
+  // A bar left open when the view goes away — the Terminal button, the pane being
+  // given to another session — shouldn't be sitting there waiting when you come
+  // back. The engine's own cleanup takes the tint with it; this takes the bar.
+  // Guarded, because by then the one open bar may belong to another pane.
+  useEffect(() => {
+    return () => {
+      const st = useStore.getState()
+      if (st.findFor === sessionId) st.setFindFor(null)
+    }
+  }, [sessionId])
+
   const turns = useMemo(() => toTurns(items), [items])
   // A turn with nothing left to draw is dropped rather than rendered as an empty
   // block — which is what a resumed session's leading tool run, or a turn that
@@ -1127,6 +1306,7 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
                 // Keyed off the same turn WorkingRow reports for, so the two can
                 // never both claim the hidden count.
                 working={running && turn.key === liveTurn?.key}
+                revealed={revealed}
               />
             ))}
           </div>
@@ -1189,6 +1369,50 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
           </span>
           New messages
         </button>
+      )}
+
+      {findOpen && (
+        <FindBar
+          query={findQuery}
+          onQuery={setFindQuery}
+          hits={find.hits}
+          onNext={() => find.go(1)}
+          onPrev={() => find.go(-1)}
+          onClose={closeFind}
+          inputRef={findInput}
+          hint={
+            !includeAsides && asides.count > 0 ? (
+              <button
+                onClick={() => {
+                  setIncludeAsides(true)
+                  // The rows can't be read while the toggle is hiding them
+                  // outright, so taking the offer turns it on as well.
+                  if (!showTools) toggleTools()
+                }}
+                title="Search the tool calls too, and open the ones that match"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '3px 6px',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: 'transparent',
+                  color: C.accentSoft,
+                  font: 'inherit',
+                  fontSize: 10.5,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ letterSpacing: 1.5 }}>···</span>
+                <span>
+                  {asides.count} more in tool calls
+                </span>
+              </button>
+            ) : undefined
+          }
+        />
       )}
       </div>
 

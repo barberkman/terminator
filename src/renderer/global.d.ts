@@ -22,6 +22,37 @@ export interface WebviewTag extends HTMLElement {
   canGoBack(): boolean
   canGoForward(): boolean
   setZoomFactor(factor: number): void
+  /** Returns a request id; the answer arrives later on `found-in-page`. */
+  findInPage(text: string, options?: FindInPageOptions): number
+  stopFindInPage(action: 'clearSelection' | 'keepSelection' | 'activateSelection'): void
+  /** This guest's webContents id — how a pane recognises a key main forwarded to it. */
+  getWebContentsId(): number
+}
+
+export interface FindInPageOptions {
+  forward?: boolean
+  /**
+   * `false` (the default) *begins* a find session — mark everything, go to the
+   * first match; `true` continues the open one, advancing by `forward`. So a new
+   * or edited query passes false, and stepping passes true.
+   *
+   * Worth stating outright because Electron's own docs say the opposite —
+   * "should be `true` for initial requests, and `false` for follow-up requests" —
+   * one line above declaring the default `false`. Since the canonical first
+   * search is `findInPage(text)` with no options at all, that default *is* what
+   * an initial request sends, and the prose is simply wrong. Believing it makes
+   * every step restart the search.
+   */
+  findNext?: boolean
+  matchCase?: boolean
+}
+
+/** What the guest hands back on `found-in-page`. */
+export interface FoundInPageResult {
+  requestId: number
+  activeMatchOrdinal: number
+  matches: number
+  finalUpdate: boolean
 }
 
 declare global {

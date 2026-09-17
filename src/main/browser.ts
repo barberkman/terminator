@@ -29,6 +29,7 @@ import {
   type WebContents,
   type WebPreferences,
 } from 'electron'
+import { Channels } from '../shared/channels'
 import { BROWSER_PARTITION, type BrowserClearWhat } from '../shared/types'
 import { webUrl } from './links'
 import { loadSettings } from './settings'
@@ -150,18 +151,39 @@ function guard(contents: WebContents): void {
   contents.on('will-attach-webview', (e) => e.preventDefault())
   contents.setUserAgent(browserUserAgent())
 
-  // F5 reloads the page. It has to be caught here, on the guest, because that is
-  // where the key goes: a guest is its own frame tree, so while the page has focus
-  // the renderer never sees a keydown at all and a listener there would look
-  // broken exactly when you'd reach for it. BrowserPaneBody catches the other
-  // half — F5 with the pane's own chrome focused, which main never sees.
+  // F5 reloads the page, and Ctrl/Cmd+F opens the pane's find bar. Both have to
+  // be caught here, on the guest, because that is where the key goes: a guest is
+  // its own frame tree, so while the page has focus the renderer never sees a
+  // keydown at all and a listener there would look broken exactly when you'd
+  // reach for it. BrowserPaneBody catches the other half of each — the key
+  // pressed with the pane's own chrome focused, which main never sees.
   //
   // F5 rather than Ctrl+R because Electron's default menu already owns Ctrl+R and
   // reloads the whole app window with it.
   contents.on('before-input-event', (e, input) => {
-    if (input.type !== 'keyDown' || input.key !== 'F5') return
+    if (input.type !== 'keyDown') return
+    if (input.key === 'F5') {
+      e.preventDefault()
+      contents.reload()
+      return
+    }
+    // `code`, not `key`, so a non-US layout still finds the F — the same
+    // layout-independence the renderer's own shortcut matching is built on.
+    if (input.code !== 'KeyF' || input.alt || input.shift || !(input.control || input.meta)) return
+    // Unlike F5, this can't be finished here: the find bar is a React component
+    // in the host window, so all main can do is report the press. It reports the
+    // *guest's* id rather than working out which pane that is — main has no
+    // notion of panes or sessions, and the pane that owns this guest can
+    // recognise its own id perfectly well.
+    //
+    // A popup — which is what a Google sign-in is — is on this partition too but
+    // has no host and no find bar, so the key simply does nothing there.
+    const host = contents.hostWebContents
+    if (!host || host.isDestroyed()) return
+    // Taking the key away from a page that wanted it for its own find is what a
+    // real browser does with Ctrl+F too, and is the price of having one here.
     e.preventDefault()
-    contents.reload()
+    host.send(Channels.browserFind, contents.id)
   })
   // A popup's contents is type 'window', not 'webview'. It is on our partition, so
   // the session test above catches it — but only if the session is assigned by the

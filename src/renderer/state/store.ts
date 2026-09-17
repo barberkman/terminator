@@ -178,6 +178,16 @@ interface StoreState {
    */
   transcripts: Record<string, boolean>
   /**
+   * The session whose find bar is open, or null. One field rather than a flag per
+   * pane, because that is the behaviour: a window has one find bar, and opening
+   * it somewhere else closes the one you left behind. It also spares the two
+   * views that own a bar from drilling "is mine open" through their props.
+   *
+   * Keyed by session id like `transcripts`, so a bar follows its session when it
+   * moves panes rather than staying behind with the pane index.
+   */
+  findFor: string | null
+  /**
    * Whether conversation views draw tool calls, or just the exchange. One flag for
    * the whole app, not one per session: wanting to see what Claude ran is a way of
    * reading, not a property of a particular conversation, and re-flipping it for
@@ -230,6 +240,7 @@ interface StoreState {
   setBranchFor(id: string | null): void
   setRelaunchOffer(ids: string[] | null): void
   toggleTranscript(id: string): void
+  setFindFor(id: string | null): void
   toggleTools(): void
   setDraft(id: string, text: string): void
   setPendings(id: string, list: PendingPrompt[]): void
@@ -250,6 +261,36 @@ function emptyPanes(count: number): string[] {
 let initialized = false
 let nextToastId = 1
 
+/**
+ * Whether anything modal is up — a dialog, the notes overlay, a context menu.
+ *
+ * The question a key handler asks before acting, written out longhand at each one
+ * until there were enough of them that forgetting the next overlay in one of them
+ * became the likely outcome.
+ *
+ * Deliberately *not* used by all of them. App.tsx's Alt+1..9 and Notes handlers
+ * each check a different subset on purpose — the Notes accelerator has to keep
+ * working while Notes is open, or it couldn't close it — and folding those into
+ * this would be a behaviour change dressed up as tidying. This is the full list,
+ * for the handlers that want the full list.
+ *
+ * Reads the store rather than taking a snapshot, so a handler bound once still
+ * sees the truth — the same reason those handlers call `getState()` themselves.
+ */
+export function modalOpen(): boolean {
+  const st = useStore.getState()
+  return !!(
+    st.showNew ||
+    st.showSettings ||
+    st.showNotes ||
+    st.confirm ||
+    st.themeEditorFor ||
+    st.branchFor ||
+    st.relaunchOffer ||
+    st.contextMenu
+  )
+}
+
 export const useStore = create<StoreState>((set, get) => ({
   sessions: {},
   order: [],
@@ -264,6 +305,7 @@ export const useStore = create<StoreState>((set, get) => ({
   branchFor: null,
   relaunchOffer: null,
   transcripts: {},
+  findFor: null,
   showTools: false,
   drafts: {},
   pendings: {},
@@ -510,6 +552,9 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   toggleTranscript(id) {
     set((st) => ({ transcripts: { ...st.transcripts, [id]: !st.transcripts[id] } }))
+  },
+  setFindFor(id) {
+    set({ findFor: id })
   },
   toggleTools() {
     set((st) => ({ showTools: !st.showTools }))

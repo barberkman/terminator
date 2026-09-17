@@ -324,6 +324,21 @@ textarea {
   background: rgba(var(--c-ink-rgb), 0.05);
 }
 
+/* Find-in-view. Every match gets the wash, the one you're on gets the fill —
+   drawn by the CSS Custom Highlight API, so nothing is wrapped and nothing
+   reflows. ::highlight() honours only colour-ish properties (colour, background,
+   text-decoration, text-shadow), which is why the current match is picked out by
+   being filled in rather than by an outline: a border here would be silently
+   ignored. Both are palette vars, so a theme change repaints them with the rest. */
+::highlight(find-all) {
+  background-color: rgba(var(--c-accent-rgb), 0.26);
+  color: var(--c-text-max);
+}
+::highlight(find-current) {
+  background-color: var(--c-accent);
+  color: var(--c-accent-text);
+}
+
 /* xterm fills its pane */
 .xterm,
 .xterm .xterm-screen {

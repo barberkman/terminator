@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BROWSER_PARTITION, UI_BASE_FONT_SIZE, type Session } from '../../shared/types'
 import { webUrl } from '../../shared/url'
-import type { WebviewTag } from '../global.d'
-import { useStore } from '../state/store'
+import type { FoundInPageResult, WebviewTag } from '../global.d'
+import { modalOpen, useStore } from '../state/store'
+import { NO_HITS, useFindKeys, type FindHits } from '../find'
 import { C, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { openOutsideApp } from '../term/links'
+import { FindBar } from './FindBar'
 
 /**
  * A web page, inside the app.
@@ -40,6 +42,7 @@ type GuestEvent = Event & {
   errorCode?: number
   errorDescription?: string
   validatedURL?: string
+  result?: FoundInPageResult
 }
 
 /** What the user typed, as a URL to try. A bare host is the common case. */
@@ -119,7 +122,95 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
   const [nav, setNav] = useState({ back: false, forward: false })
   const [failure, setFailure] = useState<{ text: string; url: string } | null>(null)
 
+  // The find bar. Whether it's open lives in the store rather than here, because
+  // that is the behaviour: a window has one find bar, so opening one anywhere
+  // closes the one you left behind.
+  const findOpen = useStore((s) => s.findFor === session.id)
+  const setFindFor = useStore((s) => s.setFindFor)
+  const [findQuery, setFindQuery] = useState('')
+  const [findHits, setFindHits] = useState<FindHits>(NO_HITS)
+  const findInput = useRef<HTMLInputElement | null>(null)
+  // The id of the request whose answer we're still waiting for. Two keystrokes in
+  // quick succession are two searches in flight, and without this the slower one
+  // lands last and leaves a counter describing the query before the one you typed.
+  const findReq = useRef(0)
+  // The text the guest's current find session was opened on. Asking Chromium to
+  // continue a session against text it never saw is meaningless, and a stale bar
+  // can ask: a navigation tears the session down underneath one.
+  const lastQuery = useRef('')
+  // This pane's guest, so it can tell a key main forwarded *to it* from one meant
+  // for the other browser pane.
+  const guestId = useRef(0)
+
   const has = !!src
+
+  /**
+   * Ask the guest to find. Chromium does the searching, the tinting and the
+   * counting — there is no other way into a page that is its own frame tree, and
+   * the highlight it paints is not ours to theme. The counter that comes back is
+   * the one every browser shows, which is the upside of the same bargain.
+   *
+   * `fresh` opens a new find session — what a new or edited query wants; stepping
+   * continues the one already open. Electron spells the latter `findNext`, and its
+   * own docs get this backwards ("should be `true` for initial requests") one line
+   * above stating the default is `false` — which is what `findInPage(text)` with no
+   * options, the canonical first search, therefore passes. The default is the truth:
+   * `false` begins a session, `true` advances within it. Inverting these two makes
+   * every press of Next restart the search, which reads as a counter that will not
+   * climb past the second match.
+   */
+  const runFind = useCallback((text: string, fresh: boolean, forward = true) => {
+    const wv = ref.current
+    if (!wv) return
+    if (!text) {
+      try {
+        wv.stopFindInPage('clearSelection')
+      } catch {
+        // Guest torn down; nothing to clear.
+      }
+      lastQuery.current = ''
+      findReq.current = 0
+      setFindHits(NO_HITS)
+      return
+    }
+    // Only a step against the text the session actually holds may continue it.
+    const carryOn = !fresh && text === lastQuery.current
+    try {
+      findReq.current = wv.findInPage(text, { findNext: carryOn, forward })
+      lastQuery.current = text
+    } catch {
+      // Guest not attached yet, or torn down between the keystroke and here.
+    }
+    // Deliberately not gated on `ready`: the guest throws until it is attached and
+    // the catches above are the answer, which keeps this callback stable — the
+    // navigation listener below is bound once and would otherwise close over a
+    // version of it from before the page existed.
+  }, [])
+
+  const openFind = useCallback(() => {
+    // Nothing to search in a pane that has never been given a page.
+    if (!has) return
+    setFindFor(session.id)
+    // After the bar has rendered. Focusing an input that doesn't exist yet is the
+    // quiet way for a shortcut to look like it did nothing.
+    requestAnimationFrame(() => {
+      findInput.current?.focus()
+      findInput.current?.select()
+    })
+  }, [has, session.id, setFindFor])
+
+  const closeFind = useCallback(() => {
+    setFindFor(null)
+    setFindQuery('')
+    setFindHits(NO_HITS)
+    runFind('', true)
+    // Hand the keyboard back to the page, or the next keystroke goes nowhere.
+    try {
+      ref.current?.focus()
+    } catch {
+      // Guest went away; the pane is going with it.
+    }
+  }, [runFind, setFindFor])
 
   // A pane can open before it has a page — restored without one, or opened empty —
   // so the guest mounts when the first URL arrives rather than only at mount. The
@@ -155,6 +246,12 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
 
     const onReady = () => {
       setReady(true)
+      try {
+        // Only valid once attached, which is what dom-ready means here.
+        guestId.current = wv.getWebContentsId()
+      } catch {
+        // Raced a teardown; a pane with no guest has no find bar to open either.
+      }
       refreshNav()
     }
     const onStart = () => {
@@ -167,11 +264,29 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
     }
     const onNavigate = (e: GuestEvent) => {
       if (e.url) arrived(e.url)
+      // A new page throws the find results away, and a counter describing the
+      // previous page is worse than no counter. In-page navigation — an anchor
+      // click — deliberately doesn't do this: the results are still good.
+      if (useStore.getState().findFor === session.id) closeFind()
     }
     const onInPage = (e: GuestEvent) => {
       if (e.url && e.isMainFrame !== false) arrived(e.url)
     }
     const onTitle = (e: GuestEvent) => setTitle(e.title ?? '')
+    const onFound = (e: GuestEvent) => {
+      const r = e.result
+      // Anything but the request we're waiting on is a straggler from a query
+      // that has already been typed over.
+      if (!r || r.requestId !== findReq.current) return
+      // One request reports several times as Chromium scopes a long page, and an
+      // early report can carry a count with no active match yet. Drawing that as
+      // 0/17 is a frame of "found nothing" at the moment something was found, so
+      // the ordinal holds its last real value and only a genuine zero clears it.
+      setFindHits((prev) => ({
+        index: r.matches ? r.activeMatchOrdinal || prev.index : 0,
+        total: r.matches,
+      }))
+    }
     const onFail = (e: GuestEvent) => {
       // A dead image is not a dead page, and ERR_ABORTED is the navigation you
       // just replaced — reporting either as a failure is the classic false error.
@@ -189,6 +304,7 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
     wv.addEventListener('did-navigate', onNavigate as EventListener)
     wv.addEventListener('did-navigate-in-page', onInPage as EventListener)
     wv.addEventListener('page-title-updated', onTitle as EventListener)
+    wv.addEventListener('found-in-page', onFound as EventListener)
     wv.addEventListener('did-fail-load', onFail as EventListener)
     return () => {
       wv.removeEventListener('dom-ready', onReady)
@@ -197,6 +313,7 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
       wv.removeEventListener('did-navigate', onNavigate as EventListener)
       wv.removeEventListener('did-navigate-in-page', onInPage as EventListener)
       wv.removeEventListener('page-title-updated', onTitle as EventListener)
+      wv.removeEventListener('found-in-page', onFound as EventListener)
       wv.removeEventListener('did-fail-load', onFail as EventListener)
     }
     // `current` is only read inside onFail's fallback; re-binding for it would
@@ -242,20 +359,8 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
     if (!focusedHere) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'F5') return
-      const st = useStore.getState()
-      // Same list the other global keys check: don't act underneath a modal.
-      if (
-        st.showNew ||
-        st.showSettings ||
-        st.showNotes ||
-        st.confirm ||
-        st.themeEditorFor ||
-        st.branchFor ||
-        st.relaunchOffer ||
-        st.contextMenu
-      ) {
-        return
-      }
+      // Don't act underneath a modal.
+      if (modalOpen()) return
       const wv = ref.current
       if (!wv || !ready) return
       e.preventDefault()
@@ -268,6 +373,32 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [focusedHere, ready])
+
+  // Ctrl/Cmd+F splits the same two ways F5 does, for the same reason. This is the
+  // chrome-focused half; the in-page half is the effect below.
+  useFindKeys(focusedHere, openFind)
+
+  // …and the half that came out of the page. main can't open the bar itself — the
+  // bar is here — so it reports the press with the guest's id and every pane
+  // checks whether that guest is its own. Bound regardless of focus: pressing a
+  // key *in* a page is as clear a statement of which pane you mean as there is,
+  // and the store's focus may not have caught up if you clicked straight into it.
+  useEffect(() => {
+    return window.terminator.onBrowserFind((id) => {
+      if (!guestId.current || id !== guestId.current) return
+      openFind()
+    })
+  }, [openFind])
+
+  // A bar left open when the pane goes away — closed, or given to another session
+  // — shouldn't be sitting there waiting if it comes back. Guarded, because by
+  // then the one open bar may belong to another pane.
+  useEffect(() => {
+    return () => {
+      const st = useStore.getState()
+      if (st.findFor === session.id) st.setFindFor(null)
+    }
+  }, [session.id])
 
   const go = (text: string) => {
     const url = typedUrl(text)
@@ -467,6 +598,24 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
               </button>
             </div>
           </div>
+        )}
+
+        {/* Last in the wrapper, so it floats above the failure overlay too. */}
+        {findOpen && (
+          <FindBar
+            query={findQuery}
+            onQuery={(q) => {
+              setFindQuery(q)
+              // Every keystroke restarts the search, which is what a browser does
+              // and what Chromium is built to absorb.
+              runFind(q, true)
+            }}
+            hits={findHits}
+            onNext={() => runFind(findQuery, false, true)}
+            onPrev={() => runFind(findQuery, false, false)}
+            onClose={closeFind}
+            inputRef={findInput}
+          />
         )}
       </div>
 
