@@ -367,6 +367,11 @@ generated, say, which lives behind a claude.ai login and so can't just be opened
 - **They're sessions, so they stay.** Closing the pane leaves the session in the sidebar, and it
   comes back after a restart on the page it was showing. Remove one the way you'd remove any
   other. Nothing about a browser pane starts or stops, so its menu offers no Start or Relaunch.
+- **Switching away doesn't reload it.** Clicking another session takes the pane off the screen,
+  not the page out of memory. Come back and you are where you left off — same scroll, same
+  half-filled form, same Back and Forward. Changing the layout doesn't reload it either. The page
+  goes on running in the background the way a tab you aren't looking at does, until you remove
+  the session.
 - **It stays signed in** — the browser keeps its own cookies and site data, in its own storage
   apart from anything the app itself stores. Sign in to Claude once and you're still signed in
   after a restart. Closing the pane doesn't sign you out; only Settings does.

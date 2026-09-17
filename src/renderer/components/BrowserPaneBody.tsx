@@ -29,6 +29,10 @@ import { FindBar } from './FindBar'
  *     on unrelated re-renders.
  *   • Every method throws until `dom-ready`. Hence the `ready` gate rather than
  *     calling `canGoBack()` on mount and wondering why the pane is blank.
+ *
+ * It is also mounted for longer than a pane: a guest dies with its element, so
+ * BrowserPane keeps this alive — parked offscreen — for as long as the session
+ * exists, and not just while a split is showing it.
  */
 
 /** ERR_ABORTED — a navigation replaced by another one, not a failure to report. */
@@ -100,14 +104,31 @@ function ChromeButton({
   )
 }
 
-export function BrowserPaneBody({ session }: { session: Session }): React.JSX.Element {
+export function BrowserPaneBody({
+  session,
+  shown,
+}: {
+  session: Session
+  /** False while the pane is parked — mounted and loaded, but on no split. */
+  shown: boolean
+}): React.JSX.Element {
   const ref = useRef<WebviewTag | null>(null)
+  // `shown` as a ref as well as a prop: the callbacks that need to ask are captured
+  // by effects that bind once, and would otherwise keep whichever answer was true
+  // when they were bound.
+  const shownRef = useRef(shown)
+  shownRef.current = shown
   // The first URL this pane ever sees, and then never again: `src` is only honoured
   // when the guest attaches, and rebinding it would turn an unrelated re-render into
   // a navigation. Everything after the first goes through `loadURL`.
   const [src, setSrc] = useState(session.url ?? '')
   const zoom = useStore((s) => (s.settings?.fontSize ?? UI_BASE_FONT_SIZE) / UI_BASE_FONT_SIZE)
   const pushToast = useStore((s) => s.pushToast)
+  // False for a parked pane, and that is load-bearing rather than incidental: this
+  // component outlives the split it is in (see BrowserPane), so at any moment there
+  // may be several of them mounted and only one of them on screen. Everything that
+  // listens on `window` below is gated on this, or a page you can't see would be
+  // answering keys meant for the pane you can.
   const focusedHere = useStore((s) => s.panes[s.focused] === session.id)
 
   const [ready, setReady] = useState(false)
@@ -188,8 +209,9 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
   }, [])
 
   const openFind = useCallback(() => {
-    // Nothing to search in a pane that has never been given a page.
-    if (!has) return
+    // Nothing to search in a pane that has never been given a page, and nothing to
+    // look at in one no split is showing.
+    if (!has || !shownRef.current) return
     setFindFor(session.id)
     // After the bar has rendered. Focusing an input that doesn't exist yet is the
     // quiet way for a shortcut to look like it did nothing.
@@ -204,7 +226,11 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
     setFindQuery('')
     setFindHits(NO_HITS)
     runFind('', true)
-    // Hand the keyboard back to the page, or the next keystroke goes nowhere.
+    // Hand the keyboard back to the page, or the next keystroke goes nowhere — but
+    // only to a page that is on screen. This also runs when the pane parks, and
+    // pulling focus into a parked guest would send every keystroke somewhere
+    // invisible.
+    if (!shownRef.current) return
     try {
       ref.current?.focus()
     } catch {
@@ -390,9 +416,28 @@ export function BrowserPaneBody({ session }: { session: Session }): React.JSX.El
     })
   }, [openFind])
 
-  // A bar left open when the pane goes away — closed, or given to another session
-  // — shouldn't be sitting there waiting if it comes back. Guarded, because by
-  // then the one open bar may belong to another pane.
+  // Parking is not unmounting, so the two things that used to happen for free when
+  // the pane left a split have to be done deliberately now.
+  //
+  // Hand the keyboard back, or a page you can no longer see goes on swallowing
+  // every keystroke — a guest is its own frame tree, so nothing else in the window
+  // would even see them. And close the find bar: the window has one, and one
+  // belonging to a pane nobody is looking at is worse than none — it would also
+  // leave Chromium's tint on a page you come back to with nothing to explain it.
+  useEffect(() => {
+    if (shown) return
+    const wv = ref.current
+    try {
+      if (wv && document.activeElement === wv) wv.blur()
+    } catch {
+      // Guest torn down; it isn't holding the keyboard either way.
+    }
+    if (useStore.getState().findFor === session.id) closeFind()
+  }, [shown, session.id, closeFind])
+
+  // A bar left open when the pane goes away for good — the session removed — has
+  // nothing left to search. Guarded, because by then the one open bar may belong to
+  // another pane.
   useEffect(() => {
     return () => {
       const st = useStore.getState()
