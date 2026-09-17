@@ -53,8 +53,12 @@ export function defaultSettings(): Settings {
       defaultBrowserId: '',
       openFilePaths: true,
       // No editor configured keeps the original behaviour: a clicked path opens
-      // in an in-app Editor pane covering that project.
+      // in an in-app Editor pane for that project.
       editor: { command: '', args: [] },
+      // Blank means "the editor above, if there is one" — so configuring a program
+      // is still all it takes to send clicks there, and nobody who already did has
+      // their clicks moved by this setting appearing.
+      defaultEditorId: '',
     },
     // Empty = derive a Chrome-like UA from Electron's own. See browser.ts.
     browser: { userAgent: '' },

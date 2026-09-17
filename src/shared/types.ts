@@ -333,9 +333,19 @@ export interface LinkSettings {
   openFilePaths: boolean
   /**
    * External editor for clicked file paths. With no command set, a click opens an
-   * in-app Editor pane instead — which needs one covering that project.
+   * in-app Editor pane instead.
    */
   editor: EditorOption
+  /**
+   * Which editor a plain click uses. The reserved `in-app` id is an Editor pane;
+   * anything else — in practice `''` — means the configured external program,
+   * falling back to a pane when no command is set.
+   *
+   * Blank is the default, and deliberately so: a settings.json written before this
+   * existed has no value here, and the editor someone already configured has to go
+   * on opening their clicks. Choosing the pane is the opt-in, not the upgrade.
+   */
+  defaultEditorId: string
 }
 
 /**
@@ -349,6 +359,19 @@ export const IN_APP_BROWSER_ID = 'in-app'
 
 /** What to call it wherever a browser is named — tooltip, menu, Settings row. */
 export const IN_APP_BROWSER_NAME = 'this app'
+
+/**
+ * The reserved editor id meaning "don't launch anything — open it in an in-app
+ * Editor pane". The same string as `IN_APP_BROWSER_ID` and a separate constant on
+ * purpose: they name different things and only happen to agree, so a future change
+ * to one must not silently move the other.
+ *
+ * Unlike the browser id this one never travels: `openFileInEditor` takes no editor
+ * id at all — it *means* the external program, and the right-click menu asks for
+ * exactly that even when a pane is the default. So main has nothing to refuse, and
+ * this id is only ever read on the renderer's side of the fork.
+ */
+export const IN_APP_EDITOR_ID = 'in-app'
 
 /**
  * The Electron session partition the in-app browser runs on. Persistent, so a Claude
