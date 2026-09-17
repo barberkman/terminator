@@ -169,7 +169,11 @@ function MetricPicker({
 }
 
 export function PaneHeader({ session, active }: { session: Session; active: boolean }): React.JSX.Element {
-  const editing = useStore((s) => s.editingId === session.id)
+  // The surface has to match, the same way Sidebar's row checks it: `editingId` is
+  // global, and a browser pane parked offscreen still has a header — without this,
+  // renaming from the sidebar would mount an autofocused input out of sight and
+  // take the keyboard with it.
+  const editing = useStore((s) => s.editingId === session.id && s.editingWhere === 'pane')
   const startEdit = useStore((s) => s.startEdit)
   const setConfirm = useStore((s) => s.setConfirm)
   const openSession = useStore((s) => s.openSession)

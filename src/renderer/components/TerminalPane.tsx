@@ -1,131 +1,27 @@
-import { useRef, useState } from 'react'
-import type { Session } from '../../shared/types'
 import { useStore } from '../state/store'
-import { C, accentA, bgA, dangerA } from '../theme'
+import { C, accentA, bgA } from '../theme'
 import { Icon } from '../icons'
 import * as registry from '../term/registry'
-import { attachDrop, attachDropToComposer } from '../attach'
 import { PaneHeader } from './PaneHeader'
 import { TerminalView } from './TerminalView'
 import { EditorPaneBody } from './EditorPaneBody'
-import { BrowserPaneBody } from './BrowserPaneBody'
 import { ConversationView } from './ConversationView'
-
-/** True for a drag carrying files — a sidebar session drag carries text/plain. */
-function hasFiles(e: React.DragEvent): boolean {
-  return Array.from(e.dataTransfer.types).includes('Files')
-}
+import { DropVeil, useFileDrop } from './paneDrop'
 
 /**
- * Makes a pane a drop target for files.
- *
- * What a drop means depends on the pane: a Claude session gets the paths in its
- * prompt (it reads them itself), a shell gets them shell-quoted at its prompt —
- * the same thing every other terminal does with a dropped file. Panes that can
- * take neither still light up and say so, rather than swallowing the drop.
- *
- * dragenter/dragleave fire for every child the pointer crosses (xterm nests
- * several), so the highlight is driven by a depth count, not a boolean.
- *
- * `toComposer` is on while the pane is showing its conversation: the drop then
- * belongs to the message being written, not to the terminal lying hidden
- * underneath. Typing the path into an input box the overlay covers was the old
- * behaviour, and it was never useful.
+ * Every pane but a browser one. `cell` is the grid placement PaneGrid works out:
+ * explicit now that the grid's children are no longer one-per-cell in DOM order
+ * (browser panes are permanent children of the same grid — see BrowserPane).
  */
-function useFileDrop(session: Session | undefined, index: number, toComposer: boolean) {
-  const [over, setOver] = useState(false)
-  const depth = useRef(0)
-  const focusPane = useStore((s) => s.focusPane)
-  const pushToast = useStore((s) => s.pushToast)
-
-  const clear = () => {
-    depth.current = 0
-    setOver(false)
-  }
-
-  const dropProps = {
-    onDragEnter: (e: React.DragEvent) => {
-      if (!hasFiles(e)) return
-      e.preventDefault()
-      depth.current += 1
-      setOver(true)
-    },
-    onDragOver: (e: React.DragEvent) => {
-      if (!hasFiles(e)) return
-      // Both this and the drop must preventDefault, or Electron follows the file
-      // and navigates the window away from the app.
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
-    },
-    onDragLeave: (e: React.DragEvent) => {
-      if (!hasFiles(e)) return
-      depth.current -= 1
-      if (depth.current <= 0) clear()
-    },
-    onDrop: (e: React.DragEvent) => {
-      if (!hasFiles(e)) return
-      e.preventDefault()
-      e.stopPropagation()
-      clear()
-      focusPane(index)
-      if (!session) {
-        pushToast({
-          tone: 'error',
-          text: "Couldn't attach",
-          sub: 'this pane has no session — open one first',
-        })
-        return
-      }
-      const { id: sid, kind } = session
-      if (toComposer) {
-        // No registry.focus here, deliberately: the terminal is covered, and
-        // pulling focus onto it would take the caret out of the composer the user
-        // is typing in — and with it the Esc handler's only way home.
-        void attachDropToComposer(sid, e.dataTransfer)
-        return
-      }
-      void attachDrop(sid, e.dataTransfer).then(() => {
-        if (kind !== 'editor') registry.focus(sid)
-      })
-    },
-  }
-
-  return { over, dropProps }
-}
-
-/**
- * The "yes, this pane will take it" affordance during a drag. Pointer-events off:
- * a veil that could receive the drag would flip dragenter/dragleave endlessly.
- */
-function DropVeil({ label, bad }: { label: string; bad?: boolean }): React.JSX.Element {
-  const tint = bad ? dangerA : accentA
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 4,
-        zIndex: 3,
-        pointerEvents: 'none',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 10,
-        border: `2px dashed ${tint(0.55)}`,
-        borderRadius: 10,
-        background: bgA(0.66),
-        color: bad ? C.danger : C.accentSoft,
-        fontSize: 12.5,
-        fontWeight: 600,
-        animation: 'cc-fade 0.12s ease',
-      }}
-    >
-      <Icon name="paperclip" size={16} />
-      {label}
-    </div>
-  )
-}
-
-export function TerminalPane({ id, index }: { id: string; index: number }): React.JSX.Element {
+export function TerminalPane({
+  id,
+  index,
+  cell,
+}: {
+  id: string
+  index: number
+  cell?: React.CSSProperties
+}): React.JSX.Element {
   const session = useStore((s) => (id ? s.sessions[id] : undefined))
   const focused = useStore((s) => s.focused === index)
   const multi = useStore((s) => s.panes.length > 1)
@@ -161,6 +57,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
           minHeight: 0,
           color: C.dim,
           background: C.bg,
+          ...cell,
           ...frame,
         }}
       >
@@ -188,33 +85,9 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
     )
   }
 
-  // Browser sessions have no PTY either: a web page, and the same reasons to skip
-  // TerminalView and the relaunch overlay as an editor pane.
-  if (session.kind === 'browser') {
-    return (
-      <div
-        data-pane-index={index}
-        data-pane-focused={focused ? 1 : 0}
-        data-pane-session={session.name}
-        onMouseDownCapture={() => focusPane(index)}
-        {...dropProps}
-        style={{
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          minWidth: 0,
-          minHeight: 0,
-          background: C.bg,
-          overflow: 'hidden',
-          ...frame,
-        }}
-      >
-        {over && <DropVeil bad label="Browser panes can't take attachments" />}
-        <PaneHeader session={session} active={focused} />
-        <BrowserPaneBody session={session} />
-      </div>
-    )
-  }
+  // There is no `kind === 'browser'` branch here, and adding one back would bring
+  // the reload-on-every-click bug with it: a browser pane has to be mounted for
+  // longer than a split, so PaneGrid renders those itself (see BrowserPane).
 
   // Editor sessions have no PTY: render the in-app file browser/editor and skip
   // both TerminalView (which would spawn a process) and the relaunch overlay.
@@ -234,6 +107,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
           minHeight: 0,
           background: C.bg,
           overflow: 'hidden',
+          ...cell,
           ...frame,
         }}
       >
@@ -267,6 +141,7 @@ export function TerminalPane({ id, index }: { id: string; index: number }): Reac
         minHeight: 0,
         background: C.bg,
         overflow: 'hidden',
+        ...cell,
         ...frame,
       }}
     >

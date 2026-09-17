@@ -156,6 +156,21 @@ interface StoreState {
   order: string[]
   layout: LayoutName
   panes: string[]
+  /**
+   * Browser sessions holding a live pane, in the order they were first shown.
+   *
+   * A browser pane is the one pane kind that outlives the split it is in: its
+   * <webview> dies the moment its element leaves the document, and a dead guest is
+   * a page load. So PaneGrid keeps one mounted per entry here, parked offscreen
+   * when no split is showing it, until the session is removed.
+   *
+   * Append-only, and it must stay that way. React moves a keyed child's DOM node
+   * when its position among its siblings changes, and to a <webview> a move is a
+   * teardown exactly like a re-parent. A list that is only ever appended to and
+   * filtered never reorders, so React never moves one. Sorting this "sensibly"
+   * would quietly put the reload-on-every-click bug back.
+   */
+  browserLive: string[]
   focused: number
   collapsed: Record<string, boolean>
   showNew: boolean
@@ -258,6 +273,24 @@ function emptyPanes(count: number): string[] {
   return Array.from({ length: count }, () => '')
 }
 
+/**
+ * Give any browser session now in a split a pane that outlives the split.
+ *
+ * Folded into every patch that assigns `panes`, rather than run from an effect
+ * afterwards, so the two can never be out of step for even one render — PaneGrid
+ * decides which splits to leave to the browser layer by reading this list, and a
+ * disagreement would show as a hole where a page should be.
+ *
+ * Lazy the way term/registry.ts is lazy: a pane appears the first time its session
+ * is shown, so a browser session restored from last run but never clicked costs
+ * nothing. Returns the list unchanged when there is nothing to add, so switching
+ * between two terminals doesn't re-render the grid.
+ */
+function keepBrowsersAlive(live: string[], panes: string[], sessions: Record<string, Session>): string[] {
+  const add = panes.filter((id) => id && sessions[id]?.kind === 'browser' && !live.includes(id))
+  return add.length ? [...live, ...add] : live
+}
+
 let initialized = false
 let nextToastId = 1
 
@@ -296,6 +329,7 @@ export const useStore = create<StoreState>((set, get) => ({
   order: [],
   layout: 'single',
   panes: [''],
+  browserLive: [],
   focused: 0,
   collapsed: {},
   showNew: false,
@@ -348,14 +382,15 @@ export const useStore = create<StoreState>((set, get) => ({
     const restorable = settings.relaunchOnStartup
       ? order.filter((id) => isRestorable(sessions[id]))
       : []
-    set({
+    set((st) => ({
       sessions,
       order,
       settings,
       panes,
+      browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
       usage,
       relaunchOffer: restorable.length ? restorable : null,
-    })
+    }))
 
     window.terminator.onSessionUpdated((s) => get().upsert(s))
     window.terminator.onSessionRemoved((id) => get().remove(id))
@@ -381,6 +416,10 @@ export const useStore = create<StoreState>((set, get) => ({
       const sessions = { ...st.sessions }
       delete sessions[id]
       const order = st.order.filter((x) => x !== id)
+      // The only exit from the keep-alive list. Skipping it would strand a live
+      // <webview> — and the renderer process behind it — with no session left to
+      // show it in.
+      const stillLive = st.browserLive.filter((x) => x !== id)
       const shown = new Set(st.panes.filter((p) => p && p !== id))
       const backfill = () => order.find((oid) => !shown.has(oid)) ?? ''
       const panes = st.panes.map((p) => {
@@ -400,6 +439,9 @@ export const useStore = create<StoreState>((set, get) => ({
       return {
         sessions,
         order,
+        // The backfill below can pull a browser session into the vacated split, so
+        // this is both halves: the removed one goes, whatever took its place stays.
+        browserLive: keepBrowsersAlive(stillLive, panes, sessions),
         panes,
         transcripts,
         drafts,
@@ -439,7 +481,13 @@ export const useStore = create<StoreState>((set, get) => ({
       }
       if (!panes.length) panes = emptyPanes(count)
       if (focused >= panes.length) focused = 0
-      return { layout: name, panes, focused, editingId: null }
+      return {
+        layout: name,
+        panes,
+        browserLive: keepBrowsersAlive(st.browserLive, panes, st.sessions),
+        focused,
+        editingId: null,
+      }
     })
   },
 
@@ -469,7 +517,13 @@ export const useStore = create<StoreState>((set, get) => ({
       if (cur?.notified) window.terminator.clearNotified(id)
       const sessions =
         cur && cur.notified ? { ...st.sessions, [id]: { ...cur, notified: false } } : st.sessions
-      return { panes, focused, sessions, editingId: null }
+      return {
+        panes,
+        browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
+        focused,
+        sessions,
+        editingId: null,
+      }
     })
   },
 
@@ -490,7 +544,13 @@ export const useStore = create<StoreState>((set, get) => ({
       if (cur?.notified) window.terminator.clearNotified(id)
       const sessions =
         cur && cur.notified ? { ...st.sessions, [id]: { ...cur, notified: false } } : st.sessions
-      return { panes, focused: index, sessions, editingId: null }
+      return {
+        panes,
+        browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
+        focused: index,
+        sessions,
+        editingId: null,
+      }
     })
   },
 
