@@ -259,8 +259,9 @@ quietly.
 path is ever shown, so it also opens it:
 
 - **Click the card** — an image opens in whatever you view images with, a folder opens as a
-  folder, and anything else opens in the editor from Settings → **EXTERNAL EDITOR** (the one
-  clicked paths in output already use), or your default program when none is set.
+  folder, and anything else opens in the program from Settings → **EXTERNAL EDITOR**, or your
+  default program when none is set. Never an Editor pane, even when clicked paths go to one: an
+  attachment lives outside every session's folder, and a pane only ever reads inside one.
 - **Click the folder button**, beside the dismiss ×, to show it in Explorer with the file
   selected — Finder on macOS, your file manager elsewhere.
 - **Right-click the card** for both, plus **Copy path**.
@@ -329,29 +330,40 @@ browser you picked, so a link from Claude no longer needs selecting, copying and
   and another way in that pane's own conversation.
 
 **File paths** in output (`src/app.ts`, `src/app.ts:42`) are links too, and open in an editor
-rather than a browser — with `:42` putting the cursor on that line. Only paths that actually
-exist inside the session's own folder become links, so ordinary text like `and/or` stays text.
-Turn it off in Settings → **FILE PATHS IN OUTPUT**, or turn the whole thing off with **LINKS IN
-TERMINAL OUTPUT**.
+rather than a browser — with `:42` putting the cursor on that line. Relative paths work: they're
+resolved against the session's own folder, so the `src/app.ts` a program prints is the one it
+meant. Only paths that actually exist inside that folder become links, so ordinary text like
+`and/or` stays text. Turn it off in Settings → **FILE PATHS IN OUTPUT**, or turn the whole thing
+off with **LINKS IN TERMINAL OUTPUT**.
 
-- **Which editor** — Settings → **EXTERNAL EDITOR**. Set the program and its arguments and a
-  clicked path opens there, in whatever editor you already use. Program and arguments are stored
-  and passed **separately**, straight to the process with no shell in between, so
+- **In the app** — a click opens an **Editor pane** for that project, and opens one if there
+  isn't one already, the way a clicked web link opens a browser pane. A second path opens as
+  another tab in the same pane rather than a second pane: the pane is the project, the tabs are
+  the files.
+- **Or in your own editor** — Settings → **EXTERNAL EDITOR**. Set the program and its arguments
+  and it can have your clicks instead. Program and arguments are stored and passed
+  **separately**, straight to the process with no shell in between, so
   `C:\Program Files\Microsoft VS Code\Code.exe` needs no quoting. **Browse…** picks it from disk.
+- **Which of the two** — with a program set, Settings → **OPENS FILE PATHS IN** decides what a
+  plain click does; without one there's nothing to decide and clicks stay in the app. Either way
+  **right-click any path** for the other one, plus Copy path. Configuring a program is still all
+  it takes to send clicks there, so nothing moves under you when you first set one.
 - **Jumping to the line** — every editor spells it differently, so the arguments take
   placeholders: `{path}`, `{line}` and `{column}` are filled in where you put them. VS Code is
   `-g {path}:{line}`, Sublime and Zed `{path}:{line}`, Notepad++ `-n{line}`, gvim `+{line}`. An
   argument mentioning `{line}` is dropped when the path had no line number (so `-n{line}` doesn't
   become a bare `-n`), and if no argument mentions `{path}` the file is added at the end — which
   is what a plain `editor <file>` wants, so leaving the arguments empty works too.
-- **Or in the app** — leave the program blank and a click opens an **Editor pane** for that
-  project instead, which is what it did before there was a setting. That needs a pane covering
-  the project; if there isn't one it says so, and points here. **Right-click any path** for the
-  other one either way, plus Copy path.
+- **`src/thing.{h,cpp}`** — the shorthand for naming two files at once, which Claude reaches for
+  constantly when it lists what it changed, is two links. Each alternative underlines on its own,
+  because a single link over the whole thing would leave a click with no honest answer to which
+  file it opens; hover one to see the full path it stands for. One group, at the end, at most
+  eight names, and each still has to exist — anything else stays the plain text it was.
 - **Still only inside the session's folder** — the path is re-resolved in the main process before
   anything launches, against that session's own directory, and reaches the editor as a single
   argument. So output can't talk the app into opening something the session couldn't already
-  reach.
+  reach — and an Editor pane opened by a click is rooted on the session that printed the path,
+  for the same reason.
 
 ## In-app browser
 
@@ -415,8 +427,9 @@ In a terminal pane:
 - **Ctrl/Cmd+Shift+V** — pastes text, never the image. The way out when the clipboard holds both.
 - **Click a link** — opens it in your configured browser; **right-click a link** for the other
   browsers and Copy link. See **Links** above for what stops a selection from opening one.
-- **Click a file path** — opens it in your configured external editor (or an Editor pane when
-  none is set); **right-click** for the other one, and Copy path.
+- **Click a file path** — opens it wherever Settings → **OPENS FILE PATHS IN** says: an Editor
+  pane, made if there isn't one already, or your configured editor. **Right-click** for the other
+  one, and Copy path.
 - **Drop a file** on a pane to hand it to that session.
 - **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
   still reaches the program in the pane, untouched.)
@@ -481,9 +494,11 @@ set to — and which ones you left open is remembered:
 - `notifications` — see below.
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.
 - `links.browsers` (each `{ id, name, command, args }`), `links.defaultBrowserId`,
-  `links.enabled`, `links.openFilePaths`, `links.editor` (`{ command, args }`) — see **Links**
-  above. `defaultBrowserId` also takes the reserved value `in-app`, which is the in-app browser;
-  it is not in `browsers`, having no program to store.
+  `links.enabled`, `links.openFilePaths`, `links.editor` (`{ command, args }`),
+  `links.defaultEditorId` — see **Links** above. `defaultBrowserId` also takes the reserved value
+  `in-app`, which is the in-app browser; it is not in `browsers`, having no program to store.
+  `defaultEditorId` takes the same reserved value for an in-app Editor pane, and empty — the
+  default — means `links.editor` if one is set, a pane if not.
 - `browser.userAgent` — what the in-app browser calls itself. Empty (the default) derives a
   Chrome-like one from Electron's own. See **In-app browser** above.
 

@@ -2,6 +2,7 @@ import type { IBufferRange, ILink, ILinkHandler, ILinkProvider, Terminal } from 
 import {
   IN_APP_BROWSER_ID,
   IN_APP_BROWSER_NAME,
+  IN_APP_EDITOR_ID,
   type LinkSettings,
 } from '../../shared/types'
 import { webUrl, webUrlRe } from '../../shared/url'
@@ -43,8 +44,25 @@ const DOUBLE_CLICK_MS = 250
 const MAX_WRAP_ROWS = 8
 
 const URL_RE = webUrlRe()
-/** Path-ish tokens: at least one separator, so bare words are never candidates. */
-const PATH_RE = /(?:~\/|\.{1,2}\/|\/)?[\w.@+-]+(?:\/[\w.@+-]+)+(?::\d+(?::\d+)?)?/g
+/**
+ * Path-ish tokens: at least one separator, so bare words are never candidates.
+ *
+ * Built from parts because of the brace group. `a/b.{h,cpp}` is one token naming two
+ * files — Claude prints it constantly when it lists what it changed — and without the
+ * `{…}` here the match stops at the `{`, leaving `a/b.` , which `looksLikePath` then
+ * rejects for having no extension. So the form that most wants to be a link is the one
+ * that never was. Trailing only, and two alternatives minimum: a lone `{a}` or an empty
+ * `{}` stays the plain token it already was, and requiring the comma is what keeps
+ * `${FOO}` out. See `expandBraces` for what the group turns into.
+ */
+const SEG = String.raw`[\w.@+-]+`
+const BRACE = String.raw`\{${SEG}(?:,${SEG})+\}`
+const PATH_RE = new RegExp(
+  String.raw`(?:~\/|\.{1,2}\/|\/)?${SEG}(?:\/${SEG})+(?:${BRACE})?(?::\d+(?::\d+)?)?`,
+  'g',
+)
+/** How many alternatives a brace group may name before it stops looking like a path. */
+const MAX_BRACE_ALTS = 8
 
 export type LinkTarget =
   // `sessionId` is whose project a browser pane opens under — a link is printed
@@ -59,6 +77,7 @@ let settings: LinkSettings = {
   defaultBrowserId: '',
   openFilePaths: true,
   editor: { command: '', args: [] },
+  defaultEditorId: '',
 }
 
 export function setLinkSettings(next: LinkSettings): void {
@@ -90,6 +109,22 @@ export function externalEditor(): string {
   if (!command) return ''
   const base = command.split(/[/\\]/).filter(Boolean).pop() ?? ''
   return base.replace(/\.(exe|cmd|bat|com)$/i, '') || 'your editor'
+}
+
+/**
+ * Whether a plain click on a file path opens an Editor pane rather than the
+ * configured program.
+ *
+ * Two ways to be true, and they are not the same thing. Picking the pane in Settings
+ * says so outright. Having no external editor at all says it by default — which is
+ * why this is a question of its own and not just `!externalEditor()`: that answer is
+ * still load-bearing for the things that are about the *program* rather than the
+ * default (whether the right-click menu has a row to offer, how the tooltip words
+ * itself, and what an attachment's Open says, since an attachment lives outside every
+ * session root and no pane can open one).
+ */
+function inAppEditorIsDefault(): boolean {
+  return settings.defaultEditorId === IN_APP_EDITOR_ID || !externalEditor()
 }
 
 // ---- reading the buffer ----------------------------------------------------
@@ -223,6 +258,50 @@ function looksLikePath(token: string): boolean {
   if (path.length < 3) return false
   if (/^(~\/|\.{1,2}\/|\/)/.test(path)) return true
   return /\.[A-Za-z0-9]{1,12}$/.test(path)
+}
+
+/** One path a token names, and where its clickable span sits inside that token. */
+interface Expansion {
+  path: string
+  /** Offsets into the token, inclusive, for `rangeFor`. */
+  from: number
+  to: number
+}
+
+/**
+ * The paths a token names. `a/b.{h,cpp}` names two; everything else names itself.
+ *
+ * The span of each is the *alternative alone* — `h`, then `cpp` — not the whole token.
+ * Underlining `a/b.{h,cpp}` as one link would leave a click with no honest answer to
+ * which file it opens, and picking the first would be a guess made silently. Two small
+ * targets that each say what they do beat one big one that doesn't; the caller pairs
+ * each with a `label` of the full expanded path, so the hover names the file before the
+ * click commits to it.
+ *
+ * Deliberately unsupported: nesting, more than one group, ranges (`{1..3}`), and any
+ * group naming more than `MAX_BRACE_ALTS` files — those fall back to the whole token,
+ * which then lives or dies by `looksLikePath` exactly as it did before.
+ */
+function expandBraces(token: string): Expansion[] {
+  const whole: Expansion[] = [{ path: token, from: 0, to: token.length - 1 }]
+  const open = token.indexOf('{')
+  if (open < 0) return whole
+  const close = token.indexOf('}', open)
+  if (close < 0) return whole
+  const alts = token.slice(open + 1, close).split(',')
+  if (alts.length < 2 || alts.length > MAX_BRACE_ALTS || alts.some((a) => !a)) return whole
+
+  const prefix = token.slice(0, open)
+  const suffix = token.slice(close + 1)
+  const out: Expansion[] = []
+  // Walk the alternatives in order, tracking where each one starts, so the spans are
+  // the characters actually on screen rather than anything recomputed from the text.
+  let at = open + 1
+  for (const alt of alts) {
+    out.push({ path: prefix + alt + suffix, from: at, to: at + alt.length - 1 })
+    at += alt.length + 1 // the alternative, then its comma
+  }
+  return out
 }
 
 // ---- the click guard -------------------------------------------------------
@@ -359,30 +438,76 @@ function within(root: string, abs: string): boolean {
 }
 
 /**
- * Open a file the terminal printed in an in-app Editor pane. The editor reads
- * through its session's root-scoped filesystem service, so the pane has to be
- * one whose folder actually contains the file — there's no pane to open it in
- * otherwise, and saying so beats a tab that can't load. With an external editor
- * configured that's the way out, so the message points at it.
+ * Open a file a session printed in an in-app Editor pane, making one if there isn't
+ * one yet.
+ *
+ * The editor reads through its session's root-scoped filesystem service, so the pane
+ * has to be one whose folder contains the file. That used to be the end of it: no such
+ * pane, no open, just a toast telling you to go and make one. But a clicked *link*
+ * never asked that — `openInAppBrowser` above creates the pane it needs — and there is
+ * no reason a file should be the harder of the two. So an existing pane is reused and
+ * a missing one is created.
+ *
+ * Reused, not stacked: a link opens a new browser pane every time, the way a browser
+ * opens a tab, but a second Editor pane on the same folder is the same file tree twice
+ * over. The pane is per project; the tabs inside it are the per-file part.
+ *
+ * `token` is whatever was on screen — relative, `~`-prefixed or absolute. It is
+ * resolved through main against the printing session's own folder, which is the same
+ * boundary the editor itself enforces, so nothing here can reach a file that session
+ * couldn't. Callers with an already-absolute path lose nothing by it.
  */
-export function openInPane(path: string, line?: number): void {
+export async function openInPane(sessionId: string, token: string, line?: number): Promise<void> {
+  let resolved: string | null = null
+  try {
+    resolved = await window.terminator.resolveOutputPath(sessionId, token)
+  } catch {
+    resolved = null
+  }
+  if (!resolved) {
+    toastError("Couldn't open that file", `${token} isn't inside that session's folder`)
+    return
+  }
+  // Bound to a const so the closure below keeps the narrowing.
+  const path = resolved
+
   const st = useStore.getState()
-  const candidates = Object.values(st.sessions).filter(
+  const covering = Object.values(st.sessions).filter(
     (s) => s.kind === 'editor' && within(rootOf(s), path),
   )
   // Prefer one that's already on screen, so the file lands where you're looking.
-  const target = candidates.find((s) => st.panes.includes(s.id)) ?? candidates[0]
+  let target = covering.find((s) => st.panes.includes(s.id)) ?? covering[0]
+
   if (!target) {
-    toastError(
-      "Couldn't open that file",
-      'no editor pane covers it — open one for this project, or set an external editor in Settings',
-    )
-    return
+    // Rooted on the session that printed the path, not on whatever happens to be
+    // focused: the pane's folder has to *contain* the file, and `resolveOutputPath`
+    // has just proved this one does. A worktree is that session's folder, so it is
+    // the root; the project's name still labels it, the way a session started from a
+    // worktree's submenu is labelled (see `foldersOf` in menus.ts).
+    const from = st.sessions[sessionId]
+    if (!from?.projectPath) {
+      toastError("Couldn't open that file", 'the session it came from has no folder')
+      return
+    }
+    try {
+      target = await window.terminator.createSession({
+        kind: 'editor',
+        mode: 'normal',
+        projectName: from.projectName,
+        projectPath: from.worktreePath || from.projectPath,
+      })
+    } catch (e) {
+      toastError("Couldn't open an editor pane", String(e).slice(0, 200))
+      return
+    }
+    useStore.getState().upsert(target)
   }
-  st.openSession(target.id)
-  void editors.openFile(target.id, path, baseName(path)).then(() => {
-    if (line) editors.revealLine(target.id, path, line)
-  })
+
+  useStore.getState().openSession(target.id)
+  // Works on a pane that hasn't mounted yet: the file read resolves its root in main
+  // from the session id, and the editor store makes a session's state on first touch.
+  await editors.openFile(target.id, path, baseName(path))
+  if (line) editors.revealLine(target.id, path, line)
 }
 
 /** Hand a file to the configured editor; the main process re-checks the path. */
@@ -400,10 +525,10 @@ export async function openExternally(target: Extract<LinkTarget, { kind: 'file' 
   }
 }
 
-/** What a plain click does: the configured editor when there is one, else a pane. */
+/** What a plain click does: whichever of the two you made the default. */
 export function openFileTarget(target: Extract<LinkTarget, { kind: 'file' }>): void {
-  if (externalEditor()) void openExternally(target)
-  else openInPane(target.path, target.line)
+  if (inAppEditorIsDefault()) void openInPane(target.sessionId, target.path, target.line)
+  else void openExternally(target)
 }
 
 function open(target: LinkTarget, browserId?: string): void {
@@ -423,11 +548,16 @@ export function hoveredTarget(): LinkTarget | null {
 function describe(target: LinkTarget): { text: string; sub: string } {
   if (target.kind === 'file') {
     const editor = externalEditor()
+    // Three readings, because there are three situations: no program configured, one
+    // configured and chosen, one configured but the pane chosen. The middle line is
+    // the only one that can name the program as the destination.
     return {
       text: target.label,
-      sub: editor
-        ? `Click to open in ${editor} · right-click for an editor pane`
-        : 'Click to open in an editor pane · right-click for more',
+      sub: !editor
+        ? 'Click to open in an editor pane · right-click for more'
+        : inAppEditorIsDefault()
+          ? `Click to open in an editor pane · right-click for ${editor}`
+          : `Click to open in ${editor} · right-click for an editor pane`,
     }
   }
   const browser = defaultTarget()
@@ -585,12 +715,17 @@ export function openMenuForTarget(ev: MouseEvent, target: LinkTarget): boolean {
     )
   } else {
     const editor = externalEditor()
+    const inApp = inAppEditorIsDefault()
     if (editor) {
-      el.appendChild(menuItem(`Open in ${editor}`, 'default', () => void openExternally(target)))
+      el.appendChild(
+        menuItem(`Open in ${editor}`, inApp ? undefined : 'default', () =>
+          void openExternally(target),
+        ),
+      )
     }
     el.appendChild(
-      menuItem('Open in editor pane', editor ? undefined : 'default', () =>
-        openInPane(target.path, target.line),
+      menuItem('Open in editor pane', inApp ? 'default' : undefined, () =>
+        void openInPane(target.sessionId, target.path, target.line),
       ),
     )
     el.appendChild(
@@ -689,16 +824,39 @@ function makeProvider(sessionId: string, term: Terminal): ILinkProvider {
         return
       }
 
-      const candidates: { token: string; start: number; end: number }[] = []
+      // One entry per *file*, not per match: `a/b.{h,cpp}` is one match naming two,
+      // each with its own span. Expanding here rather than after the stats is what
+      // keeps this array 1:1 with the results below.
+      const candidates: {
+        path: string
+        line?: number
+        column?: number
+        start: number
+        end: number
+        label: string
+      }[] = []
       for (const m of group.text.matchAll(PATH_RE)) {
         if (m.index === undefined) continue
-        const token = m[0]
         const start = m.index
-        const end = start + token.length - 1
-        // Skip anything inside a URL we already matched (its host and path).
+        const end = start + m[0].length - 1
+        // Skip anything inside a URL we already matched (its host and path). Whole
+        // match, before expanding: an alternative can't be outside its own token.
         if (taken.some(([a, b]) => start <= b && end >= a)) continue
-        if (!looksLikePath(token)) continue
-        candidates.push({ token, start, end })
+        for (const e of expandBraces(m[0])) {
+          if (!looksLikePath(e.path)) continue
+          const { path, line, column } = splitLine(e.path)
+          candidates.push({
+            path,
+            line,
+            column,
+            start: start + e.from,
+            end: start + e.to,
+            // What the hover names. For a brace alternative that is the expanded path
+            // rather than the one character underlined, which is the whole point of
+            // underlining it: `h` on its own says nothing about which file it opens.
+            label: e.path,
+          })
+        }
       }
       if (!candidates.length) {
         callback(links)
@@ -707,9 +865,7 @@ function makeProvider(sessionId: string, term: Terminal): ILinkProvider {
 
       void Promise.all(
         candidates.map((c) =>
-          window.terminator
-            .resolveOutputPath(sessionId, splitLine(c.token).path)
-            .catch(() => null),
+          window.terminator.resolveOutputPath(sessionId, c.path).catch(() => null),
         ),
       ).then((resolved) => {
         resolved.forEach((abs, i) => {
@@ -717,15 +873,14 @@ function makeProvider(sessionId: string, term: Terminal): ILinkProvider {
           const c = candidates[i]
           const range = rangeFor(group, c.start, c.end)
           if (!range) return
-          const { line, column } = splitLine(c.token)
           links.push(
-            makeLink(term, range, c.token, {
+            makeLink(term, range, group.text.slice(c.start, c.end + 1), {
               kind: 'file',
               sessionId,
               path: abs,
-              line,
-              column,
-              label: c.token,
+              line: c.line,
+              column: c.column,
+              label: c.label,
             }),
           )
         })

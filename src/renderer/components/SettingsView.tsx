@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   IN_APP_BROWSER_ID,
   IN_APP_BROWSER_NAME,
+  IN_APP_EDITOR_ID,
   USAGE_REFRESH_DEFAULT,
   USAGE_REFRESH_MAX,
   USAGE_REFRESH_MIN,
@@ -379,6 +380,8 @@ export function SettingsView(): React.JSX.Element | null {
     .filter(Boolean)
     .pop()
     ?.replace(/\.(exe|cmd|bat|com)$/i, '')
+  // Same rule the renderer's link module applies: chosen, or the only one left.
+  const inAppEditor = draft.links?.defaultEditorId === IN_APP_EDITOR_ID || !editorLabel
 
   const toggleTrigger = (t: NotifType) => {
     const cur = draft.notifications.triggerOn
@@ -892,18 +895,13 @@ export function SettingsView(): React.JSX.Element | null {
 
                 <Field
                   label="EXTERNAL EDITOR"
-                  hint="The program a clicked file path opens in. Program and arguments are kept apart and handed straight to the process, so a path with spaces needs no quoting. In the arguments, {path}, {line} and {column} are filled in where you put them — an argument mentioning {line} is dropped when the path had no line number, and with no {path} anywhere the file is added at the end. Leave the program blank to open file paths in an in-app Editor pane instead."
+                  hint="A program to open clicked file paths in, if you'd rather not use an in-app Editor pane. Program and arguments are kept apart and handed straight to the process, so a path with spaces needs no quoting. In the arguments, {path}, {line} and {column} are filled in where you put them — an argument mentioning {line} is dropped when the path had no line number, and with no {path} anywhere the file is added at the end."
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <EditorRow
                       editor={draft.links?.editor ?? { command: '', args: [] }}
                       onChange={(editor) => patchLinks({ editor })}
                     />
-                    <div style={{ fontSize: 10.5, color: C.dim }}>
-                      {editorLabel
-                        ? `A clicked path opens ${editorLabel}, and so does a non-image attachment from its toast. Right-click a path for an editor pane instead.`
-                        : 'A clicked path opens an in-app Editor pane covering that project, and an attachment opened from its toast goes to your default program.'}
-                    </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 14px', fontSize: 10.5, color: C.faint2 }}>
                       {EDITOR_EXAMPLES.map(([name, args]) => (
                         <span key={name} style={{ whiteSpace: 'nowrap' }}>
@@ -913,6 +911,34 @@ export function SettingsView(): React.JSX.Element | null {
                     </div>
                   </div>
                 </Field>
+
+                {/*
+                  Only worth showing once there are two answers. With no program set
+                  there is nothing to choose between, and a control whose second option
+                  has no name would be asking a question it can't finish.
+                */}
+                {!!editorLabel && (
+                  <Field
+                    label="OPENS FILE PATHS IN"
+                    hint="Which of the two a plain click uses. Right-click a path for the other one either way. An attachment opened from its toast always goes to the program (or your OS default): it lives outside every session's folder, and an Editor pane only reads inside one."
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <Choice
+                        value={inAppEditor ? IN_APP_EDITOR_ID : ''}
+                        onPick={(defaultEditorId) => patchLinks({ defaultEditorId })}
+                        options={[
+                          { value: IN_APP_EDITOR_ID, label: 'This app' },
+                          { value: '', label: editorLabel },
+                        ]}
+                      />
+                      <div style={{ fontSize: 10.5, color: C.dim }}>
+                        {inAppEditor
+                          ? `A clicked path opens an Editor pane for that project, making one if there isn't one already. Right-click a path for ${editorLabel} instead.`
+                          : `A clicked path opens ${editorLabel}. Right-click a path for an Editor pane instead.`}
+                      </div>
+                    </div>
+                  </Field>
+                )}
               </>
             ),
           )}
