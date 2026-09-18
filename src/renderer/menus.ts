@@ -4,7 +4,7 @@ import type { MenuNode } from './components/ContextMenu'
 import { TYPES, TYPE_MAP, type TypeKey } from './sessionTypes'
 import * as registry from './term/registry'
 import { externalEditor } from './term/links'
-import { PANE_LABELS, useStore, type LayoutName, type MenuTarget } from './state/store'
+import { useStore, type MenuTarget } from './state/store'
 
 // ---- actions ---------------------------------------------------------------
 // The menu model is pure — the same context always yields the same rows in the
@@ -142,7 +142,6 @@ export interface MenuCtx {
   project: { name: string; path: string } | null
   /** Sessions belonging to that project — the project menu's Run/Stop need them. */
   projectSessions: Session[]
-  layout: LayoutName
   panes: string[]
   settings: Settings | null
   collapsed: Record<string, boolean>
@@ -288,19 +287,22 @@ function openSection(ctx: MenuCtx): MenuNode[] {
   const s = ctx.sessions[0]
   // With one pane there is no choice to offer, so the section isn't there at all.
   if (ctx.panes.length < 2) return []
-  const labels = PANE_LABELS[ctx.layout]
+  // Panes are numbered rather than named. "Left" and "Top right" meant something
+  // when there were three fixed layouts; with splits you arrange yourself there is
+  // no shape to name, and the `note` — what's actually in the pane — is what
+  // identifies it to anyone reading the menu anyway.
   return [
     {
       kind: 'sub',
       id: 'open-split',
       label: 'Open in split',
-      icon: ctx.layout === 'grid4' ? 'grid' : 'columns',
+      icon: 'columns',
       items: ctx.panes.map((occupant, i) => {
         const here = useStore.getState().sessions[occupant]
         return {
           kind: 'item' as const,
           id: `split:${i}`,
-          label: labels[i] ?? `Split ${i + 1}`,
+          label: `Pane ${i + 1}`,
           note: here ? here.name : 'empty',
           checked: occupant === s.id,
           run: () => useStore.getState().openInPane(s.id, i),

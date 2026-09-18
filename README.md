@@ -30,8 +30,10 @@ npm run typecheck  # tsc, no emit
 - **Sidebar** lists every session grouped by project, each with a live status dot.
   **Right-click** a session for everything you can do to it — rename, start/stop, branch,
   folders — whether or not it's open in a pane. See below.
-- **Main area** shows open sessions as live terminal panes, with a layout switcher for viewing
-  **1 / 2 / 4** sessions at once. Off-screen sessions keep running.
+- **Main area** shows open sessions as live terminal panes. **Drag a session from the sidebar
+  onto a pane** to split it — drop near an edge to split that way, in the middle to open it
+  there. Splits nest as deep as you like, dividers drag to resize, and each pane header has an
+  **✕** that closes the pane without touching the session. Off-screen sessions keep running.
 - **New session**: pick a folder, name it, choose a type — **Claude**, **Claude (read-only)**,
   **Terminal**, **Editor** or **Browser** — and optionally create a **git worktree** on a new
   branch.
@@ -111,9 +113,10 @@ gaps.
 - **New session here** starts one of the five types on the same project immediately — no dialog,
   no re-picking the folder. That's the way to open a **Browser** pane without a link to click. **More options…** opens the normal New Session dialog with the
   project already filled in, for when you want a name, a worktree or a branch.
-- **Open in split** picks which pane it lands in, rather than the app choosing. It only appears
-  when there's more than one split to choose between — and it's the only opening entry, since
-  clicking the row already opens it.
+- **Open in split** picks which pane it lands in, rather than the app choosing — the way to do
+  it without dragging. Panes are listed as **Pane 1…N** with whatever's in each one beside it.
+  It only appears when there's more than one to choose between, and it's the only opening entry,
+  since clicking the row already opens it.
 - Destructive actions sit last, separated, and keep their confirmation. There's no **Close**:
   it only ever meant Remove, and now that Stop exists the pair that means something is **Stop**
   and **Remove**.
@@ -381,7 +384,9 @@ generated, say, which lives behind a claude.ai login and so can't just be opened
   other. Nothing about a browser pane starts or stops, so its menu offers no Start or Relaunch.
 - **Switching away doesn't reload it.** Clicking another session takes the pane off the screen,
   not the page out of memory. Come back and you are where you left off — same scroll, same
-  half-filled form, same Back and Forward. Changing the layout doesn't reload it either. The page
+  half-filled form, same Back and Forward. Splitting, resizing and closing panes around it don't
+  reload it either — the pane's element never moves, which is the whole reason the layout is
+  built the way it is. The page
   goes on running in the background the way a tab you aren't looking at does, until you remove
   the session.
 - **It stays signed in** — the browser keeps its own cookies and site data, in its own storage
@@ -431,6 +436,15 @@ In a terminal pane:
   pane, made if there isn't one already, or your configured editor. **Right-click** for the other
   one, and Copy path.
 - **Drop a file** on a pane to hand it to that session.
+- **Drag a session from the sidebar** onto a pane to arrange the splits. The half or edge you're
+  over lights up as you hover: drop on the **left or right** edge to split into columns, **top or
+  bottom** for rows, or the **middle** to open it in that pane instead. Dropping onto the empty
+  pane just fills it — there's nothing to split.
+- **Drag the gap** between two panes to resize them, and **double-click** it to even them out
+  again. Terminals reflow as you drag, so a program that cares about the width sees the new one.
+- **✕ in a pane header** closes that pane; its neighbour takes the space and the session keeps
+  running in the sidebar. It's next to, but deliberately apart from, the power button that stops
+  the session itself.
 - **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
   still reaches the program in the pane, untouched.)
 - **Ctrl/Cmd+F** in a conversation opens its find box. **Esc** then closes the box rather than

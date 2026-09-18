@@ -57,7 +57,7 @@ const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 /**
  * Click-to-open picker for a header metric (model/effort). Selecting an option
  * fires onPick; the displayed value comes from Claude's statusLine report, so it
- * refreshes itself after the slash command applies. Modeled on Sidebar's LayoutMenu.
+ * refreshes itself after the slash command applies.
  */
 function MetricPicker({
   value,
@@ -168,7 +168,16 @@ function MetricPicker({
   )
 }
 
-export function PaneHeader({ session, active }: { session: Session; active: boolean }): React.JSX.Element {
+export function PaneHeader({
+  session,
+  active,
+  index,
+}: {
+  session: Session
+  active: boolean
+  /** Which split this header belongs to; -1 for a browser pane parked offscreen. */
+  index: number
+}): React.JSX.Element {
   // The surface has to match, the same way Sidebar's row checks it: `editingId` is
   // global, and a browser pane parked offscreen still has a header — without this,
   // renaming from the sidebar would mount an autofocused input out of sight and
@@ -179,6 +188,9 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
   const openSession = useStore((s) => s.openSession)
   const showTranscript = useStore((s) => !!s.transcripts[session.id])
   const toggleTranscript = useStore((s) => s.toggleTranscript)
+  const closePane = useStore((s) => s.closePane)
+  // A parked browser pane has a header but no split, so there is nothing to close.
+  const canClosePane = useStore((s) => s.panes.length > 1 && index >= 0)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isClaude = session.kind === 'claude'
@@ -410,6 +422,22 @@ export function PaneHeader({ session, active }: { session: Session; active: bool
         >
           <Icon name="power" size={15} />
         </button>
+        {/* Deliberately set apart from the power button next to it. That one
+            stops the process and asks first; this one only takes the pane off
+            the screen and is instant. Two buttons that both say "close" have to
+            be told apart at a glance, so they don't sit in the same cluster. */}
+        {canClosePane && (
+          <>
+            <div style={{ width: 1, height: 20, background: ink(0.08), flex: 'none', margin: '0 2px' }} />
+            <button
+              onClick={() => closePane(index)}
+              title="Close this pane (the session keeps running)"
+              style={iconBtn()}
+            >
+              <Icon name="close" size={15} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   )

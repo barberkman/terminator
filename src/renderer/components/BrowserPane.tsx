@@ -21,9 +21,10 @@ import { DropVeil, useFileDrop } from './paneDrop'
  * reason moving an <iframe> reloads it.
  *
  * So PaneGrid renders one of these per live browser session, as a permanent child
- * of the grid, and this component only ever changes its *CSS*: into the grid cell
- * of the split showing it, or offscreen when no split is. The element never moves,
- * so the page never reloads.
+ * of the grid, and this component only ever changes its *CSS*: into the rect of
+ * the split showing it, or offscreen when no split is. The element never moves,
+ * so the page never reloads — which is also why the whole layout is absolute
+ * rects rather than nested boxes (see paneTree.ts).
  *
  * `index` is the split it currently occupies, or -1 for parked.
  */
@@ -72,7 +73,7 @@ export function BrowserPane({
         height: '100%',
         pointerEvents: 'none',
       }
-    : { ...cell, position: 'relative', ...frame }
+    : { ...cell, ...frame }
 
   return (
     <div
@@ -95,7 +96,7 @@ export function BrowserPane({
       }}
     >
       {over && <DropVeil bad label="Browser panes can't take attachments" />}
-      <PaneHeader session={session} active={!parked && focused} />
+      <PaneHeader session={session} active={!parked && focused} index={index} />
       <BrowserPaneBody session={session} shown={!parked} />
     </div>
   )

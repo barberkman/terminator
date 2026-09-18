@@ -3,9 +3,8 @@ import type { ProjectConfig, Session } from '../../shared/types'
 import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { runProjectTask, stopProjectTask } from '../menus'
+import { SESSION_MIME } from './SplitDropOverlay'
 import {
-  LAYOUT_COUNT,
-  type LayoutName,
   type MenuTarget,
   type ProjectGroup,
   type SidebarRow,
@@ -45,12 +44,6 @@ const menuInputStyle: React.CSSProperties = {
   outline: 'none',
   boxSizing: 'border-box',
 }
-
-const LAYOUTS: { name: LayoutName; icon: IconName; label: string }[] = [
-  { name: 'single', icon: 'single', label: 'Single pane' },
-  { name: 'cols2', icon: 'columns', label: 'Two columns' },
-  { name: 'grid4', icon: 'grid', label: 'Grid · 4 panes' },
-]
 
 /** Id of the session row currently being dragged (sidebar reorder). */
 let draggedId: string | null = null
@@ -152,10 +145,18 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
       onDragStart={(e) => {
         draggedId = session.id
         e.dataTransfer.effectAllowed = 'move'
+        // Two audiences. The MIME type is for the panes: `getData` is sealed
+        // during dragover, but `types` is readable, so this is the only way a
+        // drop target can tell a session drag from a file drag before the drop.
+        // The store field is for the drop overlay, which has to *mount* when the
+        // drag starts. Sidebar reordering below still uses `draggedId`.
+        e.dataTransfer.setData(SESSION_MIME, session.id)
+        useStore.getState().setDraggingSession(session.id)
       }}
       onDragEnd={() => {
         draggedId = null
         setDragOver(false)
+        useStore.getState().setDraggingSession(null)
       }}
       onDragOver={(e) => {
         if (!canDropHere()) return
@@ -334,85 +335,6 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
       >
         <Icon name="close" size={13} />
       </button>
-    </div>
-  )
-}
-
-function LayoutMenu(): React.JSX.Element {
-  const layout = useStore((s) => s.layout)
-  const setLayout = useStore((s) => s.setLayout)
-  const [open, setOpen] = useState(false)
-  const current = LAYOUTS.find((l) => l.name === layout) ?? LAYOUTS[0]
-
-  return (
-    <div style={{ position: 'relative', display: 'flex' }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        title={`Layout: ${current.label}`}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: sz(26),
-          height: sz(26),
-          borderRadius: 6,
-          border: `1px solid ${C.border2}`,
-          background: 'transparent',
-          color: C.textSubtle,
-          cursor: 'pointer',
-        }}
-      >
-        <Icon name={current.icon} size={15} />
-      </button>
-      {open && (
-        <>
-          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 30 }} />
-          <div
-            style={{
-              position: 'absolute',
-              top: 32,
-              right: 0,
-              zIndex: 31,
-              width: 188,
-              padding: 5,
-              background: C.panel,
-              border: `1px solid ${C.border3}`,
-              borderRadius: 10,
-              boxShadow: C.shadowMenu,
-              animation: 'cc-fade 0.12s ease',
-            }}
-          >
-            {LAYOUTS.map((l) => (
-              <div
-                key={l.name}
-                onClick={() => {
-                  setLayout(l.name)
-                  setOpen(false)
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  padding: '7px 9px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  color: l.name === layout ? C.textHi : C.body,
-                }}
-              >
-                <span style={{ display: 'flex', color: l.name === layout ? C.accent : C.muted, flex: 'none' }}>
-                  <Icon name={l.icon} size={15} />
-                </span>
-                <span style={{ flex: 1, fontSize: 12.5 }}>{l.label}</span>
-                {l.name === layout && (
-                  <span style={{ display: 'flex', color: C.accent, flex: 'none' }}>
-                    <Icon name="check" size={14} />
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </div>
   )
 }
@@ -899,7 +821,6 @@ export function Sidebar(): React.JSX.Element {
           >
             <Icon name="settings" size={15} />
           </button>
-          <LayoutMenu />
           <button
             onClick={toggleSidebar}
             title="Hide sidebar (Ctrl/⌘B)"

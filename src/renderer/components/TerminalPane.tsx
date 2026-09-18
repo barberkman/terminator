@@ -9,9 +9,9 @@ import { ConversationView } from './ConversationView'
 import { DropVeil, useFileDrop } from './paneDrop'
 
 /**
- * Every pane but a browser one. `cell` is the grid placement PaneGrid works out:
- * explicit now that the grid's children are no longer one-per-cell in DOM order
- * (browser panes are permanent children of the same grid — see BrowserPane).
+ * Every pane but a browser one. `cell` is the absolute rect PaneGrid works out
+ * from the split tree — the panes are positioned, never nested, because a browser
+ * pane's <webview> cannot survive being re-parented (see BrowserPane).
  */
 export function TerminalPane({
   id,
@@ -112,7 +112,7 @@ export function TerminalPane({
         }}
       >
         {over && <DropVeil bad label="Editor panes can't take attachments" />}
-        <PaneHeader session={session} active={focused} />
+        <PaneHeader session={session} active={focused} index={index} />
         <EditorPaneBody session={session} />
       </div>
     )
@@ -156,7 +156,7 @@ export function TerminalPane({
           }
         />
       )}
-      <PaneHeader session={session} active={focused} />
+      <PaneHeader session={session} active={focused} index={index} />
       <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <TerminalView id={id} active={focused} />
         {needsRelaunch && !showTranscript && (
