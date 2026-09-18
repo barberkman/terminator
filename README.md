@@ -23,7 +23,13 @@ binaries, so there's no compile/rebuild step.
 npm run build      # production build into out/
 npm start          # run the production build
 npm run typecheck  # tsc, no emit
+npm test           # unit tests, via node --test
 ```
+
+`npm test` covers the split-pane geometry (`src/renderer/state/paneTree.ts`) — the one piece of
+this app that is pure arithmetic, and so the one worth testing without an app around it. There's
+no framework and no test dependency: Node runs the TypeScript directly. That needs **Node 22.18+**
+(type stripping without a flag), a little newer than the app itself asks for.
 
 ## What it does
 

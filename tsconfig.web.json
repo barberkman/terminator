@@ -10,6 +10,9 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
+    // Tests import with an explicit .ts extension, which is what Node needs to
+    // resolve and strip them (`npm test`). Safe here because nothing is emitted.
+    "allowImportingTsExtensions": true,
     "types": ["node"],
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
