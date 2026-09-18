@@ -11,7 +11,13 @@ import { attachDrop, attachDropToComposer } from '../attach'
 // a browser pane importing it *from* the terminal pane would be a dependency that
 // says nothing true about either.
 
-/** True for a drag carrying files — a sidebar session drag carries text/plain. */
+/**
+ * True for a drag carrying files.
+ *
+ * A sidebar session drag carries `application/x-terminator-session` instead, and
+ * is handled by SplitDropOverlay rather than here — so this stays the one test
+ * that decides whether a pane should take a drop at all.
+ */
 export function hasFiles(e: React.DragEvent): boolean {
   return Array.from(e.dataTransfer.types).includes('Files')
 }

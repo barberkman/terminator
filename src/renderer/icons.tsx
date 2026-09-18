@@ -16,8 +16,8 @@ export type IconName =
   | 'folder'
   | 'chevron'
   | 'columns'
+  | 'rows'
   | 'single'
-  | 'grid'
   | 'terminal'
   | 'sparkle'
   | 'note'
@@ -192,19 +192,17 @@ export function Icon({ name, size = 15 }: { name: IconName; size?: number }): Re
           <path d="M12 5v14" />
         </svg>
       )
+    case 'rows':
+      return (
+        <svg {...common}>
+          <rect x={4} y={5} width={16} height={14} rx={1.5} />
+          <path d="M4 12h16" />
+        </svg>
+      )
     case 'single':
       return (
         <svg {...common}>
           <rect x={5} y={5} width={14} height={14} rx={1.5} />
-        </svg>
-      )
-    case 'grid':
-      return (
-        <svg {...common}>
-          <rect x={4} y={4} width={7} height={7} rx={1} />
-          <rect x={13} y={4} width={7} height={7} rx={1} />
-          <rect x={4} y={13} width={7} height={7} rx={1} />
-          <rect x={13} y={13} width={7} height={7} rx={1} />
         </svg>
       )
     case 'terminal':

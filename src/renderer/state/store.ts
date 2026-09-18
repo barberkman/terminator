@@ -10,16 +10,7 @@ import {
 import { type CustomTheme, setCustomThemes as publishThemes } from '../../shared/themes'
 import type { IconName } from '../icons'
 import * as editor from '../editor/registry'
-
-export type LayoutName = 'single' | 'cols2' | 'grid4'
-export const LAYOUT_COUNT: Record<LayoutName, number> = { single: 1, cols2: 2, grid4: 4 }
-
-/** Human name per split, index-aligned with `panes`. */
-export const PANE_LABELS: Record<LayoutName, string[]> = {
-  single: ['Pane'],
-  cols2: ['Left', 'Right'],
-  grid4: ['Top left', 'Top right', 'Bottom left', 'Bottom right'],
-}
+import { type PaneNode, type Side, removeAt, resetSizesAt, resizeAt, splitAt } from './paneTree'
 
 /**
  * What a context menu was opened on. Sessions are a *list* from the start, even
@@ -154,8 +145,27 @@ export interface SidebarRow {
 interface StoreState {
   sessions: Record<string, Session>
   order: string[]
-  layout: LayoutName
+  /**
+   * The shape of the splits. Geometry only — it holds no session ids and never
+   * renders anything, because the panes themselves must stay a flat,
+   * never-reordered child list for the <webview>s' sake (see paneTree.ts and
+   * PaneGrid). Its leaves, depth-first, are index-aligned with `panes`:
+   * `leafCount(tree) === panes.length` at all times.
+   *
+   * Not persisted, the same as the old fixed layout wasn't: every launch starts
+   * as a single pane. main knows nothing about panes at all.
+   */
+  tree: PaneNode
   panes: string[]
+  /**
+   * The session being dragged out of the sidebar right now, or null.
+   *
+   * It lives in the store rather than in a module variable because the drop
+   * overlay has to *mount* when a drag starts — a pane can't discover a drag
+   * crossing it when the pane is a <webview> that swallows drag events, so the
+   * overlay goes above everything and is only there while it's needed.
+   */
+  draggingSessionId: string | null
   /**
    * Browser sessions holding a live pane, in the order they were first shown.
    *
@@ -239,9 +249,13 @@ interface StoreState {
   init(): Promise<void>
   upsert(s: Session): void
   remove(id: string): void
-  setLayout(name: LayoutName): void
   openSession(id: string): void
   openInPane(id: string, index: number): void
+  splitPane(id: string, index: number, side: Side): void
+  closePane(index: number): void
+  resizeSplit(path: number[], i: number, fraction: number, min?: number): void
+  resetSplit(path: number[]): void
+  setDraggingSession(id: string | null): void
   reorderWithinGroup(draggedId: string, targetId: string): void
   focusPane(i: number): void
   toggleGroup(name: string): void
@@ -267,10 +281,6 @@ interface StoreState {
   setUsage(u: UsageSnapshot): void
   pushToast(t: Omit<ToastItem, 'id'>): void
   dismissToast(id: number): void
-}
-
-function emptyPanes(count: number): string[] {
-  return Array.from({ length: count }, () => '')
 }
 
 /**
@@ -327,8 +337,9 @@ export function modalOpen(): boolean {
 export const useStore = create<StoreState>((set, get) => ({
   sessions: {},
   order: [],
-  layout: 'single',
+  tree: { kind: 'leaf' },
   panes: [''],
+  draggingSessionId: null,
   browserLive: [],
   focused: 0,
   collapsed: {},
@@ -420,14 +431,27 @@ export const useStore = create<StoreState>((set, get) => ({
       // <webview> — and the renderer process behind it — with no session left to
       // show it in.
       const stillLive = st.browserLive.filter((x) => x !== id)
-      const shown = new Set(st.panes.filter((p) => p && p !== id))
-      const backfill = () => order.find((oid) => !shown.has(oid)) ?? ''
-      const panes = st.panes.map((p) => {
-        if (p !== id) return p
-        const next = backfill()
-        if (next) shown.add(next)
-        return next
-      })
+      // A pane whose session is gone closes, and its sibling takes the space.
+      // It used to backfill from `order` instead, which made sense when panes
+      // were fixed furniture you couldn't get rid of — with splits you make
+      // yourself, conjuring an unrelated session into the gap is just a layout
+      // you didn't ask for. Removing the only pane's session empties it rather
+      // than closing it, because there is always exactly one pane.
+      let panes = st.panes.slice()
+      let tree = st.tree
+      let focused = st.focused
+      for (let i = panes.length - 1; i >= 0; i--) {
+        if (panes[i] !== id) continue
+        if (panes.length === 1) {
+          panes = ['']
+          tree = { kind: 'leaf' }
+          focused = 0
+        } else {
+          panes.splice(i, 1)
+          tree = removeAt(tree, i)
+          if (focused > i) focused -= 1
+        }
+      }
       const transcripts = { ...st.transcripts }
       delete transcripts[id]
       const drafts = { ...st.drafts }
@@ -439,15 +463,14 @@ export const useStore = create<StoreState>((set, get) => ({
       return {
         sessions,
         order,
-        // The backfill below can pull a browser session into the vacated split, so
-        // this is both halves: the removed one goes, whatever took its place stays.
         browserLive: keepBrowsersAlive(stillLive, panes, sessions),
+        tree,
         panes,
         transcripts,
         drafts,
         pendings,
         attachments,
-        focused: Math.min(st.focused, Math.max(0, panes.length - 1)),
+        focused: Math.min(focused, Math.max(0, panes.length - 1)),
         // A prompt about the session that just went away has nothing left to ask.
         // The browser-clear prompt isn't about a session, so it survives.
         confirm:
@@ -463,55 +486,22 @@ export const useStore = create<StoreState>((set, get) => ({
     })
   },
 
-  setLayout(name) {
-    const count = LAYOUT_COUNT[name]
-    set((st) => {
-      let panes = st.panes.slice()
-      let focused = st.focused
-      if (panes.length > count) {
-        // Shrinking: keep the focused pane first, then the rest.
-        const focusId = panes[focused] || ''
-        const others = panes.filter((_, i) => i !== focused)
-        panes = [focusId, ...others].slice(0, count)
-        focused = 0
-      } else {
-        // Growing: add empty panes — let the user choose what goes in them
-        // (don't auto-fill, which used to strand the focused pane empty).
-        while (panes.length < count) panes.push('')
-      }
-      if (!panes.length) panes = emptyPanes(count)
-      if (focused >= panes.length) focused = 0
-      return {
-        layout: name,
-        panes,
-        browserLive: keepBrowsersAlive(st.browserLive, panes, st.sessions),
-        focused,
-        editingId: null,
-      }
-    })
-  },
-
   openSession(id) {
     set((st) => {
       const panes = st.panes.length ? st.panes.slice() : ['']
       const existing = panes.indexOf(id)
       let focused = st.focused
+      if (focused >= panes.length) focused = 0
       if (existing >= 0) {
         // Already on screen — just focus its pane.
         focused = existing
-      } else if (!panes[focused]) {
-        // Focused split is empty — open it here.
-        panes[focused] = id
       } else {
-        // Focused split is occupied: fill the next empty split if there is one
-        // (so a second session lands beside the first), else replace the focused.
-        const emptyIdx = panes.indexOf('')
-        if (emptyIdx >= 0) {
-          panes[emptyIdx] = id
-          focused = emptyIdx
-        } else {
-          panes[focused] = id
-        }
+        // Takes over the focused pane. There is no "find an empty split" case
+        // any more: splits are made by dropping a session onto one, so a pane
+        // only exists because a session was put in it. Clicking a row means
+        // "show me this", not "rearrange my layout" — dropping it on an edge is
+        // how you ask for that.
+        panes[focused] = id
       }
       const cur = st.sessions[id]
       if (cur?.notified) window.terminator.clearNotified(id)
@@ -537,21 +527,137 @@ export const useStore = create<StoreState>((set, get) => ({
     set((st) => {
       if (index < 0 || index >= st.panes.length) return {}
       const panes = st.panes.slice()
+      let tree = st.tree
+      let target = index
       const prev = panes.indexOf(id)
-      if (prev >= 0 && prev !== index) panes[prev] = ''
-      panes[index] = id
+      // Vacating *closes* the pane it came from rather than blanking it. Leaving
+      // an empty one behind was right when panes were fixed furniture you could
+      // not get rid of; now that every pane exists because something was put in
+      // it, a blank one is a pane you never asked for and — having no header —
+      // no way to close.
+      if (prev >= 0 && prev !== index && panes.length > 1) {
+        panes.splice(prev, 1)
+        tree = removeAt(tree, prev)
+        if (prev < target) target -= 1
+      }
+      panes[target] = id
       const cur = st.sessions[id]
       if (cur?.notified) window.terminator.clearNotified(id)
       const sessions =
         cur && cur.notified ? { ...st.sessions, [id]: { ...cur, notified: false } } : st.sessions
       return {
+        tree,
         panes,
         browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
-        focused: index,
+        focused: target,
         sessions,
         editingId: null,
       }
     })
+  },
+
+  /**
+   * Split the pane at `index` and put `id` in the new half — the drop-on-an-edge
+   * action, and the only way a pane comes into being.
+   *
+   * The vacate step is the fiddly part. A session may appear in `panes` at most
+   * once (one xterm host element can only live in one place), so opening one
+   * that is already on screen has to close the pane it was in. That shifts every
+   * ordinal after it down by one, including possibly the one being split — hence
+   * the adjustment rather than splitting first and tidying up after.
+   */
+  splitPane(id, index, side) {
+    const now = get()
+    if (index < 0 || index >= now.panes.length) return
+    // There is nothing to split: halving an empty pane would leave one half
+    // still empty. The only empty pane there can be is the one that stands in
+    // for "no sessions open at all", and dropping onto it means fill it.
+    if (!now.panes[index]) {
+      get().openInPane(id, index)
+      return
+    }
+    set((st) => {
+      if (index < 0 || index >= st.panes.length) return {}
+      let panes = st.panes.slice()
+      let tree = st.tree
+      let at = index
+
+      const prev = panes.indexOf(id)
+      if (prev >= 0) {
+        // Already in the pane being split, and there's nowhere for it to come
+        // from: closing that pane and splitting it are the same pane.
+        if (prev === index) return {}
+        panes.splice(prev, 1)
+        tree = removeAt(tree, prev)
+        if (prev < at) at -= 1
+      }
+
+      const split = splitAt(tree, at, side)
+      panes.splice(split.at, 0, id)
+      tree = split.tree
+
+      const cur = st.sessions[id]
+      if (cur?.notified) window.terminator.clearNotified(id)
+      const sessions =
+        cur && cur.notified ? { ...st.sessions, [id]: { ...cur, notified: false } } : st.sessions
+      return {
+        tree,
+        panes,
+        browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
+        focused: split.at,
+        sessions,
+        editingId: null,
+      }
+    })
+  },
+
+  /**
+   * Take a pane off the screen. Its sibling absorbs the space.
+   *
+   * The session is not touched — it keeps running and stays in the sidebar, the
+   * same bargain a browser pane already makes. Closing the last pane leaves the
+   * empty one behind rather than no pane at all, because PaneGrid's element has
+   * to outlive every session (parked webviews hang from it).
+   */
+  closePane(index) {
+    set((st) => {
+      if (index < 0 || index >= st.panes.length) return {}
+      if (st.panes.length <= 1) {
+        // The last pane empties instead of disappearing.
+        return st.panes[0] === '' ? {} : { tree: { kind: 'leaf' }, panes: [''], focused: 0 }
+      }
+      const panes = st.panes.slice()
+      panes.splice(index, 1)
+      const tree = removeAt(st.tree, index)
+      // Focus follows the pane that took the space: the one now at this index,
+      // or the new last pane when the closed one was at the end.
+      const focused = Math.min(st.focused > index ? st.focused - 1 : index, panes.length - 1)
+      return {
+        tree,
+        panes,
+        browserLive: keepBrowsersAlive(st.browserLive, panes, st.sessions),
+        focused: Math.max(0, focused),
+        editingId: null,
+      }
+    })
+  },
+
+  resizeSplit(path, i, fraction, min) {
+    set((st) => {
+      const tree = resizeAt(st.tree, path, i, fraction, min)
+      return tree === st.tree ? {} : { tree }
+    })
+  },
+
+  resetSplit(path) {
+    set((st) => {
+      const tree = resetSizesAt(st.tree, path)
+      return tree === st.tree ? {} : { tree }
+    })
+  },
+
+  setDraggingSession(id) {
+    set((st) => (st.draggingSessionId === id ? {} : { draggingSessionId: id }))
   },
 
   reorderWithinGroup(draggedId, targetId) {
