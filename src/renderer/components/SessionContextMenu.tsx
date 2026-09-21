@@ -79,10 +79,13 @@ export function SessionContextMenu(): React.JSX.Element | null {
 
   // Keyed so right-clicking a different row remounts the panel rather than
   // reusing it — otherwise the keyboard highlight would carry over at a stale index.
+  const t = menu.target
   const key =
-    menu.target.kind === 'project'
-      ? `p:${menu.target.path}`
-      : `s:${menu.target.ids.join(',')}:${menu.x},${menu.y}`
+    t.kind === 'project'
+      ? `p:${t.path}`
+      : t.kind === 'app'
+        ? `a:${menu.x},${menu.y}`
+        : `s:${t.ids.join(',')}:${menu.x},${menu.y}`
   return (
     <MenuPanel
       key={key}

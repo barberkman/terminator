@@ -130,7 +130,9 @@ worktree that level isn't there and they're plain entries.
 
 The same menu is on the **session tabs of the collapsed rail**, and **project group headers**
 get a per-project one: a new session in that project, its Build/Run/Stop commands (only the ones
-you've configured), the project folder, and collapse.
+you've configured), the project folder, and collapse. The collapsed rail's **sidebar button** has
+a small one of its own — **Notes** and **Settings**, the two header buttons the rail is too narrow
+to show.
 
 It's an in-app menu, not an OS one, so it follows your theme like everything else. Arrows and
 Enter work, `→`/`←` open and leave submenus, typing jumps to an entry, and **Esc** closes one
@@ -439,7 +441,8 @@ In a terminal pane:
 - **Drag a session from the sidebar** onto a pane to arrange the splits. The half or edge you're
   over lights up as you hover: drop on the **left or right** edge to split into columns, **top or
   bottom** for rows, or the **middle** to open it in that pane instead. Dropping onto the empty
-  pane just fills it — there's nothing to split.
+  pane just fills it — there's nothing to split. A **collapsed-rail tab** drags the same way, so
+  rearranging never means reopening the sidebar first.
 - **Drag the gap** between two panes to resize them, and **double-click** it to even them out
   again. Terminals reflow as you drag, so a program that cares about the width sees the new one.
 - **✕ in a pane header** closes that pane; its neighbour takes the space and the session keeps
@@ -455,8 +458,9 @@ In a terminal pane:
 In a browser pane: **F5** reloads the page and **Ctrl/Cmd+F** finds in it, either one from the
 page itself or from the pane's chrome.
 
-In the sidebar: **right-click** a session row, a collapsed-rail tab or a project header for its
-menu (see **Session menus** above); arrows and Enter move and pick, **Esc** closes one level.
+In the sidebar: **right-click** a session row, a collapsed-rail tab, a project header or the
+collapsed rail's sidebar button for its menu (see **Session menus** above); arrows and Enter move
+and pick, **Esc** closes one level.
 
 Elsewhere in the app: **Ctrl/Cmd+N** new session, **Ctrl/Cmd+B** toggle sidebar, **Alt+1..9**
 jump to a session, **Esc** closes the top modal. The global show/hide hotkey (default `F12`)

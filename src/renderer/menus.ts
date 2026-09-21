@@ -568,8 +568,39 @@ function projectViewSection(ctx: MenuCtx): MenuNode[] {
   ]
 }
 
+/**
+ * Notes and Settings, for the collapsed rail.
+ *
+ * Both live as icon buttons in the expanded sidebar's header, which the rail
+ * doesn't render — so while the sidebar is collapsed this menu is the only way
+ * to either of them (Settings has no shortcut at all). There is deliberately no
+ * "Show sidebar" row: left-clicking the button this menu hangs off already does
+ * that, the same reason openSection offers no plain "Open".
+ */
+function appSection(): MenuNode[] {
+  return [
+    {
+      kind: 'item',
+      id: 'notes',
+      label: 'Notes',
+      icon: 'note',
+      run: () => useStore.getState().setShowNotes(true),
+    },
+    {
+      kind: 'item',
+      id: 'settings',
+      label: 'Settings',
+      icon: 'settings',
+      run: () => useStore.getState().setShowSettings(true),
+    },
+  ]
+}
+
 /** The whole menu for whatever was right-clicked. */
 export function buildMenu(ctx: MenuCtx): MenuNode[] {
+  // No heading and no joinGroups: two rows about the app, with no subject to
+  // name and no section that could turn out empty.
+  if (ctx.target.kind === 'app') return appSection()
   if (ctx.target.kind === 'project') {
     return joinGroups([
       headingSection(ctx),

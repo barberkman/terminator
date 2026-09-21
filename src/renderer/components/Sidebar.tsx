@@ -344,6 +344,11 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
  * me" signal). The accent "selected" ring is reserved for the single focused
  * session; a notified session is flagged by a distinct corner badge instead, so
  * several notified tabs never read as several selected ones.
+ *
+ * A tab drags onto the panes exactly as a Row does, so collapsing the sidebar
+ * doesn't cost you the ability to arrange splits. It is only a drag *source*,
+ * though: Row's other drag, reordering within a project group, has no meaning
+ * here, where the rail flattens every group into one column.
  */
 function RailTab({ session, index }: { session: Session; index: number }): React.JSX.Element {
   const focusedId = useStore((s) => s.panes[s.focused])
@@ -359,8 +364,19 @@ function RailTab({ session, index }: { session: Session; index: number }): React
   return (
     <button
       data-rail-session={session.id}
+      draggable
       onClick={() => openSession(session.id)}
       onContextMenu={menuOpener({ kind: 'sessions', ids: [session.id] })}
+      onDragStart={(e) => {
+        // The same two audiences Row's drag start serves: the MIME type tells a
+        // pane this is a session and not a file, and the store field is what
+        // mounts the drop overlay. `draggedId` stays untouched — that one is the
+        // sidebar's reorder, which the rail doesn't offer.
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData(SESSION_MIME, session.id)
+        useStore.getState().setDraggingSession(session.id)
+      }}
+      onDragEnd={() => useStore.getState().setDraggingSession(null)}
       title={`${session.name} · ${STATUS_LABELS[session.status]}${hint}`}
       style={{
         position: 'relative',
@@ -731,7 +747,15 @@ export function Sidebar(): React.JSX.Element {
           gap: 8,
         }}
       >
-        <button onClick={toggleSidebar} title="Show sidebar (Ctrl/⌘B)" style={railBtn}>
+        <button
+          onClick={toggleSidebar}
+          // Notes and Settings are header buttons the rail doesn't render, so
+          // while collapsed this is the way to them. Hung off the sidebar button
+          // because it's the one control here that isn't about a session.
+          onContextMenu={menuOpener({ kind: 'app' })}
+          title="Show sidebar (Ctrl/⌘B) · right-click for Notes and Settings"
+          style={railBtn}
+        >
           <Icon name="sidebar" size={16} />
         </button>
         <button

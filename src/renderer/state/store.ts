@@ -17,10 +17,16 @@ import { type PaneNode, type Side, removeAt, resetSizesAt, resizeAt, splitAt } f
  * though every call site passes exactly one id today: selecting several rows and
  * acting on them together is a wanted future, and this is the shape that makes it
  * new state feeding the menu rather than a rewrite of every action in it.
+ *
+ * The first two are things you right-clicked *in* the list. 'app' is the odd one
+ * out: a menu about the application rather than anything in it, which the
+ * collapsed rail needs because it doesn't render the header buttons that would
+ * otherwise be the way to Notes and Settings.
  */
 export type MenuTarget =
   | { kind: 'sessions'; ids: string[] }
   | { kind: 'project'; name: string; path: string }
+  | { kind: 'app' }
 
 export interface ContextMenuState {
   target: MenuTarget
