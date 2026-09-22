@@ -58,6 +58,25 @@ export type ConfirmState =
     }
   | {
       /**
+       * A whole project group, in one prompt. Two kinds on one shape because they
+       * are two steps of one answer: 'removeGroup' asks, 'worktreeGroup' is the
+       * follow-up the worktrees earn. There is no `removeAfter` flag like the
+       * single-session worktree prompt has — this step is only ever reached *from*
+       * the removal, so a flag could only ever be true.
+       */
+      kind: 'removeGroup' | 'worktreeGroup'
+      /** The group's name — what the header you right-clicked says. */
+      name: string
+      /**
+       * The group's sessions, in sidebar order, as they were when the menu ran.
+       * A snapshot rather than a live query: you right-clicked a group of four,
+       * and a session created in that project while you read the prompt is not
+       * one of the four. `remove()` shrinks the list as its sessions go.
+       */
+      ids: string[]
+    }
+  | {
+      /**
        * Dropping the in-app browser's stored data — the one prompt here that isn't
        * about a session. It earns a confirm because it throws away the login the
        * browser pane exists to keep; clearing the cache alone doesn't, and doesn't ask.
@@ -65,6 +84,11 @@ export type ConfirmState =
       kind: 'browserClear'
       what: Exclude<BrowserClearWhat, 'cache'>
     }
+
+/** The prompts about exactly one session — the only ones carrying an `id`. */
+export function aboutOneSession(c: ConfirmState): c is Extract<ConfirmState, { id: string }> {
+  return c.kind === 'close' || c.kind === 'remove' || c.kind === 'worktree'
+}
 
 /**
  * A prompt typed into the conversation view's composer and handed to the pty,
@@ -307,6 +331,27 @@ function keepBrowsersAlive(live: string[], panes: string[], sessions: Record<str
   return add.length ? [...live, ...add] : live
 }
 
+/**
+ * What is left of an open prompt once `id` is gone.
+ *
+ * A prompt about that one session has nothing left to ask and retires. A group
+ * prompt *shrinks* instead: its sessions come back one sessionRemoved at a time,
+ * so retiring on the first would close the prompt in the middle of the answer it
+ * is still giving — it goes only when the last one has. The browser-clear prompt
+ * isn't about a session at all, so it survives.
+ *
+ * Returning `c` itself when nothing matched is load-bearing: `confirm` is
+ * subscribed to, and a fresh object per removal would re-render the dialog for a
+ * session it never mentioned.
+ */
+function retireConfirm(c: ConfirmState | null, id: string): ConfirmState | null {
+  if (!c || c.kind === 'browserClear') return c
+  if (aboutOneSession(c)) return c.id === id ? null : c
+  if (!c.ids.includes(id)) return c
+  const ids = c.ids.filter((x) => x !== id)
+  return ids.length ? { ...c, ids } : null
+}
+
 let initialized = false
 let nextToastId = 1
 
@@ -477,12 +522,7 @@ export const useStore = create<StoreState>((set, get) => ({
         pendings,
         attachments,
         focused: Math.min(focused, Math.max(0, panes.length - 1)),
-        // A prompt about the session that just went away has nothing left to ask.
-        // The browser-clear prompt isn't about a session, so it survives.
-        confirm:
-          st.confirm && st.confirm.kind !== 'browserClear' && st.confirm.id === id
-            ? null
-            : st.confirm,
+        confirm: retireConfirm(st.confirm, id),
         contextMenu:
           st.contextMenu?.target.kind === 'sessions' && st.contextMenu.target.ids.includes(id)
             ? null

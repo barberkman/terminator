@@ -41,15 +41,34 @@ export function SessionContextMenu(): React.JSX.Element | null {
 
   // A session can go away underneath an open menu (it exits, or another surface
   // removes it). Resolving on every render means the rows re-derive — Stop turns
-  // into Start when a process ends — and an emptied target closes the menu.
+  // into Start when a process ends — and an emptied target, a session list or a
+  // project group alike, closes the menu.
   const resolved = useMemo(
     () => (targetIds ? targetIds.map((id) => sessions[id]).filter(Boolean) : []),
     [targetIds, sessions],
   )
 
+  /**
+   * The group behind a project target, by projectName — because that is how the
+   * sidebar draws groups (buildGroups) and the header you right-clicked is one.
+   * `projectSessions` below is path-scoped on purpose: Build/Run and the folder
+   * actions run *in a folder*. The two lists disagree about a session started in
+   * a worktree of the project, which keeps the group's name and carries the
+   * worktree as its path — and a group-wide action has to mean the rows you see.
+   */
+  const groupName = target?.kind === 'project' ? target.name : null
+  const groupSessions = useMemo(
+    () =>
+      groupName === null
+        ? []
+        : order.map((id) => sessions[id]).filter((s) => s && s.projectName === groupName),
+    [groupName, order, sessions],
+  )
+
   useEffect(() => {
     if (targetIds && resolved.length === 0) close()
-  }, [targetIds, resolved.length, close])
+    if (groupName !== null && groupSessions.length === 0) close()
+  }, [targetIds, resolved.length, groupName, groupSessions.length, close])
 
   // buildMenu returns a fresh array, so it must not live in a zustand selector —
   // the same trap buildGroups documents in state/store.ts.
@@ -69,11 +88,12 @@ export function SessionContextMenu(): React.JSX.Element | null {
       sessions: resolved,
       project,
       projectSessions,
+      groupSessions,
       panes,
       settings,
       collapsed,
     })
-  }, [target, resolved, order, sessions, panes, settings, collapsed])
+  }, [target, resolved, groupSessions, order, sessions, panes, settings, collapsed])
 
   if (!menu || !nodes.length) return null
 
