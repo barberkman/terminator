@@ -732,7 +732,15 @@ export function Sidebar(): React.JSX.Element {
     const railItems = groups.flatMap((g, gi) =>
       g.sessions.map((s, si) => ({ session: s, groupStart: gi > 0 && si === 0 })),
     )
-    const divider = <span style={{ width: 16, height: 1, background: C.hair, flex: 'none', margin: '1px 0' }} />
+    // Group breaks are the rail's only structure — there are no project headers
+    // here to carry them — so this line is deliberately heavier than the `C.hair`
+    // rules elsewhere, and given room of its own so the break doesn't read as
+    // just another gap in the 6px tab stack.
+    const divider = (
+      <span
+        style={{ width: 22, height: 1, background: ink(0.18), borderRadius: 1, flex: 'none', margin: '3px 0' }}
+      />
+    )
     return (
       <div
         style={{
