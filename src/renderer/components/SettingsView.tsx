@@ -9,6 +9,7 @@ import {
   type BrowserOption,
   type EditorOption,
   type NotifType,
+  type PromptEditorStatus,
   type Settings,
 } from '../../shared/types'
 import { formatArgs, parseArgs } from '../../shared/args'
@@ -35,6 +36,7 @@ const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'worktreesRoot', 'notifications', 'terminalFont',
   'fontSize', 'iconScale', 'sidebarSide', 'relaunchOnStartup', 'globalToggleShortcut',
   'notesShortcut', 'attachments', 'links', 'browser', 'settingsOpen', 'usageRefreshSeconds',
+  'promptEditorId',
 ] as const satisfies readonly (keyof Settings)[]
 
 /** Cache size, at the resolution anyone reads it: "is that a lot?" */
@@ -327,6 +329,9 @@ export function SettingsView(): React.JSX.Element | null {
   const setThemeEditorFor = useStore((s) => s.setThemeEditorFor)
   const [draft, setDraft] = useState<Settings | null>(settings)
   const [shortcutStatus, setShortcutStatus] = useState<{ accelerator: string; registered: boolean } | null>(null)
+  // Whether Claude's Ctrl+G can be pointed here at all on this machine, and if not
+  // why — see promptEditorCommand in main/prompt-edit.ts.
+  const [promptEditor, setPromptEditor] = useState<PromptEditorStatus | null>(null)
   // null when the import sheet is shut; the pasted text while it's open.
   const [importText, setImportText] = useState<string | null>(null)
   const [importError, setImportError] = useState('')
@@ -344,6 +349,7 @@ export function SettingsView(): React.JSX.Element | null {
       setImportText(null)
       setImportError('')
       void window.terminator.getGlobalShortcutStatus().then(setShortcutStatus)
+      void window.terminator.promptEditorStatus().then(setPromptEditor)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show])
@@ -569,6 +575,34 @@ export function SettingsView(): React.JSX.Element | null {
               </Field>
               <Field label="WORKTREES ROOT" hint="Where new git worktrees are created.">
                 <input style={inputStyle} value={draft.worktreesRoot} onChange={(e) => patch({ worktreesRoot: e.target.value })} />
+              </Field>
+
+              <Field
+                label="CLAUDE'S CTRL+G OPENS IN"
+                hint="Ctrl+G is Claude's own key for writing the prompt somewhere roomier than the input line, and it hands it to whatever $VISUAL or $EDITOR names. Point it here and the prompt opens in an Editor pane instead — one is made if none is open — with a button to hand it back. Reaches a session when that session starts, so anything already running keeps the editor it launched with."
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <Choice
+                    value={draft.promptEditorId === IN_APP_EDITOR_ID ? IN_APP_EDITOR_ID : ''}
+                    onPick={(promptEditorId) => patch({ promptEditorId })}
+                    options={[
+                      { value: IN_APP_EDITOR_ID, label: 'This app' },
+                      { value: '', label: 'Your own editor' },
+                    ]}
+                  />
+                  {promptEditor && !promptEditor.available ? (
+                    <div style={{ fontSize: 10.5, color: STATUS_COLORS.error }}>
+                      Not available here: {promptEditor.reason} Ctrl+G goes on using your own
+                      editor whichever of the two is picked.
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 10.5, color: C.dim }}>
+                      {draft.promptEditorId === IN_APP_EDITOR_ID
+                        ? 'Claude waits while you write, and takes the prompt back when you send it. Closing the tab instead leaves the prompt as it was.'
+                        : 'Nothing about Ctrl+G changes — the session is launched with its environment untouched.'}
+                    </div>
+                  )}
+                </div>
               </Field>
             </>
           ))}

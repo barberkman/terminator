@@ -4,6 +4,7 @@ import {
   IN_APP_BROWSER_NAME,
   IN_APP_EDITOR_ID,
   type LinkSettings,
+  type Session,
 } from '../../shared/types'
 import { webUrl, webUrlRe } from '../../shared/url'
 import { useStore } from '../state/store'
@@ -438,19 +439,71 @@ function within(root: string, abs: string): boolean {
 }
 
 /**
- * Open a file a session printed in an in-app Editor pane, making one if there isn't
- * one yet.
+ * Find — or make — the in-app Editor pane a file belonging to `sessionId` should
+ * open in, and put it on screen.
  *
- * The editor reads through its session's root-scoped filesystem service, so the pane
- * has to be one whose folder contains the file. That used to be the end of it: no such
- * pane, no open, just a toast telling you to go and make one. But a clicked *link*
- * never asked that — `openInAppBrowser` above creates the pane it needs — and there is
- * no reason a file should be the harder of the two. So an existing pane is reused and
- * a missing one is created.
+ * `covers` is how a caller says which panes are even candidates. A clicked path
+ * needs one whose folder *contains* the file, because the editor reads through its
+ * session's root-scoped filesystem service and a pane that doesn't contain the file
+ * can't read it. Claude's Ctrl+G passes nothing: its prompt lives in the system temp
+ * dir, so no pane's folder contains it and the pane is only somewhere to put the
+ * tab — which makes the right one the pane belonging to the session that asked.
  *
  * Reused, not stacked: a link opens a new browser pane every time, the way a browser
  * opens a tab, but a second Editor pane on the same folder is the same file tree twice
- * over. The pane is per project; the tabs inside it are the per-file part.
+ * over. The pane is per project; the tabs inside it are the per-file part. One already
+ * on screen wins, so the file lands where you're looking.
+ *
+ * A toast explains every null. Callers still have their own cleaning up to do.
+ */
+export async function ensureEditorPane(
+  sessionId: string,
+  covers?: (root: string) => boolean,
+): Promise<Session | null> {
+  const st = useStore.getState()
+  const from = st.sessions[sessionId]
+  const candidates = Object.values(st.sessions).filter(
+    (s) =>
+      s.kind === 'editor' &&
+      (covers ? covers(rootOf(s)) : !!from && rootOf(s) === rootOf(from)),
+  )
+  let target = candidates.find((s) => st.panes.includes(s.id)) ?? candidates[0]
+
+  if (!target) {
+    // Rooted on the session that asked, not on whatever happens to be focused. A
+    // worktree is that session's folder, so it is the root; the project's name still
+    // labels it, the way a session started from a worktree's submenu is labelled
+    // (see `foldersOf` in menus.ts).
+    if (!from?.projectPath) {
+      toastError("Couldn't open an editor pane", 'the session it came from has no folder')
+      return null
+    }
+    try {
+      target = await window.terminator.createSession({
+        kind: 'editor',
+        mode: 'normal',
+        projectName: from.projectName,
+        projectPath: from.worktreePath || from.projectPath,
+      })
+    } catch (e) {
+      toastError("Couldn't open an editor pane", String(e).slice(0, 200))
+      return null
+    }
+    useStore.getState().upsert(target)
+  }
+
+  useStore.getState().openSession(target.id)
+  return target
+}
+
+/**
+ * Open a file a session printed in an in-app Editor pane, making one if there isn't
+ * one yet.
+ *
+ * It used to be the end of it that no pane covered the file: no open, just a toast
+ * telling you to go and make one. But a clicked *link* never asked that —
+ * `openInAppBrowser` above creates the pane it needs — and there is no reason a file
+ * should be the harder of the two.
  *
  * `token` is whatever was on screen — relative, `~`-prefixed or absolute. It is
  * resolved through main against the printing session's own folder, which is the same
@@ -471,39 +524,8 @@ export async function openInPane(sessionId: string, token: string, line?: number
   // Bound to a const so the closure below keeps the narrowing.
   const path = resolved
 
-  const st = useStore.getState()
-  const covering = Object.values(st.sessions).filter(
-    (s) => s.kind === 'editor' && within(rootOf(s), path),
-  )
-  // Prefer one that's already on screen, so the file lands where you're looking.
-  let target = covering.find((s) => st.panes.includes(s.id)) ?? covering[0]
-
-  if (!target) {
-    // Rooted on the session that printed the path, not on whatever happens to be
-    // focused: the pane's folder has to *contain* the file, and `resolveOutputPath`
-    // has just proved this one does. A worktree is that session's folder, so it is
-    // the root; the project's name still labels it, the way a session started from a
-    // worktree's submenu is labelled (see `foldersOf` in menus.ts).
-    const from = st.sessions[sessionId]
-    if (!from?.projectPath) {
-      toastError("Couldn't open that file", 'the session it came from has no folder')
-      return
-    }
-    try {
-      target = await window.terminator.createSession({
-        kind: 'editor',
-        mode: 'normal',
-        projectName: from.projectName,
-        projectPath: from.worktreePath || from.projectPath,
-      })
-    } catch (e) {
-      toastError("Couldn't open an editor pane", String(e).slice(0, 200))
-      return
-    }
-    useStore.getState().upsert(target)
-  }
-
-  useStore.getState().openSession(target.id)
+  const target = await ensureEditorPane(sessionId, (root) => within(root, path))
+  if (!target) return
   // Works on a pane that hasn't mounted yet: the file read resolves its root in main
   // from the session id, and the editor store makes a session's state on first touch.
   await editors.openFile(target.id, path, baseName(path))

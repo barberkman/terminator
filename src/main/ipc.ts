@@ -37,6 +37,7 @@ import { forkTranscript, listPrompts } from './transcript'
 import { readConversation } from './conversation'
 import { sendPrompt } from './send-prompt'
 import { setPendingPrompt } from './prefill'
+import { finishEdit, markEditOpen, promptEditorStatus } from './prompt-edit'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 
 /** Registers every ipcMain handler. The single IPC registry for the main process. */
@@ -290,6 +291,18 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const root = editorRoot(sessionId)
     if (root) fsService.unwatchPath(sessionId, root, path)
   })
+
+  // ---- Claude's Ctrl+G, opened in an Editor pane ----
+  // Fire-and-forget on purpose: 'done' has to get through from teardown paths that
+  // can't await, and a session waiting on a reply is a session nobody can unblock.
+  ipcMain.on(
+    Channels.promptEditReply,
+    (_e, { file, verb }: { file: string; verb: 'opened' | 'done' }) => {
+      if (verb === 'opened') markEditOpen(file)
+      else finishEdit(file)
+    },
+  )
+  ipcMain.handle(Channels.promptEditorStatus, () => promptEditorStatus())
 
   // ---- dialogs / settings ----
   ipcMain.handle(Channels.pickFolder, async () => {

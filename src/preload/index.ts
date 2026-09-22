@@ -10,6 +10,7 @@ import type {
   FolderChoice,
   FsChange,
   OpenFileInput,
+  PromptEdit,
   PtyData,
   PtyExit,
   Session,
@@ -67,6 +68,16 @@ const api: TerminatorApi = {
   fsWatch: (sessionId, path) => ipcRenderer.send(Channels.fsWatch, { sessionId, path }),
   fsUnwatch: (sessionId, path) => ipcRenderer.send(Channels.fsUnwatch, { sessionId, path }),
   onFsChanged: (cb: (c: FsChange) => void) => on(Channels.fsChanged, cb),
+
+  onPromptEdit: (cb: (e: PromptEdit) => void) => on(Channels.promptEdit, cb),
+  onPromptEditEnded: (cb: (file: string) => void) => on(Channels.promptEditEnded, cb),
+  // 'opened' only stops main's "did the tab ever appear" timer; 'done' is the one
+  // that releases the session, so it has to go out on every way an edit can end.
+  promptEditDone: (file: string) =>
+    ipcRenderer.send(Channels.promptEditReply, { file, verb: 'done' }),
+  promptEditOpened: (file: string) =>
+    ipcRenderer.send(Channels.promptEditReply, { file, verb: 'opened' }),
+  promptEditorStatus: () => ipcRenderer.invoke(Channels.promptEditorStatus),
 
   pickFolder: () => ipcRenderer.invoke(Channels.pickFolder),
   pickFile: (title?: string) => ipcRenderer.invoke(Channels.pickFile, title),

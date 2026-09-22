@@ -6,6 +6,11 @@ import { openLink } from './links'
 import { registerIpc } from './ipc'
 import { killAll } from './pty-manager'
 import { closeAll as closeFsWatchers, setWindow as setFsWindow } from './fs-service'
+import {
+  disposePromptEditor,
+  finishAllEdits,
+  setWindow as setPromptEditWindow,
+} from './prompt-edit'
 import { loadPersisted, setWindow, wireProcessEvents } from './state'
 import { startReportServer, stopReportServer } from './report-server'
 import { applyGlobalShortcut, disposeGlobalShortcut } from './window-toggle'
@@ -86,6 +91,11 @@ function createWindow(): void {
   setWindow(win)
   setFsWindow(win)
   setUsageWindow(win)
+  setPromptEditWindow(win)
+  // On macOS the app outlives its window, and `before-quit` won't run — so this is
+  // the only thing standing between a closed window and a Claude session still
+  // blocked on a tab that no longer exists.
+  win.on('closed', finishAllEdits)
 }
 
 app.whenReady().then(async () => {
@@ -117,6 +127,7 @@ app.on('before-quit', () => {
   flushUsage()
   killAll()
   closeFsWatchers()
+  disposePromptEditor()
   stopReportServer()
   disposeGlobalShortcut()
 })

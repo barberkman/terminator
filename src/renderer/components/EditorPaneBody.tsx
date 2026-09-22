@@ -4,6 +4,7 @@ import { C, dangerA, sz } from '../theme'
 import { Icon } from '../icons'
 import { useEditorStore, type TabStatus } from '../editor/editorStore'
 import * as editor from '../editor/registry'
+import { sendBack, usePromptEdits } from '../promptEdit'
 import { FileTree } from './FileTree'
 
 const MIN_TREE = 150
@@ -91,6 +92,44 @@ function Tab({
   )
 }
 
+/**
+ * Banner shown above a tab holding a prompt that a Claude session is blocked on
+ * (see renderer/promptEdit.ts). It is the only thing on screen that knows the
+ * session is waiting, which is why it also spells out what closing the tab does —
+ * that is a way out, not an accident, and both routes hand the prompt back.
+ */
+function PromptBanner({ file }: { file: string }): React.JSX.Element {
+  const edit = usePromptEdits((s) => s.edits[file])
+  if (!edit) return <></>
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '7px 12px',
+        background: C.accentBg,
+        borderBottom: `1px solid ${C.accentBorder}`,
+        fontSize: 12,
+        color: C.accentSoft,
+      }}
+    >
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <strong style={{ fontWeight: 600 }}>{edit.sessionName}</strong> is waiting for this.
+      </span>
+      <button
+        onClick={() => void sendBack(file)}
+        style={{ padding: '3px 10px', borderRadius: 6, border: `1px solid ${C.accentBorder}`, background: 'transparent', color: C.accentSoft, font: 'inherit', fontSize: 11.5, cursor: 'pointer', flex: 'none' }}
+      >
+        Send it back
+      </button>
+      <span style={{ color: C.muted, fontSize: 11, flex: 'none' }}>
+        or close the tab to leave the prompt as it was
+      </span>
+    </div>
+  )
+}
+
 /** Banner shown above the editor when the open file changed on disk under unsaved edits. */
 function ChangedBanner({ sessionId, path }: { sessionId: string; path: string }): React.JSX.Element {
   return (
@@ -146,6 +185,7 @@ function EditorArea({ sessionId, activePath }: { sessionId: string; activePath: 
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <PromptBanner file={activePath} />
       {tab.changedOnDisk && <ChangedBanner sessionId={sessionId} path={activePath} />}
       {tab.status === 'missing' && hasView && (
         <div style={{ padding: '7px 12px', background: dangerA(0.12), borderBottom: `1px solid ${C.border3}`, fontSize: 12, color: C.danger }}>
