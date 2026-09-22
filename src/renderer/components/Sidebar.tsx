@@ -466,14 +466,18 @@ function RailGroupDivider({ group }: { group: ProjectGroup }): React.JSX.Element
         cursor: 'default',
       }}
     >
-      {/* Lit while its own menu is open: in a rail with no labels, that is the
-          only way to see which group you just hit. */}
+      {/* Resting weight and width are what made these breaks readable in the
+          first place: the rail has no project headers, so this line is the only
+          structure in it and is deliberately heavier than a C.hair rule. Lit
+          while hovered or while its own menu is open — in a rail with no labels
+          that is the only way to see which group you just hit. */}
       <span
         style={{
-          width: lit ? 20 : 16,
+          width: lit ? 26 : 22,
           height: 1,
-          background: lit ? C.border3 : C.hair,
-          transition: 'width 0.12s ease',
+          borderRadius: 1,
+          background: ink(lit ? 0.34 : 0.18),
+          transition: 'width 0.12s ease, background 0.12s ease',
         }}
       />
     </button>

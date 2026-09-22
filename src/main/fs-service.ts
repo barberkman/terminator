@@ -48,6 +48,36 @@ function toAbs(p: string): string {
 }
 
 /**
+ * Absolute files that are open for editing right now, allowed through the root
+ * check below. There is one caller: a Ctrl+G prompt hand-off, whose file Claude
+ * wrote into the system temp dir — outside every session root by definition, and
+ * so unreachable by `safe` no matter which Editor pane shows it.
+ *
+ * Narrow on purpose. An entry is one exact absolute path, put here by a request
+ * that carried the report server's token, and taken out again the moment that
+ * edit ends — prompt-edit.ts owns both halves and funnels every way an edit can
+ * end through one of them. It grants nothing about the folder the file sits in,
+ * and nothing about any other file.
+ */
+const granted = new Set<string>()
+
+/** The absolute form of a path, as `safe` below would compute it. */
+export function absPath(p: string): string {
+  return toAbs(p)
+}
+
+/** Open one absolute file to the editor until `revokePath`. Returns its abs form. */
+export function grantPath(p: string): string {
+  const abs = toAbs(p)
+  granted.add(abs)
+  return abs
+}
+
+export function revokePath(p: string): void {
+  granted.delete(toAbs(p))
+}
+
+/**
  * Resolve `target` against the session root and confirm containment.
  * Returns the absolute path, or null if it escapes the root. Lexical containment
  * is the identity check; a best-effort realpath check additionally blocks symlink
@@ -56,6 +86,10 @@ function toAbs(p: string): string {
 function safe(root: string, target: string): string | null {
   const absRoot = toAbs(root)
   const abs = resolve(absRoot, expandHome(target))
+  // A granted file carries its own permission, and is the one thing that reaches
+  // outside the root (see `granted` above). Checked first: it has no containment
+  // to prove, and the realpath probe below would only re-litigate it.
+  if (granted.has(abs)) return abs
   if (abs !== absRoot && !abs.startsWith(absRoot + sep)) return null
   try {
     const realRoot = realpathSync(absRoot)

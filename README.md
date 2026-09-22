@@ -52,6 +52,9 @@ npm run typecheck  # tsc, no emit
   session. Both keep running, nested in the sidebar. See below.
 - **Images and files**: paste a screenshot straight into a Claude session, or drop files and
   folders onto a pane. See below.
+- **Write a prompt in an editor**: Claude's **Ctrl+G** can open the prompt you're typing in an
+  in-app Editor tab instead of a terminal editor — the session waits, and a button hands it back.
+  Off by default. See below.
 - **Open in git GUI**: launches your configured git tool on the session's folder for manual
   merging. The app never merges; after you close a worktree session it offers to remove the
   worktree.
@@ -382,6 +385,35 @@ off with **LINKS IN TERMINAL OUTPUT**.
   reach — and an Editor pane opened by a click is rooted on the session that printed the path,
   for the same reason.
 
+## Writing a prompt in an Editor pane
+
+**Ctrl+G** inside a Claude session opens the prompt you're typing in an editor — Claude's own
+key, not this app's, which is why it works here at all: the pane hands the keystroke to Claude
+and Claude runs whatever `$VISUAL` or `$EDITOR` names. That keeps working exactly as it did.
+
+Settings → **CLAUDE'S CTRL+G OPENS IN** → *This app* points it at an **Editor pane** instead,
+with one made for you if none is open — the same pane a clicked file path opens in, so a second
+Ctrl+G is another tab rather than another pane.
+
+- **The session waits, and says so.** Claude blocks while you write, the way it does for `vim`;
+  the pane shows one line saying where the prompt went. The tab carries a banner naming the
+  session that's waiting on it, with **Send it back** — which saves, closes the tab and lets
+  Claude carry on with what you wrote.
+- **Closing the tab is the other way out**, and leaves the prompt as it was. So is **Ctrl+C** in
+  the pane. There is deliberately no third option where the session is left waiting on nothing:
+  the window closing, the session stopping, the app quitting and a tab that never managed to
+  open all release it too.
+- **It's an ordinary Editor tab** — real undo, Ctrl+S, find, and markdown highlighting, because
+  Claude's prompt file is a `.md`. It won't appear in the pane's file tree: it lives in a temp
+  folder rather than in your project, and is readable only for as long as the tab is open.
+- **Off by default**, and it reaches a session through that session's environment — so the
+  setting applies to sessions started after you change it, and anything already running keeps
+  the editor it launched with.
+- **Not available everywhere.** Claude's editor setting is split on spaces with no quoting, so
+  the path to the helper has to have none. On macOS and Linux that's always arranged; on Windows
+  it needs the app installed somewhere without a space in the path, which the default per-user
+  install is. Settings says so when it can't, and Ctrl+G simply keeps your own editor.
+
 ## In-app browser
 
 A pane that shows a web page, for when leaving the app is the annoying part — a diagram Claude
@@ -449,6 +481,9 @@ In a terminal pane:
 - **Click a file path** — opens it wherever Settings → **OPENS FILE PATHS IN** says: an Editor
   pane, made if there isn't one already, or your configured editor. **Right-click** for the other
   one, and Copy path.
+- **Ctrl+G** (Claude sessions) — Claude's own key for writing the prompt somewhere roomier. It
+  goes to your `$VISUAL`/`$EDITOR`, or to an Editor pane here if you've asked for that. See
+  **Writing a prompt in an Editor pane** above.
 - **Drop a file** on a pane to hand it to that session.
 - **Drag a session from the sidebar** onto a pane to arrange the splits. The half or edge you're
   over lights up as you hover: drop on the **left or right** edge to split into columns, **top or
@@ -529,6 +564,9 @@ set to — and which ones you left open is remembered:
   `in-app`, which is the in-app browser; it is not in `browsers`, having no program to store.
   `defaultEditorId` takes the same reserved value for an in-app Editor pane, and empty — the
   default — means `links.editor` if one is set, a pane if not.
+- `promptEditorId` — where Claude's Ctrl+G opens the prompt. The reserved value `in-app` is an
+  Editor pane; empty — the default — leaves the session's environment alone, so Ctrl+G goes on
+  using whatever `$VISUAL`/`$EDITOR` already named. See **Writing a prompt in an Editor pane**.
 - `browser.userAgent` — what the in-app browser calls itself. Empty (the default) derives a
   Chrome-like one from Electron's own. See **In-app browser** above.
 

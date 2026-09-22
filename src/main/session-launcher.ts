@@ -13,6 +13,7 @@ import {
 } from './state'
 import { buildSettingsFile } from './hooks-config'
 import { hasTranscript } from './transcript'
+import { promptEditorCommand } from './prompt-edit'
 import { reportPort, reportToken } from './report-server'
 import { shellRunArgs, quoteFor } from './shell'
 
@@ -50,6 +51,7 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
   // force --session-id so hook/statusLine payloads map back to this session, and
   // run through the user's shell so the command resolves in their environment.
   const mode = s.mode === 'readonly' ? settings.modes.readonly : settings.modes.normal
+  const promptEditor = promptEditorCommand()
   const settingsFile = buildSettingsFile(s)
   const parts = [mode.command, ...mode.extraArgs.map((a) => quoteFor(settings.defaultShell, a))]
   // --resume only works once a conversation exists. Before any prompt is sent the
@@ -77,6 +79,13 @@ export function startSession(win: BrowserWindow, id: string, opts: StartOpts = {
       TERMINATOR_PORT: String(reportPort()),
       TERMINATOR_TOKEN: reportToken(),
       TERMINATOR_SESSION_ID: s.id,
+      // Ctrl+G's editor, but only when Settings asks for an Editor pane. Spread
+      // rather than set, because pty-manager merges this over the real
+      // environment: a `VISUAL: ''` would *clear* the user's own $VISUAL and
+      // quietly move their Ctrl+G, which is the one thing this feature promises
+      // not to do. Read here rather than at the keypress, which is why the
+      // setting reaches a session only when that session starts.
+      ...(promptEditor ? { VISUAL: promptEditor } : {}),
     },
   })
   markStarted(id)
