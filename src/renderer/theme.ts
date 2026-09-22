@@ -89,17 +89,27 @@ export const FONT = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas,
  */
 export const sz = (px: number): string => `calc(${px}px * var(--icon-scale, 1))`
 
+/**
+ * The liveliness of a status mark — its animation or dimming, with no colour and
+ * no shape of its own. Split out so the sidebar's dots and the collapsed rail's
+ * shortcut digits read as the same signal from one definition. `cc-pulse` draws
+ * its ring with a box-shadow, so whatever wears this wants a rounded box.
+ */
+export function statusMark(status: SessionStatus): React.CSSProperties {
+  if (status === 'waiting') return { animation: 'cc-pulse 1.5s ease-in-out infinite' }
+  if (status === 'busy') return { animation: 'cc-breathe 1.3s ease-in-out infinite' }
+  if (status === 'closed') return { opacity: 0.55 }
+  return {}
+}
+
 /** Inline-style for a status dot, including the animation per status. */
 export function dotStyle(status: SessionStatus, size = 9): React.CSSProperties {
-  const base: React.CSSProperties = {
+  return {
     width: size,
     height: size,
     borderRadius: '50%',
     flex: 'none',
     background: STATUS_COLORS[status],
+    ...statusMark(status),
   }
-  if (status === 'waiting') base.animation = 'cc-pulse 1.5s ease-in-out infinite'
-  else if (status === 'busy') base.animation = 'cc-breathe 1.3s ease-in-out infinite'
-  else if (status === 'closed') base.opacity = 0.55
-  return base
 }

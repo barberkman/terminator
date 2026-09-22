@@ -904,6 +904,30 @@ export function buildGroups(order: string[], sessions: Record<string, Session>):
   return groups
 }
 
+/** How many sessions the switch shortcut can reach: Alt+1 through Alt+9. */
+const SHORTCUT_SLOTS = 9
+
+/**
+ * The sessions Alt+1..9 switch to, in slot order — index 0 is Alt+1. The
+ * shortcut handler and the numbers the sidebar prints both come from here, so a
+ * badge can never name a key that lands somewhere else.
+ *
+ * Slots follow the grouped order whether or not a session is on screen: one
+ * hidden under a folded branch or a collapsed project keeps its number, and the
+ * sidebar shows a gap (1, 2, 5, 6) rather than renumbering the rows you can see
+ * — which would move every shortcut each time you folded something.
+ */
+export function shortcutSlots(groups: ProjectGroup[]): string[] {
+  const ids: string[] = []
+  for (const g of groups) {
+    for (const s of g.sessions) {
+      if (ids.length === SHORTCUT_SLOTS) return ids
+      ids.push(s.id)
+    }
+  }
+  return ids
+}
+
 /**
  * A project group's visible sidebar lines: sessions whose parents are all
  * expanded, each carrying its branch count and, when collapsed, whether a hidden

@@ -1,6 +1,6 @@
-import { Fragment, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectConfig, Session } from '../../shared/types'
-import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, sz } from '../theme'
+import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, statusMark, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { runProjectTask, stopProjectTask } from '../menus'
 import { SESSION_MIME } from './SplitDropOverlay'
@@ -12,6 +12,7 @@ import {
   buildGroups,
   canReorderOnto,
   buildRows,
+  shortcutSlots,
   useStore,
 } from '../state/store'
 
@@ -65,6 +66,64 @@ function menuOpener(target: MenuTarget) {
   }
 }
 
+/**
+ * Whether Alt is down. The shortcut numbers ride on this: they sit faint at rest,
+ * where they are a reference and not a control, and lift to the accent while the
+ * modifier that uses them is actually held.
+ *
+ * Capture phase, and strictly passive — no preventDefault, no stopPropagation —
+ * so it sees the modifier even while a terminal has focus without disturbing
+ * App's Alt+digit handler or Alt reaching the PTY. Blur and visibilitychange
+ * clear it because Alt+Tab takes the window away without ever delivering the
+ * keyup, which would otherwise leave the sidebar lit.
+ */
+function useAltHeld(): boolean {
+  const [held, setHeld] = useState(false)
+  useEffect(() => {
+    // Alt alone, matching the handler's own guard — Ctrl+Alt+3 switches nothing,
+    // so it has no business lighting the numbers up.
+    const onKey = (e: KeyboardEvent) => setHeld(e.altKey && !e.ctrlKey && !e.metaKey)
+    const clear = () => setHeld(false)
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('keyup', onKey, true)
+    window.addEventListener('blur', clear)
+    document.addEventListener('visibilitychange', clear)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('keyup', onKey, true)
+      window.removeEventListener('blur', clear)
+      document.removeEventListener('visibilitychange', clear)
+    }
+  }, [])
+  return held
+}
+
+/**
+ * The Alt+N that switches to this session, at the row's right edge. Always in
+ * layout, digit or not: the right edge is the one place that doesn't move with
+ * branch indentation, so a fixed slot there keeps every number in one readable
+ * column, and a session past the ninth leaves a blank rather than nudging its
+ * neighbours' digits sideways.
+ */
+function ShortcutSlot({ slot, altHeld }: { slot?: number; altHeld: boolean }): React.JSX.Element {
+  return (
+    <span
+      title={slot ? `Alt+${slot}` : undefined}
+      style={{
+        width: sz(10),
+        flex: 'none',
+        textAlign: 'right',
+        fontSize: 10.5,
+        lineHeight: 1,
+        color: altHeld ? C.accent : C.faint2,
+        transition: 'color 0.12s ease',
+      }}
+    >
+      {slot ?? ''}
+    </span>
+  )
+}
+
 function activityColor(s: Session): string {
   if (s.status === 'waiting') return C.accentSoft
   if (s.status === 'error') return C.danger
@@ -76,7 +135,15 @@ function activityColor(s: Session): string {
  * from, and a session with branches carries a count badge that folds them away —
  * while still flagging a hidden branch that needs attention.
  */
-function Row({ row }: { row: SidebarRow }): React.JSX.Element {
+function Row({
+  row,
+  slot,
+  altHeld,
+}: {
+  row: SidebarRow
+  slot?: number
+  altHeld: boolean
+}): React.JSX.Element {
   const { session, depth, branches, collapsed, hiddenNotified } = row
   const shown = useStore((s) => s.panes.includes(session.id))
   const focusedId = useStore((s) => s.panes[s.focused])
@@ -335,22 +402,38 @@ function Row({ row }: { row: SidebarRow }): React.JSX.Element {
       >
         <Icon name="close" size={13} />
       </button>
+      <ShortcutSlot slot={slot} altHeld={altHeld} />
     </div>
   )
 }
 
 /**
- * A session in the collapsed rail: a status-coloured dot (the "which session needs
+ * A session in the collapsed rail: a status-coloured mark (the "which session needs
  * me" signal). The accent "selected" ring is reserved for the single focused
  * session; a notified session is flagged by a distinct corner badge instead, so
  * several notified tabs never read as several selected ones.
+ *
+ * Within Alt's reach the mark is the shortcut digit itself, in the status colour
+ * and wearing the dot's own animation — the rail has no room for both, and a
+ * number you can read beats a shape you can't name. Past the ninth session there
+ * is no key to print, so those tabs keep the dot. Holding Alt washes the reachable
+ * tabs in accent and thickens their digits: the rail arms without ever recolouring
+ * a digit away from its status, which is what you are reading as you choose.
  *
  * A tab drags onto the panes exactly as a Row does, so collapsing the sidebar
  * doesn't cost you the ability to arrange splits. It is only a drag *source*,
  * though: Row's other drag, reordering within a project group, has no meaning
  * here, where the rail flattens every group into one column.
  */
-function RailTab({ session, index }: { session: Session; index: number }): React.JSX.Element {
+function RailTab({
+  session,
+  slot,
+  altHeld,
+}: {
+  session: Session
+  slot?: number
+  altHeld: boolean
+}): React.JSX.Element {
   const focusedId = useStore((s) => s.panes[s.focused])
   const shown = useStore((s) => s.panes.includes(session.id))
   const openSession = useStore((s) => s.openSession)
@@ -359,7 +442,8 @@ function RailTab({ session, index }: { session: Session; index: number }): React
   )
   const active = focusedId === session.id
   const notified = session.notified && !active
-  const hint = index < 9 ? `  (Alt+${index + 1})` : ''
+  const armed = altHeld && slot !== undefined
+  const hint = slot ? `  (Alt+${slot})` : ''
 
   return (
     <button
@@ -389,17 +473,45 @@ function RailTab({ session, index }: { session: Session; index: number }): React
         flex: 'none',
         cursor: 'pointer',
         padding: 0,
+        font: 'inherit',
         background: active
           ? accentA(0.1)
-          : menuOpen
-            ? ink(0.06)
-            : shown
-              ? ink(0.04)
-              : 'transparent',
-        border: `1px solid ${active ? accentA(0.22) : menuOpen ? C.border3 : 'transparent'}`,
+          : armed
+            ? accentA(0.07)
+            : menuOpen
+              ? ink(0.06)
+              : shown
+                ? ink(0.04)
+                : 'transparent',
+        border: `1px solid ${
+          active ? accentA(0.22) : armed ? accentA(0.14) : menuOpen ? C.border3 : 'transparent'
+        }`,
+        transition: 'background 0.12s ease, border-color 0.12s ease',
       }}
     >
-      <span style={dotStyle(session.status, 11)} />
+      {slot === undefined ? (
+        <span style={dotStyle(session.status, 11)} />
+      ) : (
+        // A rounded box, not a bare glyph: `cc-pulse` draws the waiting ring with a
+        // box-shadow, and it has to come off something round to read as a halo.
+        <span
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: sz(18),
+            height: sz(18),
+            borderRadius: 6,
+            fontSize: 12.5,
+            fontWeight: armed ? 700 : 600,
+            lineHeight: 1,
+            color: STATUS_COLORS[session.status],
+            ...statusMark(session.status),
+          }}
+        >
+          {slot}
+        </span>
+      )}
       {notified && (
         <span
           style={{
@@ -626,7 +738,15 @@ function ProjectCommandsMenu({
  * Stop has no terminal of its own — it types the stop command into the Run terminal,
  * so it only appears once that terminal exists (i.e. after Run has been clicked).
  */
-function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
+function Group({
+  group,
+  slots,
+  altHeld,
+}: {
+  group: ProjectGroup
+  slots: Map<string, number>
+  altHeld: boolean
+}): React.JSX.Element {
   const isCollapsed = useStore((s) => !!s.collapsed[group.name])
   const collapsedMap = useStore((s) => s.collapsed)
   const toggleGroup = useStore((s) => s.toggleGroup)
@@ -750,7 +870,7 @@ function Group({ group }: { group: ProjectGroup }): React.JSX.Element {
       {!isCollapsed && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {buildRows(group, collapsedMap).map((r) => (
-            <Row key={r.session.id} row={r} />
+            <Row key={r.session.id} row={r} slot={slots.get(r.session.id)} altHeld={altHeld} />
           ))}
         </div>
       )}
@@ -762,6 +882,15 @@ export function Sidebar(): React.JSX.Element {
   const order = useStore((s) => s.order)
   const sessions = useStore((s) => s.sessions)
   const groups = useMemo(() => buildGroups(order, sessions), [order, sessions])
+  // Keyed by id, from the same slots the Alt+1..9 handler walks — a session
+  // hidden under a folded branch still holds its number, so the rows on screen
+  // can read 1, 2, 5, 6 and every one of them is the key that actually fires.
+  const slots = useMemo(() => {
+    const m = new Map<string, number>()
+    shortcutSlots(groups).forEach((id, i) => m.set(id, i + 1))
+    return m
+  }, [groups])
+  const altHeld = useAltHeld()
   const total = order.length
   const setShowNew = useStore((s) => s.setShowNew)
   const setShowSettings = useStore((s) => s.setShowSettings)
@@ -846,10 +975,10 @@ export function Sidebar(): React.JSX.Element {
             paddingBottom: 10,
           }}
         >
-          {railItems.map((it, i) => (
+          {railItems.map((it) => (
             <Fragment key={it.session.id}>
               {it.group && <RailGroupDivider group={it.group} />}
-              <RailTab session={it.session} index={i} />
+              <RailTab session={it.session} slot={slots.get(it.session.id)} altHeld={altHeld} />
             </Fragment>
           ))}
         </div>
@@ -967,7 +1096,7 @@ export function Sidebar(): React.JSX.Element {
           </div>
         )}
         {groups.map((g) => (
-          <Group key={g.name} group={g} />
+          <Group key={g.name} group={g} slots={slots} altHeld={altHeld} />
         ))}
       </div>
     </div>
