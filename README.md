@@ -133,9 +133,21 @@ worktree that level isn't there and they're plain entries.
 
 The same menu is on the **session tabs of the collapsed rail**, and **project group headers**
 get a per-project one: a new session in that project, its Build/Run/Stop commands (only the ones
-you've configured), the project folder, and collapse. The collapsed rail's **sidebar button** has
-a small one of its own — **Notes** and **Settings**, the two header buttons the rail is too narrow
-to show.
+you've configured), the project folder, collapse — and last, separated the way a session's own
+destructive entry is, **Remove all sessions…**. It stops every session under that header and
+takes the rows out, so the group goes with them, behind one confirmation instead of one per row.
+It means the group the sidebar draws, which is by project name: a session you started *in a
+worktree* of that project is under that header, is in the count the menu's heading shows (the
+same count the header itself prints), and goes too. If any of those sessions own git worktrees
+you're asked about them **once**, after you've confirmed — and saying no to the worktrees still
+removes the sessions. It's Remove and not Close for the same reason the session menu has no
+**Close**.
+
+While the sidebar is **collapsed**, the thin line above each group's dots is that group —
+right-click it for the same project menu, including Remove all sessions…. Hovering it names the
+project and its session count; it's the only group-level thing in a rail that otherwise flattens
+every project into one column of dots. The collapsed rail's **sidebar button** has a small menu
+of its own — **Notes** and **Settings**, the two header buttons the rail is too narrow to show.
 
 It's an in-app menu, not an OS one, so it follows your theme like everything else. Arrows and
 Enter work, `→`/`←` open and leave submenus, typing jumps to an entry, and **Esc** closes one
@@ -493,9 +505,9 @@ In a terminal pane:
 In a browser pane: **F5** reloads the page and **Ctrl/Cmd+F** finds in it, either one from the
 page itself or from the pane's chrome.
 
-In the sidebar: **right-click** a session row, a collapsed-rail tab, a project header or the
-collapsed rail's sidebar button for its menu (see **Session menus** above); arrows and Enter move
-and pick, **Esc** closes one level.
+In the sidebar: **right-click** a session row, a collapsed-rail tab, a project header, the line
+above a group's dots in the collapsed rail, or the collapsed rail's sidebar button for its menu
+(see **Session menus** above); arrows and Enter move and pick, **Esc** closes one level.
 
 Elsewhere in the app: **Ctrl/Cmd+N** new session, **Ctrl/Cmd+B** toggle sidebar, **Alt+1..9**
 jump to a session, **Esc** closes the top modal. The global show/hide hotkey (default `F12`)

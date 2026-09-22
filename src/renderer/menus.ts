@@ -140,8 +140,23 @@ export interface MenuCtx {
   sessions: Session[]
   /** The project the menu is about. */
   project: { name: string; path: string } | null
-  /** Sessions belonging to that project — the project menu's Run/Stop need them. */
+  /**
+   * Sessions in that project's *folder* — what Build/Run/Stop and the folder
+   * actions mean, since those run somewhere rather than on a list of rows.
+   */
   projectSessions: Session[]
+  /**
+   * The sidebar group behind a project target: everything sharing its
+   * projectName, in `order`. Empty for a 'sessions' target.
+   *
+   * Not the same list as `projectSessions`, and the difference is the point.
+   * The sidebar groups by name (buildGroups), so a session started *in a
+   * worktree* of a project keeps the group's name while carrying the worktree as
+   * its path — it sits under the header you right-clicked and is missing from
+   * the path-scoped list. Anything that acts on "the group" has to mean the rows
+   * you can see.
+   */
+  groupSessions: Session[]
   panes: string[]
   settings: Settings | null
   collapsed: Record<string, boolean>
@@ -260,7 +275,11 @@ function folderAction(
 
 function headingSection(ctx: MenuCtx): MenuNode[] {
   if (ctx.target.kind === 'project') {
-    const n = ctx.projectSessions.length
+    // The group, not the folder: this heading names the header you right-clicked,
+    // and that header prints its own count beside the name. Two counts for one
+    // thing on one screen reads as a bug — and the destructive row below acts on
+    // the group, so the narrower number would understate what it takes.
+    const n = ctx.groupSessions.length
     return [
       {
         kind: 'heading',
@@ -515,6 +534,44 @@ function destructiveSection(ctx: MenuCtx): MenuNode[] {
   return out
 }
 
+/**
+ * The group's one destructive row, and the only bulk action in the app.
+ *
+ * It takes the group as the sidebar draws it — by project name — and not
+ * `projectSessions`: a session made in a worktree shares the name but not the
+ * path, and it is sitting right there under the header you right-clicked.
+ * Removing "all" while visibly leaving one behind would be exactly the kind of
+ * lie this menu is built to avoid.
+ *
+ * Remove, never Close, for the reason destructiveSection already gives. The
+ * label doesn't shape-shift at one session either — a group of one is still a
+ * group, and a count in the note says the size without rewriting the sentence.
+ */
+function projectDestructiveSection(ctx: MenuCtx): MenuNode[] {
+  if (ctx.target.kind !== 'project') return []
+  // Captured before the closure: narrowing on ctx.target doesn't survive into it,
+  // the same reason projectTaskSection and projectViewSection read it out first.
+  const name = ctx.target.name
+  const ids = ctx.groupSessions.map((s) => s.id)
+  // A group can't be empty while its header renders, so this is the usual
+  // "nothing to offer, so no row and no rule" rather than a case you can reach.
+  if (!ids.length) return []
+  return [
+    {
+      kind: 'item',
+      id: 'remove-group',
+      label: 'Remove all sessions…',
+      icon: 'close',
+      // The dim right column already states the size of a thing elsewhere in this
+      // menu; on the one destructive row the count is the blast radius, read
+      // where the pointer already is.
+      note: ids.length === 1 ? '1 session' : `${ids.length} sessions`,
+      danger: true,
+      run: () => useStore.getState().setConfirm({ kind: 'removeGroup', name, ids }),
+    },
+  ]
+}
+
 function projectTaskSection(ctx: MenuCtx): MenuNode[] {
   if (ctx.target.kind !== 'project') return []
   const p = { name: ctx.target.name, path: ctx.target.path }
@@ -608,6 +665,7 @@ export function buildMenu(ctx: MenuCtx): MenuNode[] {
       projectTaskSection(ctx),
       folderSection(ctx),
       projectViewSection(ctx),
+      projectDestructiveSection(ctx),
     ])
   }
   return joinGroups([

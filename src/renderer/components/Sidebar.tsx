@@ -420,6 +420,71 @@ function RailTab({ session, index }: { session: Session; index: number }): React
 }
 
 /**
+ * The line above a group's dots in the collapsed rail — and, for want of
+ * anywhere else to put it, the group itself.
+ *
+ * The rail has no header to right-click: it flattens every group into one column
+ * of dots, so the separator that already says "a new project starts here" is the
+ * only thing on screen that means the group. It carries the project menu rather
+ * than a label chip, which a 42px rail has no room for. The hairline stays 1px;
+ * the button around it is what your pointer actually has to hit, and the title
+ * is what tells you there is anything to hit at all.
+ *
+ * A real button, not a styled span, so it takes focus: menuOpener already falls
+ * back to the element's own box for a keyboard-invoked menu, which is what makes
+ * a group reachable here without a pointer. There is no left-click action — the
+ * menu is the whole point, and the rail deliberately keeps every dot visible
+ * (the "needs me" signal is why it exists), so collapsing has nothing to show.
+ */
+function RailGroupDivider({ group }: { group: ProjectGroup }): React.JSX.Element {
+  const menuOpen = useStore(
+    (s) => s.contextMenu?.target.kind === 'project' && s.contextMenu.target.name === group.name,
+  )
+  const [hover, setHover] = useState(false)
+  const n = group.sessions.length
+  const lit = hover || menuOpen
+  return (
+    <button
+      onContextMenu={menuOpener({
+        kind: 'project',
+        name: group.name,
+        path: group.sessions[0]?.projectPath ?? '',
+      })}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title={`${group.name} · ${n} session${n === 1 ? '' : 's'} — right-click for the project menu`}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: sz(24),
+        height: 11,
+        padding: 0,
+        border: 'none',
+        background: 'transparent',
+        flex: 'none',
+        cursor: 'default',
+      }}
+    >
+      {/* Resting weight and width are what made these breaks readable in the
+          first place: the rail has no project headers, so this line is the only
+          structure in it and is deliberately heavier than a C.hair rule. Lit
+          while hovered or while its own menu is open — in a rail with no labels
+          that is the only way to see which group you just hit. */}
+      <span
+        style={{
+          width: lit ? 26 : 22,
+          height: 1,
+          borderRadius: 1,
+          background: ink(lit ? 0.34 : 0.18),
+          transition: 'width 0.12s ease, background 0.12s ease',
+        }}
+      />
+    </button>
+  )
+}
+
+/**
  * Popover to set a project's Build/Run/Stop commands. Prefilled from the current
  * config; Save writes the whole `projects` array back through updateSettings (its
  * `merge` replaces `projects` wholesale, so every command must be written each time).
@@ -728,18 +793,12 @@ export function Sidebar(): React.JSX.Element {
   // dots, so the "needs me" signal and session switching survive collapsing.
   if (hidden) {
     // Flatten to the same grouped order the expanded sidebar (and Alt+1..9) use,
-    // tagging the first tab of each later group so we can draw a divider.
-    const railItems = groups.flatMap((g, gi) =>
-      g.sessions.map((s, si) => ({ session: s, groupStart: gi > 0 && si === 0 })),
-    )
-    // Group breaks are the rail's only structure — there are no project headers
-    // here to carry them — so this line is deliberately heavier than the `C.hair`
-    // rules elsewhere, and given room of its own so the break doesn't read as
-    // just another gap in the 6px tab stack.
-    const divider = (
-      <span
-        style={{ width: 22, height: 1, background: ink(0.18), borderRadius: 1, flex: 'none', margin: '3px 0' }}
-      />
+    // hanging each group off its first tab so the line above that tab can be the
+    // group's handle. Every group gets one, the first included — it draws the
+    // line that used to sit outside the list, and it is the only way to reach a
+    // project menu while the sidebar is collapsed.
+    const railItems = groups.flatMap((g) =>
+      g.sessions.map((s, si) => ({ session: s, group: si === 0 ? g : null })),
     )
     return (
       <div
@@ -773,7 +832,6 @@ export function Sidebar(): React.JSX.Element {
         >
           <Icon name="plus" size={16} />
         </button>
-        {railItems.length > 0 && divider}
         <div
           style={{
             flex: 1,
@@ -790,7 +848,7 @@ export function Sidebar(): React.JSX.Element {
         >
           {railItems.map((it, i) => (
             <Fragment key={it.session.id}>
-              {it.groupStart && divider}
+              {it.group && <RailGroupDivider group={it.group} />}
               <RailTab session={it.session} index={i} />
             </Fragment>
           ))}
