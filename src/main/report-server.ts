@@ -3,6 +3,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { beginEdit, installPromptEditor } from './prompt-edit'
 import { REPORTER_SOURCE } from './reporter-source'
 import { getSession, notify, setStatus, updateSession } from './state'
 import { flushPendingPrompt } from './prefill'
@@ -37,6 +38,8 @@ export function startReportServer(): Promise<void> {
   mkdirSync(dir, { recursive: true })
   reporterFile = join(dir, 'reporter.cjs')
   writeFileSync(reporterFile, REPORTER_SOURCE, 'utf8')
+  // The other thing a session may call back on, and it shares the port and token.
+  installPromptEditor()
 
   return new Promise((resolve) => {
     server = createServer((req, res) => {
@@ -54,6 +57,19 @@ export function startReportServer(): Promise<void> {
       let body = ''
       req.on('data', (c) => (body += c))
       req.on('end', () => {
+        // One route answers late. A prompt edit's response stays open for as long
+        // as the prompt is open in a tab — that is what keeps Claude's Ctrl+G
+        // waiting — so it has to claim `res` before the acknowledgement below.
+        if (req.url === '/edit') {
+          let edit: Record<string, unknown> = {}
+          try {
+            edit = JSON.parse(body || '{}') as Record<string, unknown>
+          } catch {
+            // beginEdit releases the helper on anything it can't use
+          }
+          beginEdit(edit, res)
+          return
+        }
         res.statusCode = 204
         res.end()
         let payload: Record<string, unknown>

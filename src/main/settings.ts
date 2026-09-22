@@ -40,6 +40,10 @@ export function defaultSettings(): Settings {
     sidebarSide: 'left',
     theme: DEFAULT_THEME_ID,
     relaunchOnStartup: false,
+    // Blank leaves a Claude session's environment alone, so Ctrl+G goes on opening
+    // whatever $VISUAL/$EDITOR already named. Not validated beyond this: the only
+    // read is an `=== IN_APP_EDITOR_ID`, so an unknown value is inert by itself.
+    promptEditorId: '',
     globalToggleShortcut: 'F12',
     notesShortcut: 'CommandOrControl+Shift+N',
     notes: '',

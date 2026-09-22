@@ -55,6 +55,14 @@ export const Channels = {
   // guest's webContents id; the pane that owns that guest opens its find bar.
   browserFind: 'browser:find',
 
+  // Claude's Ctrl+G, when Settings points it at an Editor pane. main -> renderer
+  // opens the prompt in a tab; the reply releases the session, which is blocked
+  // for the whole round trip (see main/prompt-edit.ts).
+  promptEdit: 'promptEdit:open',
+  promptEditEnded: 'promptEdit:ended',
+  promptEditReply: 'promptEdit:reply',
+  promptEditorStatus: 'promptEdit:status',
+
   // filesystem (editor sessions)
   fsList: 'fs:list',
   fsRead: 'fs:read',

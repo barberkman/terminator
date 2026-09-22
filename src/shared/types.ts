@@ -407,6 +407,29 @@ export type OpenLinkResult = { ok: true; browser: string } | { ok: false; reason
 /** Same bargain for a file: `editor` names what opened it, for the tooltip's promise. */
 export type OpenFileResult = { ok: true; editor: string } | { ok: false; reason: string }
 
+/**
+ * A Claude session pressed Ctrl+G and is now blocked, waiting for the file to be
+ * edited here. `file` is absolute (Claude writes it to the system temp dir) and is
+ * the edit's identity everywhere: the tab's path, the grant, and what the renderer
+ * names when it hands the prompt back.
+ */
+export interface PromptEdit {
+  file: string
+  /** The Claude session waiting on it — the banner names it, and it roots the pane. */
+  sessionId: string
+  sessionName: string
+}
+
+/**
+ * Whether the in-app prompt editor can be wired up at all, and if not, why —
+ * Settings shows the reason rather than an option that would silently do nothing.
+ * See `promptEditorCommand` in main/prompt-edit.ts for what can rule it out.
+ */
+export interface PromptEditorStatus {
+  available: boolean
+  reason?: string
+}
+
 /** A file path a session printed, as the renderer asks for it to be opened. */
 export interface OpenFileInput {
   /** Whose folder the path must live in — the main process re-checks it. */
@@ -491,6 +514,18 @@ export interface Settings {
    * prompt only ever starts the sessions you tick in it.
    */
   relaunchOnStartup: boolean
+  /**
+   * Where Ctrl+G inside a Claude session opens the prompt. The reserved `in-app`
+   * id is an Editor pane; anything else — in practice `''` — leaves the session's
+   * environment alone, so Ctrl+G goes on opening whatever `$VISUAL`/`$EDITOR`
+   * already pointed at.
+   *
+   * Blank is the default for the same reason `defaultEditorId` is: Ctrl+G already
+   * works, and an upgrade that quietly moved it somewhere else would be taking
+   * something away. It is also read at launch, not at press — the choice reaches
+   * a session through its environment, so it applies to sessions started after it.
+   */
+  promptEditorId: string
   /** Electron accelerator for the global show/hide hotkey. Empty = disabled. */
   globalToggleShortcut: string
   /** Electron accelerator to toggle the Notes overlay (renderer-side). Empty = disabled. */
@@ -609,6 +644,22 @@ export interface TerminatorApi {
   fsWatch(sessionId: string, path: string): void
   fsUnwatch(sessionId: string, path: string): void
   onFsChanged(cb: (c: FsChange) => void): () => void
+
+  // Claude's Ctrl+G, when Settings sends it to an Editor pane rather than to a
+  // program. The session is blocked for the whole round trip, so `promptEditDone`
+  // is not a courtesy — it is what lets Claude carry on.
+  onPromptEdit(cb: (e: PromptEdit) => void): () => void
+  /**
+   * The session stopped waiting — Ctrl+C in the pane, the session stopped, a second
+   * Ctrl+G. Sent for every end, including the ones this side asked for, so the
+   * handler has to be a no-op for an edit it already dropped.
+   */
+  onPromptEditEnded(cb: (file: string) => void): () => void
+  /** Release the session: the prompt has been handed back (or given up on). */
+  promptEditDone(file: string): void
+  /** The tab is up — only stops main's backstop timer, never ends the edit. */
+  promptEditOpened(file: string): void
+  promptEditorStatus(): Promise<PromptEditorStatus>
 
   // dialogs / settings
   pickFolder(): Promise<string | null>

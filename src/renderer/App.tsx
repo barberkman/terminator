@@ -14,6 +14,7 @@ import { SettingsView } from './components/SettingsView'
 import { ThemeEditorView } from './components/ThemeEditorView'
 import { NotesView } from './components/NotesView'
 import { Toasts } from './components/Toasts'
+import { wirePromptEdits } from './promptEdit'
 import { matchesAccelerator } from './shortcuts'
 import { C } from './theme'
 import { applyThemeFromSettings } from './theme-apply'
@@ -32,6 +33,11 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void init()
   }, [init])
+
+  // Claude's Ctrl+G, when Settings points it at an Editor pane. Wired for the life
+  // of the app rather than to any view: a session can be blocked on one of these
+  // with no pane of the editor's on screen at all.
+  useEffect(() => wirePromptEdits(), [])
 
   // Terminal font family → xterm panes.
   useEffect(() => {
