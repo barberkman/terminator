@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Menu } from 'electron'
 import { pruneAttachments } from './attachments'
 import { applyWebviewPolicy, configureBrowserSession } from './browser'
 import { openLink } from './links'
@@ -44,7 +44,6 @@ function createWindow(): void {
     backgroundColor: theme.bg,
     title: 'Terminator',
     icon: iconPath,
-    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -108,6 +107,16 @@ app.whenReady().then(async () => {
   pruneAttachments()
   wireProcessEvents()
   registerIpc(() => win as BrowserWindow)
+  // No menu bar on Windows and Linux, where a bare Alt is what summons one — and
+  // Alt is a session shortcut here (Alt+1..9 switches sessions), so the summoning
+  // has to go rather than be folded away: `autoHideMenuBar`, which used to sit in
+  // the window options above, only hides the bar until Alt asks for it. Nothing in the
+  // default menu was the app's: Chromium handles clipboard, undo and select-all in
+  // web content natively on both platforms, and every shortcut the app defines
+  // lives in the renderer. macOS keeps its menu, where the bar belongs to the
+  // system rather than the window, Alt never opens it, and dropping it would cost
+  // Cmd+C/V/Q the standard roles that carry them.
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
   createWindow()
   applyGlobalShortcut(() => win)
 
