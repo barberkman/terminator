@@ -232,7 +232,7 @@ export function PaneHeader({
         gap: 12,
         padding: '11px 14px',
         borderBottom: `1px solid ${C.border}`,
-        background: active ? ink(0.02) : 'transparent',
+        background: active ? C.paneHeaderActive : C.paneHeader,
       }}
     >
       <span style={dotStyle(session.status, 9)} />

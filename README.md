@@ -580,12 +580,18 @@ off-screen — repaint in place. The choice is saved as you make it; it doesn't 
 settings**, and **Cancel** doesn't take it back.
 
 - **Yours** — anything you've made. See *Making your own* below.
-- **Dark** — Terminator (the default), Darcula, One Dark, Dracula, Gruvbox Dark, Nord,
+- **Dark** — Terminator (the default), Darcula, One Dark, Dracula, Gruvbox Dark, JetBrains New Dark,
   Solarized Dark.
 - **Light** — Solarized Light, GitHub Light.
 - **Reading** — the Apple Books set: Original, Quiet, Paper, Bold, Calm, Focus. *Paper* is the
   warm cream-and-ink page, with the faint grain behind the chrome (panes stay flat, so nothing
   interferes with glyph rendering); *Bold* also raises the chrome's font weight.
+  *JetBrains New Dark* is the VS Code theme of that name, value for value — down to VS Code's
+  grey list selection and its darker strip above each pane.
+
+On Windows the app draws its own title bar, in the theme's sidebar colour, and recolours the
+native minimise / maximise / close buttons to match, so the whole window follows the theme.
+macOS and Linux keep their system title bars.
 
 The built-ins live in [`src/shared/themes.ts`](src/shared/themes.ts). Each is a compact seed — a
 background, two text anchors, a few accents, and the terminal/editor palettes — from which the
@@ -614,7 +620,8 @@ theme is seventy-odd colours and `settings.json` is a file you edit by hand.
   This is where a published palette goes.
 - **Editor syntax** — the ten token colours, shown against a real code sample.
 - **The finer things**, folded away — the five session status colours, shadows, the icon tint,
-  the interface font weight, and the nine derived ramp steps, each pinnable and un-pinnable.
+  the selected-row and pane-header colours, the interface font weight, and the nine derived
+  ramp steps, each pinnable and un-pinnable.
 
 Everything is live as you type — the chrome, every terminal pane including the ones parked
 off-screen, and any open editor tab — because the editor drives the same repaint the picker
@@ -633,7 +640,7 @@ To adjust a colour of a **built-in** without making a theme, add a `customTheme`
 `settings.json`:
 
 ```json
-{ "theme": "nord", "customTheme": { "accent": "#00b0ff", "bg": "#101216" } }
+{ "theme": "jetbrains-new-dark", "customTheme": { "accent": "#00b0ff", "bg": "#101216" } }
 ```
 
 It overrides tokens of the selected theme by name (any surface, ramp step, `accent`,

@@ -22,7 +22,7 @@ export async function writeThemes(next: CustomTheme[]): Promise<void> {
   applyThemeFromSettings(settings)
 }
 
-/** "Nord copy", then "Nord copy 2" — a duplicate never silently reuses a name. */
+/** "Darcula copy", then "Darcula copy 2" — a duplicate never silently reuses a name. */
 export function freeName(base: string, taken: string[]): string {
   const wanted = `${base} copy`
   if (!taken.includes(wanted)) return wanted

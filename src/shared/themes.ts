@@ -121,6 +121,17 @@ export interface ThemeSeed {
    * is laid on at the same 0.3 the derived default uses unless this says otherwise.
    */
   selectionAlpha?: number
+  /**
+   * The selected row in the sidebar, the collapsed rail and the file tree. Unset,
+   * it's a wash of the accent with an accent outline; pinned, it's painted solid
+   * with no outline — the way VS Code draws a list selection.
+   */
+  rowActive?: string
+  /**
+   * The strip above each pane. Unset, it's the pane's own background, tinted
+   * faintly on the focused pane; pinned, every pane's header is this colour.
+   */
+  paneHeader?: string
   status: Record<SessionStatus, string>
   ansi: AnsiPalette
   syntax: SyntaxPalette
@@ -153,6 +164,10 @@ export interface ThemePalette extends Record<RampKey, string> {
   selectionAlpha: number
   /** `selectionHex` at `selectionAlpha`, ready for xterm and `--c-selection`. */
   selection: string
+  /** Pinned only; `cssVars` supplies the derived default. */
+  rowActive?: string
+  /** Pinned only; `cssVars` supplies the derived default. */
+  paneHeader?: string
   /** "r,g,b" triplets — every alpha tint in the app is mixed from one of these. */
   bgRgb: string
   inkRgb: string
@@ -271,6 +286,8 @@ export function buildPalette(seed: ThemeSeed): ThemePalette {
     selectionHex: seed.selection ?? seed.accent,
     selectionAlpha: seed.selectionAlpha ?? 0.3,
     selection: `rgba(${rgbTriplet(seed.selection ?? seed.accent)},${seed.selectionAlpha ?? 0.3})`,
+    rowActive: seed.rowActive,
+    paneHeader: seed.paneHeader,
     bgRgb: rgbTriplet(seed.bg),
     inkRgb: rgbTriplet(seed.fg),
     accentRgb: rgbTriplet(seed.accent),
@@ -337,10 +354,16 @@ const SYNTAX_GRUVBOX: SyntaxPalette = {
   string: '#b8bb26', invalid: '#fb4934',
 }
 
-const SYNTAX_NORD: SyntaxPalette = {
-  keyword: '#81a1c1', name: '#d8dee9', func: '#88c0d0', constant: '#b48ead',
-  def: '#d8dee9', type: '#8fbcbb', operator: '#81a1c1', comment: '#616e88',
-  string: '#a3be8c', invalid: '#bf616a',
+/**
+ * From the VS Code theme's `tokenColors`. Ten slots can't carry every scope, so
+ * `constant` takes `constant.language` (true/null are orange there) and `type`
+ * takes the number teal — the slot paints numbers too, and the type teal beside
+ * it is near-identical.
+ */
+const SYNTAX_JETBRAINS_NEW_DARK: SyntaxPalette = {
+  keyword: '#cf8e6d', name: '#bcbec4', func: '#66a6ff', constant: '#cf8e6d',
+  def: '#bcbec4', type: '#2aacb8', operator: '#bcbec4', comment: '#7a7e85',
+  string: '#6aab73', invalid: '#fa6675',
 }
 
 /** Solarized's accents are ground-agnostic, so dark and light share them. */
@@ -500,28 +523,42 @@ export const THEME_SEEDS: ThemeSeed[] = [
     syntax: SYNTAX_GRUVBOX,
   },
   {
-    id: 'nord',
-    name: 'Nord',
+    // mobalti/jetbrains-new-dark for VS Code, value for value. The editor shade is
+    // the ground; VS Code's darker #181818 chrome frames it, as it does there.
+    id: 'jetbrains-new-dark',
+    name: 'JetBrains New Dark',
     group: 'dark',
     dark: true,
-    bg: '#2e3440',
-    elev: 8,
-    hi: '#eceff4',
-    fg: '#d8dee9',
-    accent: '#88c0d0',
-    accentSoft: '#8fbcbb',
-    accentText: '#10161c',
-    danger: '#bf616a',
-    kindIcon: '#81a1c1',
-    shadow: '#0b0e14',
-    status: { busy: '#81a1c1', waiting: '#ebcb8b', idle: '#a3be8c', error: '#bf616a', closed: '#4c566a' },
+    bg: '#1e1f22',
+    elev: -5,
+    surfaces: { sidebar: '#181818', footer: '#181818', panel: '#1e1f22', panel2: '#313131', input: '#2a2a2a' },
+    hi: '#ffffff',
+    fg: '#bcbec4',
+    ramp: { muted: '#8b949e', dim: '#6e7681' },
+    // list.inactiveSelectionBackground and editorGroupHeader.tabsBackground.
+    rowActive: '#37373d',
+    paneHeader: '#181818',
+    accent: '#0078d4',
+    accentSoft: '#40a6ff',
+    accentText: '#ffffff',
+    danger: '#f85149',
+    kindIcon: '#8b949e',
+    shadow: '#000000',
+    // VS Code's terminal cursor falls back to the terminal foreground.
+    cursor: '#bcbec4',
+    // VS Code paints an opaque #264f78, but selection tops out at 0.9 here; this
+    // is that colour pre-compensated so 0.9 over `bg` lands on it exactly.
+    selection: '#275481',
+    selectionAlpha: 0.9,
+    status: { busy: '#66a6ff', waiting: '#cf8e6d', idle: '#6aab73', error: '#f85149', closed: '#6e7681' },
+    // The theme sets no ANSI colours, so VS Code paints its own defaults.
     ansi: {
-      black: '#3b4252', red: '#bf616a', green: '#a3be8c', yellow: '#ebcb8b',
-      blue: '#81a1c1', magenta: '#b48ead', cyan: '#88c0d0', white: '#e5e9f0',
-      brightBlack: '#4c566a', brightRed: '#bf616a', brightGreen: '#a3be8c', brightYellow: '#ebcb8b',
-      brightBlue: '#81a1c1', brightMagenta: '#b48ead', brightCyan: '#8fbcbb', brightWhite: '#eceff4',
+      black: '#000000', red: '#cd3131', green: '#0dbc79', yellow: '#e5e510',
+      blue: '#2472c8', magenta: '#bc3fbc', cyan: '#11a8cd', white: '#e5e5e5',
+      brightBlack: '#666666', brightRed: '#f14c4c', brightGreen: '#23d18b', brightYellow: '#f5f543',
+      brightBlue: '#3b8eea', brightMagenta: '#d670d6', brightCyan: '#29b8db', brightWhite: '#e5e5e5',
     },
-    syntax: SYNTAX_NORD,
+    syntax: SYNTAX_JETBRAINS_NEW_DARK,
   },
   {
     id: 'solarized-dark',
@@ -824,12 +861,28 @@ export function cssVars(p: ThemePalette): Record<string, string> {
     '--c-danger-rgb': p.dangerRgb,
     '--c-shadow-rgb': p.shadowRgb,
     '--c-status-waiting-rgb': rgbTriplet(p.status.waiting),
+    // Unpinned, these are the expressions the components used to write inline.
+    // They stay `var()` references, so a `customTheme` accent carries them along.
+    '--c-row-active': p.rowActive ?? 'rgba(var(--c-accent-rgb),0.1)',
+    '--c-row-active-border': p.rowActive ?? 'rgba(var(--c-accent-rgb),0.22)',
+    '--c-pane-header': p.paneHeader ?? 'transparent',
+    '--c-pane-header-active': p.paneHeader ?? 'rgba(var(--c-ink-rgb),0.02)',
     '--c-ui-weight': String(p.uiWeight),
     '--c-texture': p.texture,
   }
   for (const [key, value] of Object.entries(p.status)) vars[`--c-status-${key}`] = value
   for (const [key, value] of Object.entries(p.syntax)) vars[`--c-syn-${key}`] = value
   return vars
+}
+
+/** The selected row's colour as it lands on the sidebar — pinned, or the derived wash. */
+export function rowActiveHex(p: ThemePalette): string {
+  return p.rowActive ?? mix(p.sidebar, p.accent, 0.1)
+}
+
+/** The focused pane header's colour — pinned, or the derived tint of the background. */
+export function paneHeaderHex(p: ThemePalette): string {
+  return p.paneHeader ?? mix(p.bg, p.text, 0.02)
 }
 
 // ---- the user's own themes -------------------------------------------------
@@ -1028,6 +1081,9 @@ export function contrastWarnings(p: ThemePalette): ContrastWarning[] {
     check('terminal', `Terminal ${key}`, value, p.bg, 2.5)
   }
   check('terminal', 'The cursor on the background', p.cursor, p.bg, 2.5)
+  // Only a pinned colour can go wrong: the derived ones are faint washes.
+  if (p.rowActive) check('details', 'Text on the selected row', p.textHi, p.rowActive, 4.5)
+  if (p.paneHeader) check('details', 'Text on a pane header', p.textMax, p.paneHeader, 4.5)
   return out.sort((a, b) => a.ratio - b.ratio)
 }
 
@@ -1131,6 +1187,10 @@ export function sanitizeSeed(input: unknown, fallback: ThemeSeed = THEME_SEEDS[0
   if (cursorText) seed.cursorText = cursorText
   const selection = optHex(src.selection)
   if (selection) seed.selection = selection
+  const rowActive = optHex(src.rowActive)
+  if (rowActive) seed.rowActive = rowActive
+  const paneHeader = optHex(src.paneHeader)
+  if (paneHeader) seed.paneHeader = paneHeader
   const alpha = Number(src.selectionAlpha)
   if (Number.isFinite(alpha)) seed.selectionAlpha = Math.max(0.05, Math.min(0.9, alpha))
   const weight = UI_WEIGHTS.find((w) => w === Number(src.uiWeight))
@@ -1143,7 +1203,8 @@ export function sanitizeSeed(input: unknown, fallback: ThemeSeed = THEME_SEEDS[0
 const THEME_KEYS = new Set([
   'name', 'dark', 'bg', 'elev', 'surfaces', 'hi', 'fg', 'ramp', 'accent', 'accentSoft',
   'accentText', 'danger', 'kindIcon', 'shadow', 'cursor', 'cursorText', 'selection',
-  'selectionAlpha', 'status', 'ansi', 'syntax', 'uiWeight', 'texture',
+  'selectionAlpha', 'rowActive', 'paneHeader', 'status', 'ansi', 'syntax', 'uiWeight',
+  'texture',
 ])
 
 /**

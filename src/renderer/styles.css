@@ -45,6 +45,10 @@
   --c-status-idle: #80a86f;
   --c-status-error: #cf5e4e;
   --c-status-closed: #6e6a60;
+  --c-row-active: rgba(var(--c-accent-rgb), 0.1);
+  --c-row-active-border: rgba(var(--c-accent-rgb), 0.22);
+  --c-pane-header: transparent;
+  --c-pane-header-active: rgba(var(--c-ink-rgb), 0.02);
   --c-ui-weight: 400;
   --c-texture: none;
   color-scheme: dark;

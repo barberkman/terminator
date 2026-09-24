@@ -686,6 +686,12 @@ export interface TerminatorApi {
   setZoom(factor: number): void
   getZoom(): number
 
+  /**
+   * Recolour the window's own title bar (Windows only; a no-op elsewhere). The
+   * caption buttons are native, so the theme reaches them through main.
+   */
+  setTitleBarColors(colors: { color: string; symbolColor: string }): void
+
   // clipboard (terminal copy/paste)
   clipboardWrite(text: string): void
   clipboardRead(): string
@@ -762,6 +768,12 @@ export interface TerminatorApi {
 
 /** `fontSize` value that corresponds to 100% zoom (the as-designed sizing). */
 export const UI_BASE_FONT_SIZE = 14
+
+/**
+ * The height of the app-drawn title bar on Windows, in window DIPs — VS Code's.
+ * The native caption buttons are laid out at this size, unaffected by the UI zoom.
+ */
+export const TITLE_BAR_HEIGHT = 35
 
 /** `iconScale` value that corresponds to the as-designed icon/button sizing. */
 export const UI_BASE_ICON_SCALE = 100

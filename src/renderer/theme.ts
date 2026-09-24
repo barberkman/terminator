@@ -48,6 +48,12 @@ export const C = {
   cursor: 'var(--c-cursor)',
   /** The selection wash, alpha included. Derived from `accent`. */
   selection: 'var(--c-selection)',
+  /** The selected row in a list (sidebar, rail, file tree) and its outline. */
+  rowActive: 'var(--c-row-active)',
+  rowActiveBorder: 'var(--c-row-active-border)',
+  /** The strip above a pane, and above the focused one. */
+  paneHeader: 'var(--c-pane-header)',
+  paneHeaderActive: 'var(--c-pane-header-active)',
   danger: 'var(--c-danger)',
   /** Backdrop behind modals. */
   scrim: 'rgba(var(--c-shadow-rgb),0.66)',

@@ -80,6 +80,8 @@ export const Channels = {
   // the user's own themes (themes.json, kept apart from settings.json)
   themesGet: 'themes:get',
   themesSave: 'themes:save',
+  // Windows only: the caption buttons are native, so their colours come via main.
+  windowTitleBar: 'window:titleBar',
   globalShortcutStatus: 'globalShortcut:status',
 
   // account-wide rate-limit usage (usage.json). `usageUpdated` is a main -> renderer

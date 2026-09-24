@@ -37,7 +37,7 @@ function Row({
         borderRadius: 6,
         cursor: 'pointer',
         color: active ? C.textHi : C.body,
-        background: active ? C.accentBg : 'transparent',
+        background: active ? C.rowActive : 'transparent',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
       }}

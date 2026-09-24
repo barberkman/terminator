@@ -5,6 +5,7 @@ import * as registry from './term/registry'
 import { Sidebar } from './components/Sidebar'
 import { PaneGrid } from './components/PaneGrid'
 import { Footer } from './components/Footer'
+import { TitleBar } from './components/TitleBar'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { NewSessionModal } from './components/NewSessionModal'
 import { BranchModal } from './components/BranchModal'
@@ -209,6 +210,7 @@ export function App(): React.JSX.Element {
         background: C.bg,
       }}
     >
+      {window.terminator.platform === 'win32' && <TitleBar />}
       <div
         style={{
           display: 'flex',

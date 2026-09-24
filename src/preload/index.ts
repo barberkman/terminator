@@ -92,6 +92,8 @@ const api: TerminatorApi = {
 
   setZoom: (factor: number) => webFrame.setZoomFactor(factor),
   getZoom: () => webFrame.getZoomFactor(),
+  setTitleBarColors: (colors: { color: string; symbolColor: string }) =>
+    ipcRenderer.send(Channels.windowTitleBar, colors),
 
   clipboardWrite: (text: string) => clipboard.writeText(text),
   clipboardRead: () => clipboard.readText(),
