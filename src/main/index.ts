@@ -16,6 +16,7 @@ import { startReportServer, stopReportServer } from './report-server'
 import { applyGlobalShortcut, disposeGlobalShortcut } from './window-toggle'
 import { loadSettings } from './settings'
 import { resolveTheme, setCustomThemes } from '../shared/themes'
+import { TITLE_BAR_HEIGHT } from '../shared/types'
 import { loadCustomThemes } from './theme-store'
 import { flushUsage, setWindow as setUsageWindow } from './usage-store'
 
@@ -44,6 +45,14 @@ function createWindow(): void {
     backgroundColor: theme.bg,
     title: 'Terminator',
     icon: iconPath,
+    // Windows paints its own frame in its own colours, which no theme can reach, so
+    // the app draws the title bar itself (TitleBar.tsx) and keeps only the native
+    // caption buttons, recoloured to match. The renderer repaints them on every
+    // theme change; this is just the first frame. macOS and Linux keep their frames.
+    ...(process.platform === 'win32' && {
+      titleBarStyle: 'hidden' as const,
+      titleBarOverlay: { color: theme.sidebar, symbolColor: theme.text, height: TITLE_BAR_HEIGHT },
+    }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

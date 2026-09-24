@@ -121,6 +121,17 @@ export interface ThemeSeed {
    * is laid on at the same 0.3 the derived default uses unless this says otherwise.
    */
   selectionAlpha?: number
+  /**
+   * The selected row in the sidebar, the collapsed rail and the file tree. Unset,
+   * it's a wash of the accent with an accent outline; pinned, it's painted solid
+   * with no outline — the way VS Code draws a list selection.
+   */
+  rowActive?: string
+  /**
+   * The strip above each pane. Unset, it's the pane's own background, tinted
+   * faintly on the focused pane; pinned, every pane's header is this colour.
+   */
+  paneHeader?: string
   status: Record<SessionStatus, string>
   ansi: AnsiPalette
   syntax: SyntaxPalette
@@ -153,6 +164,10 @@ export interface ThemePalette extends Record<RampKey, string> {
   selectionAlpha: number
   /** `selectionHex` at `selectionAlpha`, ready for xterm and `--c-selection`. */
   selection: string
+  /** Pinned only; `cssVars` supplies the derived default. */
+  rowActive?: string
+  /** Pinned only; `cssVars` supplies the derived default. */
+  paneHeader?: string
   /** "r,g,b" triplets — every alpha tint in the app is mixed from one of these. */
   bgRgb: string
   inkRgb: string
@@ -271,6 +286,8 @@ export function buildPalette(seed: ThemeSeed): ThemePalette {
     selectionHex: seed.selection ?? seed.accent,
     selectionAlpha: seed.selectionAlpha ?? 0.3,
     selection: `rgba(${rgbTriplet(seed.selection ?? seed.accent)},${seed.selectionAlpha ?? 0.3})`,
+    rowActive: seed.rowActive,
+    paneHeader: seed.paneHeader,
     bgRgb: rgbTriplet(seed.bg),
     inkRgb: rgbTriplet(seed.fg),
     accentRgb: rgbTriplet(seed.accent),
@@ -518,6 +535,9 @@ export const THEME_SEEDS: ThemeSeed[] = [
     hi: '#ffffff',
     fg: '#bcbec4',
     ramp: { muted: '#8b949e', dim: '#6e7681' },
+    // list.inactiveSelectionBackground and editorGroupHeader.tabsBackground.
+    rowActive: '#37373d',
+    paneHeader: '#181818',
     accent: '#0078d4',
     accentSoft: '#40a6ff',
     accentText: '#ffffff',
@@ -841,12 +861,28 @@ export function cssVars(p: ThemePalette): Record<string, string> {
     '--c-danger-rgb': p.dangerRgb,
     '--c-shadow-rgb': p.shadowRgb,
     '--c-status-waiting-rgb': rgbTriplet(p.status.waiting),
+    // Unpinned, these are the expressions the components used to write inline.
+    // They stay `var()` references, so a `customTheme` accent carries them along.
+    '--c-row-active': p.rowActive ?? 'rgba(var(--c-accent-rgb),0.1)',
+    '--c-row-active-border': p.rowActive ?? 'rgba(var(--c-accent-rgb),0.22)',
+    '--c-pane-header': p.paneHeader ?? 'transparent',
+    '--c-pane-header-active': p.paneHeader ?? 'rgba(var(--c-ink-rgb),0.02)',
     '--c-ui-weight': String(p.uiWeight),
     '--c-texture': p.texture,
   }
   for (const [key, value] of Object.entries(p.status)) vars[`--c-status-${key}`] = value
   for (const [key, value] of Object.entries(p.syntax)) vars[`--c-syn-${key}`] = value
   return vars
+}
+
+/** The selected row's colour as it lands on the sidebar — pinned, or the derived wash. */
+export function rowActiveHex(p: ThemePalette): string {
+  return p.rowActive ?? mix(p.sidebar, p.accent, 0.1)
+}
+
+/** The focused pane header's colour — pinned, or the derived tint of the background. */
+export function paneHeaderHex(p: ThemePalette): string {
+  return p.paneHeader ?? mix(p.bg, p.text, 0.02)
 }
 
 // ---- the user's own themes -------------------------------------------------
@@ -1045,6 +1081,9 @@ export function contrastWarnings(p: ThemePalette): ContrastWarning[] {
     check('terminal', `Terminal ${key}`, value, p.bg, 2.5)
   }
   check('terminal', 'The cursor on the background', p.cursor, p.bg, 2.5)
+  // Only a pinned colour can go wrong: the derived ones are faint washes.
+  if (p.rowActive) check('details', 'Text on the selected row', p.textHi, p.rowActive, 4.5)
+  if (p.paneHeader) check('details', 'Text on a pane header', p.textMax, p.paneHeader, 4.5)
   return out.sort((a, b) => a.ratio - b.ratio)
 }
 
@@ -1148,6 +1187,10 @@ export function sanitizeSeed(input: unknown, fallback: ThemeSeed = THEME_SEEDS[0
   if (cursorText) seed.cursorText = cursorText
   const selection = optHex(src.selection)
   if (selection) seed.selection = selection
+  const rowActive = optHex(src.rowActive)
+  if (rowActive) seed.rowActive = rowActive
+  const paneHeader = optHex(src.paneHeader)
+  if (paneHeader) seed.paneHeader = paneHeader
   const alpha = Number(src.selectionAlpha)
   if (Number.isFinite(alpha)) seed.selectionAlpha = Math.max(0.05, Math.min(0.9, alpha))
   const weight = UI_WEIGHTS.find((w) => w === Number(src.uiWeight))
@@ -1160,7 +1203,8 @@ export function sanitizeSeed(input: unknown, fallback: ThemeSeed = THEME_SEEDS[0
 const THEME_KEYS = new Set([
   'name', 'dark', 'bg', 'elev', 'surfaces', 'hi', 'fg', 'ramp', 'accent', 'accentSoft',
   'accentText', 'danger', 'kindIcon', 'shadow', 'cursor', 'cursorText', 'selection',
-  'selectionAlpha', 'status', 'ansi', 'syntax', 'uiWeight', 'texture',
+  'selectionAlpha', 'rowActive', 'paneHeader', 'status', 'ansi', 'syntax', 'uiWeight',
+  'texture',
 ])
 
 /**

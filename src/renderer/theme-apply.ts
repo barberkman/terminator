@@ -26,6 +26,11 @@ export function applyTheme(palette: ThemePalette): void {
   root.dataset.theme = palette.id
   terminals.setTheme(palette)
   editors.setTheme(palette)
+  // The one piece of chrome the renderer doesn't draw: Windows' caption buttons,
+  // which sit over TitleBar and have to wear its colours.
+  if (window.terminator.platform === 'win32') {
+    window.terminator.setTitleBarColors({ color: palette.sidebar, symbolColor: palette.text })
+  }
 }
 
 /** Resolve and paint the theme a settings object asks for. */

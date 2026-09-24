@@ -246,7 +246,7 @@ function Row({
         borderRadius: 7,
         cursor: 'pointer',
         background: active
-          ? accentA(0.1)
+          ? C.rowActive
           : menuOpen
             ? ink(0.06)
             : shown
@@ -254,7 +254,7 @@ function Row({
               : 'transparent',
         // The accent treatment stays reserved for the one focused session, so a
         // row with its menu open is marked with a neutral hairline instead.
-        border: `1px solid ${active ? accentA(0.22) : menuOpen ? C.border3 : 'transparent'}`,
+        border: `1px solid ${active ? C.rowActiveBorder : menuOpen ? C.border3 : 'transparent'}`,
         boxShadow: dragOver ? `inset 0 2px 0 ${C.accent}` : undefined,
       }}
     >
@@ -475,7 +475,7 @@ function RailTab({
         padding: 0,
         font: 'inherit',
         background: active
-          ? accentA(0.1)
+          ? C.rowActive
           : armed
             ? accentA(0.07)
             : menuOpen
@@ -484,7 +484,7 @@ function RailTab({
                 ? ink(0.04)
                 : 'transparent',
         border: `1px solid ${
-          active ? accentA(0.22) : armed ? accentA(0.14) : menuOpen ? C.border3 : 'transparent'
+          active ? C.rowActiveBorder : armed ? accentA(0.14) : menuOpen ? C.border3 : 'transparent'
         }`,
         transition: 'background 0.12s ease, border-color 0.12s ease',
       }}

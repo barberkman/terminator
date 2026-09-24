@@ -1,6 +1,6 @@
 import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
-import { DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
+import { COLOR_RE, DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
 import type {
   AttachDeliver,
   AttachFileInput,
@@ -343,6 +343,16 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     return { themes, settings }
   })
   ipcMain.handle(Channels.globalShortcutStatus, () => globalShortcutStatus())
+  // Sent on every theme paint, the editor's live drafts included. Only Windows
+  // has an overlay to recolour, and only hex gets through to it.
+  ipcMain.on(Channels.windowTitleBar, (_e, colors: { color?: unknown; symbolColor?: unknown }) => {
+    if (process.platform !== 'win32') return
+    const { color, symbolColor } = colors ?? {}
+    if (typeof color !== 'string' || !COLOR_RE.test(color)) return
+    if (typeof symbolColor !== 'string' || !COLOR_RE.test(symbolColor)) return
+    const win = getWin()
+    if (win && !win.isDestroyed()) win.setTitleBarOverlay({ color, symbolColor })
+  })
 
   // ---- account-wide rate-limit usage ----
   // Read-only from here: the values are written by the statusLine reports arriving at

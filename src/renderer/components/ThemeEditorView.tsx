@@ -11,6 +11,8 @@ import {
   contrastWarnings,
   exportTheme,
   newThemeId,
+  paneHeaderHex,
+  rowActiveHex,
 } from '../../shared/themes'
 import type { SessionStatus } from '../../shared/types'
 import { C, dotStyle, sz } from '../theme'
@@ -148,7 +150,7 @@ export function ThemeEditorView(): React.JSX.Element | null {
     delete ramp[key]
     commit({ ...draft, ramp: Object.keys(ramp).length > 0 ? ramp : undefined })
   }
-  const unpin = (key: 'cursor' | 'cursorText' | 'selection') => {
+  const unpin = (key: 'cursor' | 'cursorText' | 'selection' | 'rowActive' | 'paneHeader') => {
     const next = { ...draft }
     delete next[key]
     commit(next)
@@ -523,6 +525,31 @@ export function ThemeEditorView(): React.JSX.Element | null {
                 <div style={grid2}>
                   <ColorField label="shadow and scrim" value={draft.shadow} onChange={(shadow) => set({ shadow })} />
                   <ColorField label="session-kind icons" value={draft.kindIcon} onChange={(kindIcon) => set({ kindIcon })} />
+                </div>
+              </Field>
+              <Field
+                label="SELECTED ROW AND PANE HEADER"
+                hint="A wash of the accent and a faint tint of the text until you pin them; a pinned colour is painted solid."
+              >
+                <div style={grid2}>
+                  <ColorField
+                    label="selected row"
+                    value={rowActiveHex(palette)}
+                    derived={draft.accent}
+                    pinned={draft.rowActive !== undefined}
+                    warning={warnings.find((w) => w.label === 'Text on the selected row')}
+                    onChange={(rowActive) => set({ rowActive })}
+                    onUnpin={() => unpin('rowActive')}
+                  />
+                  <ColorField
+                    label="pane header"
+                    value={paneHeaderHex(palette)}
+                    derived={draft.bg}
+                    pinned={draft.paneHeader !== undefined}
+                    warning={warnings.find((w) => w.label === 'Text on a pane header')}
+                    onChange={(paneHeader) => set({ paneHeader })}
+                    onUnpin={() => unpin('paneHeader')}
+                  />
                 </div>
               </Field>
               <Field label="INTERFACE FONT WEIGHT" hint="The app chrome only; the terminal and editor keep their own.">
