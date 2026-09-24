@@ -25,6 +25,23 @@ npm start          # run the production build
 npm run typecheck  # tsc, no emit
 ```
 
+### Windows builds
+
+Every merge to `main` builds Windows executables on GitHub Actions
+([`.github/workflows/windows-release.yml`](.github/workflows/windows-release.yml)), tags the
+commit `vYYYY.MM.DD.N` (UTC date; `N` counts that day's builds, from 1) and publishes a
+**Release** with two downloads:
+
+- `Terminator-Setup-<version>.exe` — installer: per-user, no admin prompt, Start menu +
+  desktop shortcuts, uninstalls from Windows Settings.
+- `Terminator-Portable-<version>.exe` — a single exe that runs without installing.
+
+Pull requests into `main` get the same build without a tag or release, so a broken Windows
+build shows up before it merges; the exes are attached to the workflow run for a week.
+
+To build locally on Windows: `npm run dist:win` (output in `release/`). The exes aren't
+code-signed, so the first launch gets a SmartScreen warning: **More info → Run anyway**.
+
 ## What it does
 
 - **Sidebar** lists every session grouped by project, each with a live status dot.
