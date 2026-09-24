@@ -337,10 +337,16 @@ const SYNTAX_GRUVBOX: SyntaxPalette = {
   string: '#b8bb26', invalid: '#fb4934',
 }
 
-const SYNTAX_NORD: SyntaxPalette = {
-  keyword: '#81a1c1', name: '#d8dee9', func: '#88c0d0', constant: '#b48ead',
-  def: '#d8dee9', type: '#8fbcbb', operator: '#81a1c1', comment: '#616e88',
-  string: '#a3be8c', invalid: '#bf616a',
+/**
+ * From the VS Code theme's `tokenColors`. Ten slots can't carry every scope, so
+ * `constant` takes `constant.language` (true/null are orange there) and `type`
+ * takes the number teal — the slot paints numbers too, and the type teal beside
+ * it is near-identical.
+ */
+const SYNTAX_JETBRAINS_NEW_DARK: SyntaxPalette = {
+  keyword: '#cf8e6d', name: '#bcbec4', func: '#66a6ff', constant: '#cf8e6d',
+  def: '#bcbec4', type: '#2aacb8', operator: '#bcbec4', comment: '#7a7e85',
+  string: '#6aab73', invalid: '#fa6675',
 }
 
 /** Solarized's accents are ground-agnostic, so dark and light share them. */
@@ -500,28 +506,39 @@ export const THEME_SEEDS: ThemeSeed[] = [
     syntax: SYNTAX_GRUVBOX,
   },
   {
-    id: 'nord',
-    name: 'Nord',
+    // mobalti/jetbrains-new-dark for VS Code, value for value. The editor shade is
+    // the ground; VS Code's darker #181818 chrome frames it, as it does there.
+    id: 'jetbrains-new-dark',
+    name: 'JetBrains New Dark',
     group: 'dark',
     dark: true,
-    bg: '#2e3440',
-    elev: 8,
-    hi: '#eceff4',
-    fg: '#d8dee9',
-    accent: '#88c0d0',
-    accentSoft: '#8fbcbb',
-    accentText: '#10161c',
-    danger: '#bf616a',
-    kindIcon: '#81a1c1',
-    shadow: '#0b0e14',
-    status: { busy: '#81a1c1', waiting: '#ebcb8b', idle: '#a3be8c', error: '#bf616a', closed: '#4c566a' },
+    bg: '#1e1f22',
+    elev: -5,
+    surfaces: { sidebar: '#181818', footer: '#181818', panel: '#1e1f22', panel2: '#313131', input: '#2a2a2a' },
+    hi: '#ffffff',
+    fg: '#bcbec4',
+    ramp: { muted: '#8b949e', dim: '#6e7681' },
+    accent: '#0078d4',
+    accentSoft: '#40a6ff',
+    accentText: '#ffffff',
+    danger: '#f85149',
+    kindIcon: '#8b949e',
+    shadow: '#000000',
+    // VS Code's terminal cursor falls back to the terminal foreground.
+    cursor: '#bcbec4',
+    // VS Code paints an opaque #264f78, but selection tops out at 0.9 here; this
+    // is that colour pre-compensated so 0.9 over `bg` lands on it exactly.
+    selection: '#275481',
+    selectionAlpha: 0.9,
+    status: { busy: '#66a6ff', waiting: '#cf8e6d', idle: '#6aab73', error: '#f85149', closed: '#6e7681' },
+    // The theme sets no ANSI colours, so VS Code paints its own defaults.
     ansi: {
-      black: '#3b4252', red: '#bf616a', green: '#a3be8c', yellow: '#ebcb8b',
-      blue: '#81a1c1', magenta: '#b48ead', cyan: '#88c0d0', white: '#e5e9f0',
-      brightBlack: '#4c566a', brightRed: '#bf616a', brightGreen: '#a3be8c', brightYellow: '#ebcb8b',
-      brightBlue: '#81a1c1', brightMagenta: '#b48ead', brightCyan: '#8fbcbb', brightWhite: '#eceff4',
+      black: '#000000', red: '#cd3131', green: '#0dbc79', yellow: '#e5e510',
+      blue: '#2472c8', magenta: '#bc3fbc', cyan: '#11a8cd', white: '#e5e5e5',
+      brightBlack: '#666666', brightRed: '#f14c4c', brightGreen: '#23d18b', brightYellow: '#f5f543',
+      brightBlue: '#3b8eea', brightMagenta: '#d670d6', brightCyan: '#29b8db', brightWhite: '#e5e5e5',
     },
-    syntax: SYNTAX_NORD,
+    syntax: SYNTAX_JETBRAINS_NEW_DARK,
   },
   {
     id: 'solarized-dark',

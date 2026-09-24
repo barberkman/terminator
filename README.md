@@ -580,7 +580,7 @@ off-screen — repaint in place. The choice is saved as you make it; it doesn't 
 settings**, and **Cancel** doesn't take it back.
 
 - **Yours** — anything you've made. See *Making your own* below.
-- **Dark** — Terminator (the default), Darcula, One Dark, Dracula, Gruvbox Dark, Nord,
+- **Dark** — Terminator (the default), Darcula, One Dark, Dracula, Gruvbox Dark, JetBrains New Dark,
   Solarized Dark.
 - **Light** — Solarized Light, GitHub Light.
 - **Reading** — the Apple Books set: Original, Quiet, Paper, Bold, Calm, Focus. *Paper* is the
@@ -633,7 +633,7 @@ To adjust a colour of a **built-in** without making a theme, add a `customTheme`
 `settings.json`:
 
 ```json
-{ "theme": "nord", "customTheme": { "accent": "#00b0ff", "bg": "#101216" } }
+{ "theme": "jetbrains-new-dark", "customTheme": { "accent": "#00b0ff", "bg": "#101216" } }
 ```
 
 It overrides tokens of the selected theme by name (any surface, ramp step, `accent`,
