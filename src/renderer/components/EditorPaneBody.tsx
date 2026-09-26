@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Session } from '../../shared/types'
+import { hostFolder, sessionFolder } from '../../shared/wsl-path'
 import { C, dangerA, sz } from '../theme'
 import { Icon } from '../icons'
 import { useEditorStore, type TabStatus } from '../editor/editorStore'
@@ -13,7 +14,7 @@ const MAX_TREE = 520
 const NO_TABS: string[] = []
 
 function basename(p: string): string {
-  return p.split('/').filter(Boolean).pop() ?? p
+  return p.split(/[/\\]/).filter(Boolean).pop() ?? p
 }
 
 const STATUS_MESSAGE: Record<Exclude<TabStatus, 'ok'>, string> = {
@@ -204,7 +205,10 @@ function EditorArea({ sessionId, activePath }: { sessionId: string; activePath: 
 }
 
 export function EditorPaneBody({ session }: { session: Session }): React.JSX.Element {
-  const root = session.worktreePath || session.projectPath
+  // The folder as the file service reads it: a WSL session's through its distro's
+  // share. Main resolves the same root from the session id (ipc.ts editorRoot), so
+  // the paths the tree builds and the paths main accepts are one and the same.
+  const root = hostFolder(session)
   const sessionId = session.id
   const [treeWidth, setTreeWidth] = useState(240)
   const openPaths = useEditorStore((s) => s.sessions[sessionId]?.openPaths ?? NO_TABS)
@@ -242,7 +246,7 @@ export function EditorPaneBody({ session }: { session: Session }): React.JSX.Ele
           <span style={{ display: 'flex', color: C.kindIcon }}>
             <Icon name="folder" size={12} />
           </span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basename(root).toUpperCase()}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basename(sessionFolder(session)).toUpperCase()}</span>
         </div>
         <FileTree sessionId={sessionId} root={root} />
       </div>

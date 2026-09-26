@@ -51,7 +51,8 @@ function report(result: AttachResult): void {
   }
   const { items, note } = result
   const one = items.length === 1 ? items[0] : null
-  const sub = [one ? one.path : items.map((i) => i.name).join(', '), note]
+  // The path as it was typed into the session — the one you'd see on screen there.
+  const sub = [one ? (one.sessionPath ?? one.path) : items.map((i) => i.name).join(', '), note]
     .filter(Boolean)
     .join(' · ')
   push({

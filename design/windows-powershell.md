@@ -70,7 +70,10 @@ The POSIX code paths (`-ic`/`-lc`, `/bin/bash`, `shquote`) are unchanged.
 
 `defaultShell` is just the starting default. It is user-editable in **Settings → defaultShell**
 (persisted to `settings.json`), so a user can point it at `powershell.exe`, `pwsh`, `cmd.exe`,
-WSL `bash`, etc. `shellArgs` adds extra args for plain Terminal sessions.
+etc. `shellArgs` adds extra args for plain Terminal sessions.
+
+For Linux, don't point `defaultShell` at `wsl.exe`: that gives a shell, but every Claude feature
+would still be built for Windows. Create a **WSL session** instead — see [`wsl.md`](wsl.md).
 
 ## Out of scope (verify separately on Windows)
 

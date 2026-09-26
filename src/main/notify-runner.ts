@@ -3,6 +3,7 @@ import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { NotificationEvent } from '../shared/types'
+import { isWsl, linuxToHost } from '../shared/wsl-path'
 import { loadSettings } from './settings'
 import { expandHome } from './pty-manager'
 import { shellRunArgs } from './shell'
@@ -31,11 +32,19 @@ export function runNotifyCommand(e: NotificationEvent): void {
     TERMINATOR_MODE: e.mode,
     TERMINATOR_CWD: e.cwd,
     TERMINATOR_MESSAGE: e.message,
+    // Where the session runs: `windows`, or `wsl` — and then TERMINATOR_CWD is a
+    // Linux path inside TERMINATOR_WSL_DISTRO.
+    TERMINATOR_RUNTIME: isWsl(e) ? 'wsl' : 'windows',
+    TERMINATOR_WSL_DISTRO: isWsl(e) ? e.runtime.distro : '',
   })
+
+  // The command runs on Windows either way, so a WSL session's folder is reached
+  // through its distro's share — a Linux path is no working directory here.
+  const cwd = isWsl(e) ? linuxToHost(e.runtime.distro, e.cwd) : expandHome(e.cwd) || undefined
 
   try {
     const child = spawn(settings.defaultShell, shellRunArgs(settings.defaultShell, command), {
-      cwd: expandHome(e.cwd) || undefined,
+      cwd,
       env,
       stdio: ['pipe', 'ignore', 'pipe'],
     })

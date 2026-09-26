@@ -18,6 +18,7 @@ import { C, STATUS_COLORS, accentA, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { ThemePicker } from './ThemePicker'
+import { WslDistroStatus } from './WslDistroStatus'
 import { Choice, Field, Section, inputStyle, smallBtn } from './controls'
 import { applyThemeFromSettings } from '../theme-apply'
 import { freeName, upsert, writeThemes } from '../themeActions'
@@ -36,7 +37,7 @@ const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'worktreesRoot', 'notifications', 'terminalFont',
   'fontSize', 'iconScale', 'sidebarSide', 'relaunchOnStartup', 'globalToggleShortcut',
   'notesShortcut', 'attachments', 'links', 'browser', 'settingsOpen', 'usageRefreshSeconds',
-  'promptEditorId',
+  'promptEditorId', 'wsl',
 ] as const satisfies readonly (keyof Settings)[]
 
 /** Cache size, at the resolution anyone reads it: "is that a lot?" */
@@ -375,6 +376,11 @@ export function SettingsView(): React.JSX.Element | null {
   }
 
   const patchLinks = (p: Partial<Settings['links']>) => patch({ links: { ...draft.links, ...p } })
+  const patchWsl = (p: Partial<Settings['wsl']>) => patch({ wsl: { ...draft.wsl, ...p } })
+  const wslDistros = useStore.getState().wslDistros ?? []
+  const wslSummary = wslDistros.length
+    ? wslDistros.map((d) => d.name).join(', ')
+    : 'no distros installed'
   const inAppDefault = draft.links?.defaultBrowserId === IN_APP_BROWSER_ID
   const defaultBrowserName = inAppDefault
     ? IN_APP_BROWSER_NAME
@@ -606,6 +612,61 @@ export function SettingsView(): React.JSX.Element | null {
               </Field>
             </>
           ))}
+
+          {/* WSL exists only on Windows; elsewhere the section would be about nothing. */}
+          {window.terminator.platform === 'win32' &&
+            section(
+              'wsl',
+              'WSL',
+              wslSummary,
+              <>
+                <WslDistroStatus />
+                <Field
+                  label="CLAUDE COMMAND IN WSL"
+                  hint="Run for a normal Claude session inside WSL, through your login shell there. Empty = the Claude command above."
+                >
+                  <input
+                    style={inputStyle}
+                    value={draft.wsl?.claudeCommand ?? ''}
+                    placeholder={draft.modes.normal.command}
+                    onChange={(e) => patchWsl({ claudeCommand: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  label="CLAUDE READ-ONLY COMMAND IN WSL"
+                  hint="A PowerShell function on Windows is no use in Linux — define it in ~/.bashrc there, or name something else here. Empty = the read-only command above."
+                >
+                  <input
+                    style={inputStyle}
+                    value={draft.wsl?.claudeReadonlyCommand ?? ''}
+                    placeholder={draft.modes.readonly.command}
+                    onChange={(e) => patchWsl({ claudeReadonlyCommand: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  label="WSL WORKTREES ROOT"
+                  hint="Where git worktrees for WSL projects are made, by the distro's own git. A Linux path; ~ is your home in the distro."
+                >
+                  <input
+                    style={inputStyle}
+                    value={draft.wsl?.worktreesRoot ?? ''}
+                    placeholder="~/terminator-worktrees"
+                    onChange={(e) => patchWsl({ worktreesRoot: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  label="GIT GUI COMMAND IN WSL"
+                  hint="Run inside the distro with the folder, e.g. gitk or git gui (needs WSLg). Empty = the Windows git GUI above, opened on the folder's \\wsl.localhost path."
+                >
+                  <input
+                    style={inputStyle}
+                    value={draft.wsl?.gitGuiCommand ?? ''}
+                    placeholder="gitk"
+                    onChange={(e) => patchWsl({ gitGuiCommand: e.target.value })}
+                  />
+                </Field>
+              </>,
+            )}
 
           {section(
             'startup',

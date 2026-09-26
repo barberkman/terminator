@@ -2,7 +2,10 @@
 // written to userData/reporter.cjs at startup and run via the app's own Electron
 // binary in Node mode (ELECTRON_RUN_AS_NODE=1), so it needs no node/curl/python
 // on PATH. It reads the hook/statusLine JSON from stdin and POSTs it to the
-// loopback report server. argv: [exe, reporter.cjs, kind, port, token].
+// loopback report server. argv: [exe, reporter.cjs, kind, port, token, ts?].
+// A WSL session runs this through interop and passes `ts` — the moment Claude
+// spawned the hook, taken on the Linux side — because starting a Windows process
+// from Linux takes long enough to blur the order of hooks fired close together.
 // Written with no template literals / ${} so it can live inside this TS string.
 
 export const REPORTER_SOURCE = `'use strict'
@@ -13,7 +16,7 @@ const token = process.argv[4] || process.env.TERMINATOR_TOKEN
 // When Claude spawned us. Hook payloads carry no timestamp or sequence number, and
 // each report is its own HTTP POST, so this is the only thing that tells the app
 // which of two reports Claude actually emitted first.
-const capturedAt = Date.now()
+const capturedAt = Number(process.argv[5]) || Date.now()
 
 let body = ''
 process.stdin.setEncoding('utf8')

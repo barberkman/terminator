@@ -3,6 +3,7 @@ import type { Session } from '../../shared/types'
 import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
+import { RuntimeChip } from './RuntimeChip'
 import * as registry from '../term/registry'
 
 /**
@@ -306,6 +307,7 @@ export function PaneHeader({
             overflow: 'hidden',
           }}
         >
+          <RuntimeChip runtime={session.runtime} />
           <span>{session.projectName}</span>
           <span style={{ color: C.faint2 }}>/</span>
           <span>{session.branch}</span>

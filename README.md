@@ -56,6 +56,10 @@ code-signed, so the first launch gets a SmartScreen warning: **More info → Run
   branch.
 - **Status** updates live. Claude sessions report rich states (working / waiting / idle /
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
+- **WSL** (Windows): a session can run inside a WSL distro instead — a native Linux shell, or
+  Linux `claude` with its status, conversation, branches, worktrees and all. Pick
+  **WSL · <distro>** in the New Session dialog, or just pick a `\\wsl.localhost` folder. See
+  **WSL sessions** below.
 - **Mode switch**: one click toggles a Claude session between normal and read-only, **continuing
   the same conversation** (it relaunches with `--resume`).
 - **Pick up where you left off**: sessions survive a restart, but come back not running. Turn
@@ -480,6 +484,70 @@ generated, say, which lives behind a claude.ai login and so can't just be opened
   allowed but pinned to the same storage, so the cookie they set is the one the pane reads.
   A pane that didn't ask for that storage isn't allowed to open at all.
 
+## WSL sessions
+
+On Windows, a session can run **inside a WSL distro** rather than on Windows itself. The app is
+still the Windows app you started; the session's pane is a real Linux shell in a Linux folder,
+and a Claude session is the Linux `claude` installed in that distro. Windows and WSL sessions sit
+side by side in the sidebar.
+
+- **Starting one** — New Session has a **Run in** row (*Windows*, *WSL · Ubuntu*, one per
+  installed distro; the row isn't there without WSL). Pick the distro and type a Linux folder
+  (`~/code/api`, `/home/me/api`), or **Browse…**, which opens in your distro home. Picking or
+  pasting a `\\wsl.localhost\<distro>\…` folder selects that distro on its own, and a folder
+  starting with `/` means the default distro. **New session here**, a branch, Build/Run, an
+  Editor pane opened from a link — everything made from a WSL session runs in WSL too.
+- **It's marked** — a small **WSL** tag on the row, the project header, the pane header and the
+  footer, which shows the session's Linux path. A WSL `api` and a Windows `api` are separate
+  groups, and separate recent projects.
+- **Claude works as it does on Windows.** Status dots and the "needs me" signal, the statusLine
+  (model, context, cost) and the usage meter, the conversation view, branching, mode switch and
+  resume, pasted screenshots and dropped files, clickable paths, Ctrl+G into an Editor pane.
+  Claude reads its own settings, hooks and login from the distro's `~/.claude` — not the Windows
+  one.
+- **Worktrees** are made by the distro's own git, under **WSL WORKTREES ROOT**
+  (`~/terminator-worktrees` by default). Windows git would write Windows paths into the
+  worktree, which the Linux git Claude uses there can't follow.
+- **Files** — the Editor pane, clickable paths and **Open folder** reach the session's files
+  through the distro's share (`\\wsl.localhost\<distro>\…`). Changes Claude makes show up in an
+  open tab within a second or so — the share has no change notifications, so the pane looks
+  rather than listens — and saving writes the file in place, so a script keeps its `+x`.
+- **Attachments** are typed as the paths Linux knows them by: a pasted screenshot as
+  `/mnt/c/…/paste-….png`, a file dropped from `C:\` as `/mnt/c/…`, one from the distro's own
+  share as its Linux path. A file from another distro or a network share is refused with a reason.
+- **Stop means stopped.** Stopping or relaunching a WSL Claude also makes sure no `claude` for that
+  session is left running in the distro, so a relaunch never has two on one conversation.
+
+**How it reaches back.** A WSL2 distro in its default networking can't see Windows' `127.0.0.1`,
+where the app listens for status reports. So a WSL session's hooks and statusLine don't try: they
+run the app's own reporter on the *Windows* side, through WSL interop (the thing that lets you
+type `notepad.exe` in a Linux shell). No firewall rule, no `.wslconfig` change, and it works the
+same in mirrored networking. It costs about 100 ms per report, roughly what a Windows session
+pays. Ctrl+G goes the same way, through a small shim written to `~/.cache/terminator/` in the
+distro.
+
+**What it needs from the distro** — Settings → **WSL** asks each distro and says what it found:
+
+- `claude` on the PATH of your login shell there (a native install puts it in `~/.local/bin`).
+  WSL Claude has its **own login** — if it's a different account from Windows, the footer's usage
+  meter shows whichever reported last.
+- **Interop** on (it is by default). Without it the session still runs; it just can't report its
+  status, and says so.
+- `git`, for worktrees.
+
+A few things to know:
+
+- `claude-readonly`, if it's a PowerShell function on Windows, doesn't exist in Linux. Define it
+  in the distro's `~/.bashrc` too, or set **CLAUDE READ-ONLY COMMAND IN WSL**.
+- **Open in git tool** runs **GIT GUI COMMAND IN WSL** inside the distro if you set one (`gitk`,
+  `git gui` — needs WSLg); otherwise your Windows git GUI opens the folder's share, which may need
+  `git config --global --add safe.directory '%(prefix)///wsl.localhost/<distro>/<path>'` (or `*`)
+  on the Windows side.
+- **Symlinks inside a WSL project** open as "missing" in the Editor pane: Windows can't follow a
+  Linux symlink through the share. The session's own folder is resolved to its real path when you
+  create it, so a symlinked project folder itself is fine.
+- An external editor gets the share path. VS Code asks once to allow the `wsl.localhost` host.
+
 ## Keyboard & mouse
 
 In a terminal pane:
@@ -586,6 +654,11 @@ set to — and which ones you left open is remembered:
   using whatever `$VISUAL`/`$EDITOR` already named. See **Writing a prompt in an Editor pane**.
 - `browser.userAgent` — what the in-app browser calls itself. Empty (the default) derives a
   Chrome-like one from Electron's own. See **In-app browser** above.
+- `wsl.worktreesRoot` (default `~/terminator-worktrees`, a Linux path), `wsl.gitGuiCommand`,
+  `wsl.claudeCommand`, `wsl.claudeReadonlyCommand` — the WSL counterparts of the settings above,
+  whose paths and programs are Windows ones; empty commands mean "the same as on Windows". A
+  session's distro is stored on the session itself (`runtime` in `sessions.json`), and a
+  remembered project's on the project. See **WSL sessions** above.
 
 ## Themes
 
@@ -680,6 +753,9 @@ command** that the app runs on each notification, through your shell. It receive
 - `TERMINATOR_NOTIF_TYPE` ∈ `waiting | finished | error | exited | idle`
 - `TERMINATOR_SESSION_NAME`, `TERMINATOR_PROJECT`, `TERMINATOR_BRANCH`, `TERMINATOR_STATUS`,
   `TERMINATOR_KIND`, `TERMINATOR_MODE`, `TERMINATOR_CWD`, `TERMINATOR_MESSAGE`
+- `TERMINATOR_RUNTIME` ∈ `windows | wsl`, and `TERMINATOR_WSL_DISTRO`. For a WSL session
+  `TERMINATOR_CWD` is its Linux path; the command itself still runs on Windows, in the folder's
+  `\\wsl.localhost` share.
 
 Configure which types fire it via `notifications.triggerOn` (default `["waiting","error"]`) and
 optional per-type overrides via `notifications.perType`. A runnable example is in

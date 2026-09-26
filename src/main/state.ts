@@ -7,8 +7,10 @@ import type {
   NotificationEvent,
   NotifType,
   Session,
+  SessionRuntime,
   SessionStatus,
 } from '../shared/types'
+import { groupKey, isWsl, posixBasename, posixNormalize, validRuntime } from '../shared/wsl-path'
 import * as ptyMgr from './pty-manager'
 import { closeAllForSession as closeFsWatchers } from './fs-service'
 import { runNotifyCommand } from './notify-runner'
@@ -114,12 +116,16 @@ function initialActivity(kind: CreateSessionInput['kind']): string {
  * sidebar menu, the New Session dialog and a clicked link — and a name that
  * depended on which one you used would be a bug nobody could see.
  */
-function defaultName(kind: CreateSessionInput['kind'], projectName: string): string {
+function defaultName(
+  kind: CreateSessionInput['kind'],
+  projectName: string,
+  runtime?: SessionRuntime,
+): string {
   if (kind === 'shell') return 'shell'
   if (kind !== 'browser') return projectName
-  const taken = new Set(
-    [...sessions.values()].filter((s) => s.projectName === projectName).map((s) => s.name),
-  )
+  // "The group" is what the sidebar draws, and a WSL project is its own group.
+  const key = groupKey({ projectName, runtime })
+  const taken = new Set([...sessions.values()].filter((s) => groupKey(s) === key).map((s) => s.name))
   if (!taken.has('Web')) return 'Web'
   for (let n = 2; n < 500; n++) {
     if (!taken.has(`Web ${n}`)) return `Web ${n}`
@@ -163,13 +169,19 @@ function placeAfterParent(id: string, parentId: string): void {
 
 export function createSession(input: CreateSessionInput, branch?: BranchMeta): Session {
   const id = randomUUID()
+  const runtime = validRuntime(input.runtime)
   // Store an absolute, ~-expanded path so the editor's file ops and the renderer's
   // path identities always agree (the PTY cwd is expanded again at spawn anyway).
-  const projectPath = resolve(ptyMgr.expandHome(input.projectPath) || input.projectPath)
-  const projectName = input.projectName?.trim() || basename(projectPath) || 'project'
+  // A WSL session's path is a Linux one, already resolved inside its distro
+  // (wsl.ts normalizeCreateInput) — Windows' resolve() would make it C:\home\….
+  const projectPath = runtime
+    ? posixNormalize(input.projectPath)
+    : resolve(ptyMgr.expandHome(input.projectPath) || input.projectPath)
+  const projectName =
+    input.projectName?.trim() || (runtime ? posixBasename(projectPath) : basename(projectPath)) || 'project'
   const session: Session = {
     id,
-    name: input.name?.trim() || input.task || defaultName(input.kind, projectName),
+    name: input.name?.trim() || input.task || defaultName(input.kind, projectName, runtime),
     kind: input.kind,
     mode: input.kind === 'claude' ? input.mode : 'normal',
     task: input.task,
@@ -177,6 +189,7 @@ export function createSession(input: CreateSessionInput, branch?: BranchMeta): S
     projectPath,
     branch: input.worktree ? input.branch?.trim() || 'work' : 'main',
     worktreePath: undefined,
+    runtime,
     url: input.kind === 'browser' ? input.url : undefined,
     status: 'idle',
     activity: initialActivity(input.kind),
@@ -253,6 +266,7 @@ export function notify(id: string, type: NotifType, message: string): void {
     kind: s.kind,
     mode: s.mode,
     cwd: s.worktreePath || s.projectPath,
+    ...(isWsl(s) ? { runtime: s.runtime } : {}),
     message,
     timestamp: Date.now(),
   }

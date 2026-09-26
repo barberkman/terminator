@@ -6,7 +6,9 @@ import {
   type LinkSettings,
   type Session,
 } from '../../shared/types'
+import { hostFolder, parseWslUnc } from '../../shared/wsl-path'
 import { webUrl, webUrlRe } from '../../shared/url'
+import type { ProjectRef } from '../menus'
 import { useStore } from '../state/store'
 import * as editors from '../editor/registry'
 import { C, FONT } from '../theme'
@@ -345,7 +347,7 @@ function toastError(text: string, sub: string): void {
  * process's own working directory, and a session rooted there is a session rooted
  * somewhere nobody chose.
  */
-function projectForBrowser(fromId?: string): { name: string; path: string } | undefined {
+function projectForBrowser(fromId?: string): ProjectRef | undefined {
   const st = useStore.getState()
   const focusedId = st.panes[st.focused]
   const candidate =
@@ -353,7 +355,9 @@ function projectForBrowser(fromId?: string): { name: string; path: string } | un
     (focusedId ? st.sessions[focusedId] : undefined) ??
     Object.values(st.sessions).find((x) => !!x.projectPath)
   if (!candidate?.projectPath) return undefined
-  return { name: candidate.projectName, path: candidate.projectPath }
+  // The runtime comes along, or a link printed by a WSL session would open its pane
+  // under a Windows project of the same name.
+  return { name: candidate.projectName, path: candidate.projectPath, runtime: candidate.runtime }
 }
 
 /**
@@ -378,6 +382,7 @@ async function openInAppBrowser(url: string, fromId?: string): Promise<void> {
       mode: 'normal',
       projectName: project.name,
       projectPath: project.path,
+      ...(project.runtime ? { runtime: project.runtime } : {}),
       url,
     })
     const st = useStore.getState()
@@ -430,8 +435,9 @@ function baseName(p: string): string {
   return p.split(/[/\\]/).filter(Boolean).pop() || p
 }
 
-function rootOf(s: { worktreePath?: string; projectPath: string }): string {
-  return (s.worktreePath || s.projectPath).replace(/[/\\]+$/, '')
+/** A session's folder as the editor reads it — a WSL session's through its distro's share. */
+function rootOf(s: Session): string {
+  return hostFolder(s).replace(/[/\\]+$/, '')
 }
 
 function within(root: string, abs: string): boolean {
@@ -484,6 +490,7 @@ export async function ensureEditorPane(
         mode: 'normal',
         projectName: from.projectName,
         projectPath: from.worktreePath || from.projectPath,
+        ...(from.runtime ? { runtime: from.runtime } : {}),
       })
     } catch (e) {
       toastError("Couldn't open an editor pane", String(e).slice(0, 200))
@@ -751,7 +758,10 @@ export function openMenuForTarget(ev: MouseEvent, target: LinkTarget): boolean {
       ),
     )
     el.appendChild(
-      menuItem('Copy path', undefined, () => window.terminator.clipboardWrite(target.path)),
+      // The path the session itself printed — a WSL session's Linux one, not the share.
+      menuItem('Copy path', undefined, () =>
+        window.terminator.clipboardWrite(parseWslUnc(target.path)?.linux ?? target.path),
+      ),
     )
   }
 

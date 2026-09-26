@@ -3,7 +3,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { beginEdit, installPromptEditor } from './prompt-edit'
+import { beginEdit, finishEditsForSession, installPromptEditor } from './prompt-edit'
 import { REPORTER_SOURCE } from './reporter-source'
 import { getSession, notify, setStatus, updateSession } from './state'
 import { flushPendingPrompt } from './prefill'
@@ -83,6 +83,11 @@ export function startReportServer(): Promise<void> {
         const at = Number(req.headers['x-terminator-ts']) || Date.now()
         if (req.url === '/hook') handleHook(payload, at)
         else if (req.url === '/status') handleStatus(payload)
+        // Ctrl+G, let go from the terminal: the WSL shim's word for Ctrl+C in the pane,
+        // which its helper can't hear itself (see wslShimSource).
+        else if (req.url === '/edit-cancel' && typeof payload.sessionId === 'string') {
+          finishEditsForSession(payload.sessionId)
+        }
       })
     })
     server.listen(0, '127.0.0.1', () => {

@@ -46,6 +46,40 @@ const exitListeners: ExitListener[] = []
 export function onData(cb: DataListener): void {
   dataListeners.push(cb)
 }
+
+/** One-shot "it printed something" waiters, per session id. See `whenOutput`. */
+const outputWaiters = new Map<string, Set<() => void>>()
+
+/**
+ * Resolves once a session's pty has printed and then gone quiet for `quietMs`, or
+ * after `timeoutMs` whatever happened. For typing into a shell that has only just
+ * started: rc files and banners print before the prompt does, and a WSL distro may
+ * be booting before any of that — so a fixed delay is either too short or wasteful.
+ */
+export function whenOutput(id: string, o: { quietMs: number; timeoutMs: number }): Promise<void> {
+  return new Promise((resolve) => {
+    let quiet: NodeJS.Timeout | null = null
+    let set = outputWaiters.get(id)
+    if (!set) {
+      set = new Set()
+      outputWaiters.set(id, set)
+    }
+    const waiters = set
+    const finish = (): void => {
+      clearTimeout(cap)
+      if (quiet) clearTimeout(quiet)
+      waiters.delete(onOutput)
+      if (!waiters.size && outputWaiters.get(id) === waiters) outputWaiters.delete(id)
+      resolve()
+    }
+    const onOutput = (): void => {
+      if (quiet) clearTimeout(quiet)
+      quiet = setTimeout(finish, o.quietMs)
+    }
+    const cap = setTimeout(finish, o.timeoutMs)
+    waiters.add(onOutput)
+  })
+}
 export function onExit(cb: ExitListener): void {
   exitListeners.push(cb)
 }
@@ -95,6 +129,8 @@ export function createPty(win: BrowserWindow, opts: PtyCreateOpts): string {
   proc.onData((data) => {
     term.buf += data
     for (const l of dataListeners) l(id)
+    const waiters = outputWaiters.get(id)
+    if (waiters) for (const w of [...waiters]) w()
     if (term.flush) return
     term.flush = setTimeout(() => {
       const out = term.buf

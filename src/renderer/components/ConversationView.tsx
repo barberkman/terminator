@@ -1027,7 +1027,8 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
       // itself, which is what every other route into a session does too. Quoted
       // the way attachments.ts quotes them, so a path with spaces stays one path.
       const held = useStore.getState().attachments[sessionId] ?? []
-      const paths = quotePaths(held.map((a) => a.path))
+      // As the session's own process names them: a WSL session reads `/mnt/c/…`.
+      const paths = quotePaths(held.map((a) => a.sessionPath ?? a.path))
       const text = paths ? (raw.trim() ? `${paths}\n${raw}` : paths) : raw
 
       // Empty the box before the round trip, not after: while it still holds the

@@ -17,14 +17,14 @@
 // trailing line can be half-written while the session runs, so parsing always
 // stops at the last newline and leaves the remainder for the next read.
 
-import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs'
+import { promises as fsp } from 'node:fs'
 import type {
   ConversationItem,
   ConversationSlice,
   ToolField,
   ToolOutput,
 } from '../shared/types'
-import { isHumanPrompt, promptText, transcriptPath, type Record_ } from './transcript'
+import { isHumanPrompt, promptText, type Record_ } from './transcript'
 
 /**
  * Tool input/output text longer than this is cut. A `Read` of a big file or a
@@ -221,38 +221,37 @@ function collect(
 
 // ---- reading ---------------------------------------------------------------
 
-/** Bytes [at, at+len) of a file, or null if it can't be read. */
-function readRange(file: string, at: number, len: number): Buffer | null {
-  let fd: number | null = null
+/**
+ * Bytes [at, at+len) of a file, or null if it can't be read. Asynchronous: this is
+ * polled while a conversation is open, and a WSL session's transcript sits behind
+ * the distro's share — whose first read after the VM idled out boots it, which
+ * would otherwise freeze the whole window for seconds.
+ */
+async function readRange(file: string, at: number, len: number): Promise<Buffer | null> {
+  let fh: Awaited<ReturnType<typeof fsp.open>> | null = null
   try {
-    fd = openSync(file, 'r')
+    fh = await fsp.open(file, 'r')
     const buf = Buffer.allocUnsafe(len)
     let got = 0
     while (got < len) {
-      const n = readSync(fd, buf, got, len - got, at + got)
-      if (n <= 0) break
-      got += n
+      const { bytesRead } = await fh.read(buf, got, len - got, at + got)
+      if (bytesRead <= 0) break
+      got += bytesRead
     }
     return got === len ? buf : buf.subarray(0, got)
   } catch {
     return null
   } finally {
-    if (fd !== null) {
-      try {
-        closeSync(fd)
-      } catch {
-        // already gone
-      }
-    }
+    await fh?.close().catch(() => {})
   }
 }
 
 /**
- * The conversation appended to `sessionId`'s transcript since byte offset `from`.
+ * The conversation appended to a transcript `file` since byte offset `from`.
  * `from` 0 reads the whole file. Never throws: an unreadable or absent transcript
  * comes back as an empty slice, which the view shows as "no conversation yet".
  */
-export function readConversation(sessionId: string, cwd: string, from: number): ConversationSlice {
+export async function readConversation(file: string, from: number): Promise<ConversationSlice> {
   const nothing = (over: Partial<ConversationSlice> = {}): ConversationSlice => ({
     items: [],
     outputs: {},
@@ -262,11 +261,9 @@ export function readConversation(sessionId: string, cwd: string, from: number): 
     ...over,
   })
 
-  const file = transcriptPath(sessionId, cwd)
-  if (!existsSync(file)) return nothing()
   let size: number
   try {
-    size = statSync(file).size
+    size = (await fsp.stat(file)).size
   } catch {
     return nothing()
   }
@@ -277,7 +274,7 @@ export function readConversation(sessionId: string, cwd: string, from: number): 
   const start = reset ? 0 : from
   if (start === size) return nothing({ exists: true, nextOffset: size, reset })
 
-  const buf = readRange(file, start, size - start)
+  const buf = await readRange(file, start, size - start)
   if (!buf) return nothing({ exists: true })
   // Stop at the last complete line: the session may be mid-write.
   const lastNl = buf.lastIndexOf(0x0a)

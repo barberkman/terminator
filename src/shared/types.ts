@@ -44,6 +44,20 @@ export type SessionStatus = 'busy' | 'waiting' | 'idle' | 'error' | 'closed'
 export type FolderChoice = 'session' | 'project'
 
 /**
+ * Where a session's process runs when it isn't Windows itself: inside a WSL distro,
+ * launched through wsl.exe. Absent on a session means Windows — which is what every
+ * session was before this existed, so nothing persisted before it needs migrating.
+ *
+ * A WSL session's `projectPath`/`worktreePath` are *Linux* paths (the ones its own
+ * process, Claude and git use); see shared/wsl-path.ts for how the app reaches them.
+ */
+export interface SessionRuntime {
+  kind: 'wsl'
+  /** The distro's registered name, as `wsl.exe -l` prints it. */
+  distro: string
+}
+
+/**
  * Notification categories — passed to the configurable notification command. 'waiting'
  * and 'error' also raise the session's "needs me" highlight; 'idle' deliberately does
  * not — it is Claude's idle-timeout nudge about a finished session, not a block.
@@ -104,6 +118,8 @@ export interface Session {
   branch: string
   /** Set when the app created a git worktree for this session. */
   worktreePath?: string
+  /** Set when the session runs inside WSL. Absent = Windows. */
+  runtime?: SessionRuntime
   /**
    * The page a `browser` session is showing. Persisted, so a restart reopens where
    * you were rather than on a blank pane — the browser equivalent of a terminal
@@ -146,6 +162,8 @@ export interface CreateSessionInput {
   task?: 'build' | 'run'
   /** First page for a `browser` session. Ignored by every other kind. */
   url?: string
+  /** Run inside this WSL distro. Absent = Windows. */
+  runtime?: SessionRuntime
 }
 
 /** One prompt the user typed, read out of a Claude session's transcript. */
@@ -246,8 +264,17 @@ export type SendPromptResult = { ok: true; text: string } | { ok: false; reason:
 export interface AttachedItem {
   /** Basename, for the confirmation toast. */
   name: string
-  /** Absolute path that was typed into the session. */
+  /**
+   * Absolute path on this machine — the receipt `openAttachment` checks, so it is
+   * always the Windows-side form.
+   */
   path: string
+  /**
+   * The same file as the session's own process names it, when that differs — a WSL
+   * session reads `C:\…\paste.png` as `/mnt/c/…/paste.png`. This is what gets typed
+   * or sent; absent means `path` is already it.
+   */
+  sessionPath?: string
   kind: 'image' | 'file' | 'dir'
   /** Small data: URL preview — images only, and only when one could be rendered. */
   thumb?: string
@@ -459,6 +486,8 @@ export interface NotificationSettings {
 export interface ProjectConfig {
   name: string
   path: string
+  /** The WSL distro this project lives in. Absent = Windows. */
+  runtime?: SessionRuntime
   /** Command run by this project's sidebar Build button. Empty/unset = disabled. */
   buildCommand?: string
   /** Command run by this project's sidebar Run button. Empty/unset = disabled. */
@@ -541,6 +570,67 @@ export interface Settings {
   attachments: AttachmentSettings
   links: LinkSettings
   browser: BrowserSettings
+  wsl: WslSettings
+}
+
+/**
+ * Settings that only apply to sessions running inside WSL. The Windows-side ones
+ * (`worktreesRoot`, `gitGuiCommand`, `modes`) name Windows paths and programs, which a
+ * Linux process can't use.
+ */
+export interface WslSettings {
+  /** Where WSL worktrees are created, as a Linux path. `~` is the distro user's home. */
+  worktreesRoot: string
+  /**
+   * Git GUI for a WSL session's folder, run *inside* the distro (a WSLg app such as
+   * `gitk` or `git gui`). Empty = the Windows `gitGuiCommand`, on the folder's
+   * \\wsl.localhost path.
+   */
+  gitGuiCommand: string
+  /** Claude command inside WSL. Empty = the same as `modes.normal.command`. */
+  claudeCommand: string
+  /** Read-only Claude command inside WSL. Empty = the same as `modes.readonly.command`. */
+  claudeReadonlyCommand: string
+}
+
+/** One installed WSL distro, as `wsl.exe -l -v` lists it. */
+export interface WslDistro {
+  name: string
+  isDefault: boolean
+  /** 1 or 2. */
+  version: number
+  /** `Running` / `Stopped` / … — localised, display only. */
+  state: string
+}
+
+/**
+ * What the app learned about a distro by asking it. Everything a WSL session needs
+ * from the Linux side that can't be worked out from Windows: whose home, which shell,
+ * where Claude keeps its files, and whether the way back to this app is open.
+ */
+export interface WslProbe {
+  distro: string
+  /** False when the distro couldn't be reached at all; `reason` says why. */
+  ok: boolean
+  reason?: string
+  user: string
+  home: string
+  /** The user's login shell, e.g. `/bin/bash`. */
+  shell: string
+  /** Where Windows drives are mounted, with a trailing slash (`/mnt/`). */
+  mountRoot: string
+  /** `nat`, `mirrored`, … or '' when the distro can't say. */
+  networking: string
+  /** Whether Linux can run Windows programs — the route status reports take back. */
+  interop: boolean
+  /** Whether this app's own executable is reachable from inside the distro. */
+  exeReachable: boolean
+  /** `claude` on the login shell's PATH, or '' when it isn't installed there. */
+  claudePath: string
+  /** The real (symlinks resolved) Claude config folder: `$CLAUDE_CONFIG_DIR` or `~/.claude`. */
+  claudeDir: string
+  /** `git version 2.53.0`, or '' when git is missing. */
+  gitVersion: string
 }
 
 // ---- Notifications ---------------------------------------------------------
@@ -555,6 +645,8 @@ export interface NotificationEvent {
   kind: SessionKind
   mode: SessionMode
   cwd: string
+  /** Set when the session runs inside WSL; `cwd` is then a Linux path. */
+  runtime?: SessionRuntime
   message: string
   timestamp: number
 }
@@ -661,8 +753,15 @@ export interface TerminatorApi {
   promptEditOpened(file: string): void
   promptEditorStatus(): Promise<PromptEditorStatus>
 
+  // WSL
+  /** Installed distros. Listing never boots one. */
+  wslDistros(force?: boolean): Promise<WslDistro[]>
+  /** Ask a distro about itself (boots it if it was stopped). Cached per run. */
+  wslProbe(distro: string, force?: boolean): Promise<WslProbe>
+
   // dialogs / settings
-  pickFolder(): Promise<string | null>
+  /** `defaultPath` opens the dialog there — a distro's home, for a WSL session. */
+  pickFolder(defaultPath?: string): Promise<string | null>
   /** Pick a single file (used to choose a browser executable). */
   pickFile(title?: string): Promise<string | null>
   getSettings(): Promise<Settings>

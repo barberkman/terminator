@@ -3,6 +3,8 @@ import { USAGE_REFRESH_DEFAULT, type UsageSnapshot, type UsageWindow } from '../
 import { C, STATUS_COLORS, STATUS_LABELS, ink, dotStyle } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
+import { runtimeLabel } from '../../shared/wsl-path'
+import { RuntimeChip } from './RuntimeChip'
 
 /** Past this, a reported percentage is old enough that the footer should say so. */
 const STALE_AFTER_MS = 2 * 60_000
@@ -207,7 +209,9 @@ function UsageCluster(): React.JSX.Element {
 export function Footer(): React.JSX.Element {
   const focusedId = useStore((s) => s.panes[s.focused])
   const session = useStore((s) => (focusedId ? s.sessions[focusedId] : undefined))
+  // As the session itself sees it: a WSL session's Linux path, not the share.
   const cwd = session ? session.worktreePath || session.projectPath : ''
+  const where = session?.runtime ? ` (${runtimeLabel(session.runtime)})` : ''
 
   return (
     <div
@@ -240,7 +244,11 @@ export function Footer(): React.JSX.Element {
       </div>
       {/* Working directory — fills the middle, truncated from the start so the
           end (the relevant part) stays visible, adapting to window width. */}
-      <div style={{ flex: 1, minWidth: 24, padding: '0 14px', overflow: 'hidden' }} title={cwd}>
+      <div
+        style={{ flex: 1, minWidth: 24, padding: '0 14px', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 7 }}
+        title={cwd + where}
+      >
+        {session && <RuntimeChip runtime={session.runtime} />}
         {session && (
           <div
             dir="rtl"

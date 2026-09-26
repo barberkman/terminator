@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import { app } from 'electron'
 import { isProcessless, type Session } from '../shared/types'
+import { validRuntime } from '../shared/wsl-path'
 
 // Persist just the durable session metadata. Runtime fields (status, alive,
 // metrics, notified) are intentionally not stored — restored sessions come back
@@ -15,6 +16,7 @@ const KEYS = [
   'projectPath',
   'branch',
   'worktreePath',
+  'runtime',
   'url',
   'everStarted',
   'createdAt',
@@ -50,6 +52,8 @@ export function loadPersistedSessions(): Session[] {
         projectPath: p.projectPath ?? '',
         branch: p.branch ?? 'main',
         worktreePath: p.worktreePath,
+        // Absent (every session saved before WSL support) or malformed = Windows.
+        runtime: validRuntime(p.runtime),
         url: p.url,
         // Editor and browser sessions have no process — they're immediately usable
         // on restore, so they come back idle rather than "closed / needs relaunch".
