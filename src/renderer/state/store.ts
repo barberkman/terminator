@@ -4,9 +4,12 @@ import {
   type AttachedItem,
   type BrowserClearWhat,
   type Session,
+  type SessionRuntime,
   type Settings,
   type UsageSnapshot,
+  type WslDistro,
 } from '../../shared/types'
+import { groupKey } from '../../shared/wsl-path'
 import { type CustomTheme, setCustomThemes as publishThemes } from '../../shared/themes'
 import type { IconName } from '../icons'
 import * as editor from '../editor/registry'
@@ -25,7 +28,13 @@ import { type PaneNode, type Side, removeAt, resetSizesAt, resizeAt, splitAt } f
  */
 export type MenuTarget =
   | { kind: 'sessions'; ids: string[] }
-  | { kind: 'project'; name: string; path: string }
+  | {
+      kind: 'project'
+      name: string
+      path: string
+      /** Set for a project inside WSL — a WSL `api` and a Windows `api` are two groups. */
+      runtime?: SessionRuntime
+    }
   | { kind: 'app' }
 
 export interface ContextMenuState {
@@ -39,6 +48,8 @@ export interface ContextMenuState {
 export interface NewPrefill {
   projectPath: string
   projectName?: string
+  /** Where the project lives — WSL, for a project opened from a WSL session. */
+  runtime?: SessionRuntime
 }
 
 /**
@@ -154,7 +165,15 @@ export interface ToastItem {
 }
 
 export interface ProjectGroup {
+  /** What the header says. */
   name: string
+  /**
+   * What the group *is* (see `groupKey`): the name for a Windows project, the name
+   * and distro for a WSL one. Collapse state and "the sessions in this group" go by it.
+   */
+  key: string
+  /** Set when the group's project lives inside WSL. */
+  runtime?: SessionRuntime
   sessions: Session[]
   /** Nesting depth per session id — a branch sits one level under its parent. */
   depth: Record<string, number>
@@ -275,6 +294,12 @@ interface StoreState {
    */
   usage: UsageSnapshot | null
   toasts: ToastItem[]
+  /**
+   * Installed WSL distros, or null until asked. Listing one never boots it, so this
+   * is fetched at startup and whenever the New Session dialog opens. Always empty
+   * off Windows.
+   */
+  wslDistros: WslDistro[] | null
 
   init(): Promise<void>
   upsert(s: Session): void
@@ -311,6 +336,7 @@ interface StoreState {
   setUsage(u: UsageSnapshot): void
   pushToast(t: Omit<ToastItem, 'id'>): void
   dismissToast(id: number): void
+  loadWslDistros(force?: boolean): Promise<WslDistro[]>
 }
 
 /**
@@ -416,6 +442,7 @@ export const useStore = create<StoreState>((set, get) => ({
   customThemes: [],
   usage: null,
   toasts: [],
+  wslDistros: null,
 
   async init() {
     if (initialized) return
@@ -454,6 +481,7 @@ export const useStore = create<StoreState>((set, get) => ({
       relaunchOffer: restorable.length ? restorable : null,
     }))
 
+    void get().loadWslDistros()
     window.terminator.onSessionUpdated((s) => get().upsert(s))
     window.terminator.onSessionRemoved((id) => get().remove(id))
     window.terminator.onNavJump((id) => get().openSession(id))
@@ -808,6 +836,20 @@ export const useStore = create<StoreState>((set, get) => ({
   dismissToast(id) {
     set((st) => ({ toasts: st.toasts.filter((t) => t.id !== id) }))
   },
+  async loadWslDistros(force) {
+    if (window.terminator.platform !== 'win32') {
+      set({ wslDistros: [] })
+      return []
+    }
+    let list: WslDistro[] = []
+    try {
+      list = await window.terminator.wslDistros(force)
+    } catch {
+      // no WSL, or it didn't answer: the same as none installed
+    }
+    set({ wslDistros: list })
+    return list
+  },
 }))
 
 /**
@@ -874,7 +916,7 @@ export function subtreeIds(
  * tree unreadable rather than reordered.
  */
 export function canReorderOnto(dragged: Session, target: Session): boolean {
-  if (dragged.projectName !== target.projectName) return false
+  if (groupKey(dragged) !== groupKey(target)) return false
   return (dragged.parentId ?? null) === (target.parentId ?? null)
 }
 
@@ -885,14 +927,15 @@ export function canReorderOnto(dragged: Session, target: Session): boolean {
  */
 export function buildGroups(order: string[], sessions: Record<string, Session>): ProjectGroup[] {
   const groups: ProjectGroup[] = []
-  const byName = new Map<string, ProjectGroup>()
+  const byKey = new Map<string, ProjectGroup>()
   for (const id of order) {
     const s = sessions[id]
     if (!s) continue
-    let g = byName.get(s.projectName)
+    const key = groupKey(s)
+    let g = byKey.get(key)
     if (!g) {
-      g = { name: s.projectName, sessions: [], depth: {} }
-      byName.set(s.projectName, g)
+      g = { name: s.projectName, key, runtime: s.runtime, sessions: [], depth: {} }
+      byKey.set(key, g)
       groups.push(g)
     }
     g.sessions.push(s)
@@ -980,7 +1023,7 @@ export function buildRows(group: ProjectGroup, collapsed: Record<string, boolean
   return rows
 }
 
-/** `collapsed` key for a session's branch subtree (project groups key by name). */
+/** `collapsed` key for a session's branch subtree (project groups key by `groupKey`). */
 export function branchKey(id: string): string {
   return `br:${id}`
 }

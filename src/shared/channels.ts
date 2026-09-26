@@ -71,6 +71,10 @@ export const Channels = {
   fsUnwatch: 'fs:unwatch',
   fsChanged: 'fs:changed',
 
+  // WSL distros (listing, and what a distro says about itself)
+  wslDistros: 'wsl:distros',
+  wslProbe: 'wsl:probe',
+
   // dialogs / settings
   pickFolder: 'dialog:pickFolder',
   pickFile: 'dialog:pickFile',

@@ -20,6 +20,7 @@ import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
 import type { DirEntry, FileReadResult, FsChange } from '../shared/types'
+import { parseWslUnc } from '../shared/wsl-path'
 
 /** Files larger than this are refused (returned as `tooLarge`, not read). */
 const MAX_BYTES = 2 * 1024 * 1024
@@ -27,6 +28,13 @@ const MAX_BYTES = 2 * 1024 * 1024
 const DEBOUNCE_MS = 120
 /** How long a self-write suppresses its own watcher echo. */
 const SELF_WRITE_MS = 800
+/**
+ * How often a polled directory is looked at. Polling is what a WSL session's files
+ * get (see `pollDir`), so this is how long an edit Claude makes there takes to show.
+ */
+const POLL_MS = 1000
+/** A polled write is only seen on the next tick, so its echo has to be suppressed for longer. */
+const SELF_WRITE_POLLED_MS = POLL_MS * 2 + 500
 /** Our atomic-write temp suffix — skipped in tree/file change detection. */
 const TMP_RE = /\.\d+\.tmp$/
 
@@ -142,6 +150,14 @@ export async function readFile(root: string, path: string): Promise<FileReadResu
 export async function writeFile(root: string, path: string, content: string): Promise<void> {
   const abs = safe(root, path)
   if (!abs) throw new Error('path is outside the project root')
+  // A file inside WSL is written in place. Replacing it by rename would make a new
+  // Linux file with the share's default mode and owner — a script would lose its
+  // +x on every save — and that matters more there than atomicity does.
+  if (parseWslUnc(abs)) {
+    markSelfWrite(abs, SELF_WRITE_POLLED_MS)
+    await fsp.writeFile(abs, content, 'utf8')
+    return
+  }
   markSelfWrite(abs)
   // Atomic temp+rename (same pattern as settings/persistence) so a crash mid-write
   // never leaves a truncated file. Content is written verbatim — callers preserve
@@ -155,8 +171,8 @@ export async function writeFile(root: string, path: string, content: string): Pr
 
 const selfWrites = new Map<string, number>()
 
-function markSelfWrite(abs: string): void {
-  selfWrites.set(abs, Date.now() + SELF_WRITE_MS)
+function markSelfWrite(abs: string, ms = SELF_WRITE_MS): void {
+  selfWrites.set(abs, Date.now() + ms)
 }
 
 function isSelfWrite(abs: string): boolean {
@@ -176,7 +192,8 @@ function isSelfWrite(abs: string): boolean {
 // file's inode (a direct inode watch would go deaf).
 
 interface DirWatch {
-  watcher: FSWatcher | null
+  /** An fs.watch watcher, or a poller standing in for one (see `pollDir`). */
+  watcher: FSWatcher | Poller | null
   /** basename -> renderer path id, for open files living in this dir. */
   fileIds: Map<string, string>
   /** Renderer path id of this dir when it's an expanded tree node. */
@@ -236,23 +253,91 @@ function onDirEvent(sessionId: string, absDir: string, filename: string | null):
   }
 }
 
+interface Poller {
+  close(): void
+}
+
+/**
+ * The stand-in for fs.watch where there is none. A WSL session's files sit behind the
+ * distro's \\wsl.localhost share, where fs.watch doesn't work at all (it throws), so
+ * without this an edit Claude made there would never reach an open tab — and saving
+ * that tab would quietly write over it.
+ *
+ * It reports what fs.watch would have, through the same `onDirEvent`, so the debounce,
+ * the self-write suppression and the temp-file filter all apply unchanged: a changed
+ * listing for an expanded directory, a changed size or mtime (or a disappearance) for
+ * an open file. Asynchronous throughout — a share can be slow to answer, and this
+ * runs on the main process's thread.
+ */
+function pollDir(sessionId: string, absDir: string): Poller {
+  let listing: string | null = null
+  const files = new Map<string, string>()
+  let busy = false
+  const tick = async (): Promise<void> => {
+    const dw = watches.get(sessionId)?.dirs.get(absDir)
+    if (!dw || busy) return
+    busy = true
+    try {
+      if (dw.treeId !== null) {
+        let sig: string
+        try {
+          sig = (await fsp.readdir(absDir)).filter((n) => !TMP_RE.test(n)).sort().join('\0')
+        } catch {
+          sig = '\0gone'
+        }
+        // '.' is never a tracked file, so this re-lists the directory and nothing else.
+        if (listing !== null && sig !== listing) onDirEvent(sessionId, absDir, '.')
+        listing = sig
+      } else {
+        listing = null
+      }
+      for (const name of [...dw.fileIds.keys()]) {
+        let sig: string
+        try {
+          const st = await fsp.stat(join(absDir, name))
+          sig = `${st.mtimeMs}:${st.size}`
+        } catch {
+          sig = 'gone'
+        }
+        const before = files.get(name)
+        if (before !== undefined && before !== sig) onDirEvent(sessionId, absDir, name)
+        files.set(name, sig)
+      }
+      for (const name of [...files.keys()]) if (!dw.fileIds.has(name)) files.delete(name)
+    } finally {
+      busy = false
+    }
+  }
+  const timer = setInterval(() => void tick(), POLL_MS)
+  // The baseline, taken once the caller has registered this directory (it does so
+  // right after this returns), so the first real change is seen on the next tick.
+  setTimeout(() => void tick(), 0)
+  return { close: () => clearInterval(timer) }
+}
+
 function ensureDir(sessionId: string, sw: SessionWatch, absDir: string): DirWatch {
   let dw = sw.dirs.get(absDir)
   if (dw) return dw
-  let watcher: FSWatcher | null = null
-  try {
-    watcher = watch(absDir, { persistent: false }, (event, fn) =>
-      onDirEvent(sessionId, absDir, fn ? fn.toString() : null),
-    )
-    watcher.on('error', () => {
-      try {
-        watcher?.close()
-      } catch {
-        // already gone
-      }
-    })
-  } catch {
-    watcher = null
+  let watcher: FSWatcher | Poller | null = null
+  if (parseWslUnc(absDir)) {
+    watcher = pollDir(sessionId, absDir)
+  } else {
+    try {
+      const w = watch(absDir, { persistent: false }, (event, fn) =>
+        onDirEvent(sessionId, absDir, fn ? fn.toString() : null),
+      )
+      w.on('error', () => {
+        try {
+          w.close()
+        } catch {
+          // already gone
+        }
+      })
+      watcher = w
+    } catch {
+      // No watching here (some network shares): look instead of listening.
+      watcher = pollDir(sessionId, absDir)
+    }
   }
   dw = { watcher, fileIds: new Map(), treeId: null }
   sw.dirs.set(absDir, dw)

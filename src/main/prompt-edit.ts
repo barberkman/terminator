@@ -20,11 +20,13 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { app, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
-import { IN_APP_EDITOR_ID, type PromptEditorStatus } from '../shared/types'
+import { IN_APP_EDITOR_ID, type PromptEditorStatus, type Session } from '../shared/types'
+import { isWsl, linuxToHost } from '../shared/wsl-path'
 import { absPath, grantPath, revokePath } from './fs-service'
-import { PROMPT_EDITOR_SOURCE, posixShimSource } from './prompt-editor-source'
+import { PROMPT_EDITOR_SOURCE, posixShimSource, wslShimSource } from './prompt-editor-source'
 import { loadSettings } from './settings'
 import { getSession } from './state'
+import { ensurePromptShim, type Probe } from './wsl'
 
 /**
  * How long an edit may sit un-opened before it is released.
@@ -181,6 +183,20 @@ export function promptEditorCommand(): string {
   return command
 }
 
+/**
+ * `promptEditorCommand` for a session that may run inside WSL, where $VISUAL has to
+ * name something Linux can run: a shim written into the distro (see
+ * `wslShimSource`). '' — Ctrl+G left alone — whenever that can't be arranged, for
+ * the same reason as everywhere else here: failing is not a broken session.
+ */
+export async function promptEditorCommandFor(s: Session, wsl?: Probe): Promise<string> {
+  if (loadSettings().promptEditorId !== IN_APP_EDITOR_ID) return ''
+  if (!isWsl(s)) return command
+  if (!wsl || !wsl.interop || !wsl.exeReachable || !helperFile) return ''
+  const shim = await ensurePromptShim(wsl.distro, wslShimSource(wsl.exeLinux, helperFile))
+  return 'path' in shim ? shim.path : ''
+}
+
 export function promptEditorStatus(): PromptEditorStatus {
   return command ? { available: true } : { available: false, reason: unavailable }
 }
@@ -208,10 +224,14 @@ const edits = new Map<string, Edit>()
  * helped must get its prompt back rather than wait for nothing.
  */
 export function beginEdit(payload: Record<string, unknown>, res: ServerResponse): void {
-  const raw = typeof payload.file === 'string' ? payload.file : ''
+  const sent = typeof payload.file === 'string' ? payload.file : ''
   const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : ''
   const win = mainWindow
   const session = sessionId ? getSession(sessionId) : undefined
+  // A WSL session's Claude names its temp file by its Linux path; this side reaches
+  // it through the session's own distro, and only that one.
+  const raw =
+    session && isWsl(session) && sent.startsWith('/') ? linuxToHost(session.runtime.distro, sent) : sent
   const readable = !!raw && ((): boolean => {
     try {
       return statSync(raw).isFile()
@@ -303,4 +323,18 @@ export function finishEdit(file: string): void {
 /** Every live edit: the window closing, the server stopping, the app quitting. */
 export function finishAllEdits(): void {
   for (const file of [...edits.keys()]) finishEdit(file)
+}
+
+/**
+ * A session's process is gone, so nothing is waiting on its edit any more.
+ *
+ * On Windows the helper dies with the session's pseudoconsole, and its socket closing
+ * already ends the edit. A WSL session's helper is a Windows process that WSL
+ * interop started, outside that console, and it can outlive the session — leaving a
+ * tab that says someone is waiting, over a file it can no longer save. Ending it here
+ * also answers the helper, so it exits instead of lingering. Idempotent, like
+ * `finishEdit`: where the socket already closed there is nothing left to do.
+ */
+export function finishEditsForSession(sessionId: string): void {
+  for (const e of [...edits.values()]) if (e.sessionId === sessionId) finishEdit(e.file)
 }

@@ -1,4 +1,12 @@
-import { isProcessless, type AttachedItem, type FolderChoice, type Session, type Settings } from '../shared/types'
+import {
+  isProcessless,
+  type AttachedItem,
+  type FolderChoice,
+  type Session,
+  type SessionRuntime,
+  type Settings,
+} from '../shared/types'
+import { findProject, groupKey, isWsl, runtimeLabel, sameRuntime } from '../shared/wsl-path'
 import type { IconName } from './icons'
 import type { MenuNode } from './components/ContextMenu'
 import { TYPES, TYPE_MAP, type TypeKey } from './sessionTypes'
@@ -11,16 +19,32 @@ import { useStore, type MenuTarget } from './state/store'
 // same order. These closures are the payload it carries, kept here so
 // ContextMenu.tsx stays a menu and knows nothing about sessions.
 
+/**
+ * A project as the menus act on it: a folder *in a runtime*. A WSL project's path
+ * is a Linux one, and everything made from here — a new session, a Build terminal —
+ * has to run there too, so the runtime travels with the path everywhere.
+ */
+export interface ProjectRef {
+  name: string
+  path: string
+  runtime?: SessionRuntime
+}
+
 /** Create a session in a folder and show it. No dialog, nothing to re-pick. */
-async function createSessionIn(
-  type: TypeKey,
-  project: { name: string; path: string },
-): Promise<void> {
-  const s = await window.terminator.createSession({
-    ...TYPE_MAP[type],
-    projectName: project.name,
-    projectPath: project.path,
-  })
+async function createSessionIn(type: TypeKey, project: ProjectRef): Promise<void> {
+  let s: Session
+  try {
+    s = await window.terminator.createSession({
+      ...TYPE_MAP[type],
+      projectName: project.name,
+      projectPath: project.path,
+      ...(project.runtime ? { runtime: project.runtime } : {}),
+    })
+  } catch (e) {
+    // A WSL folder is checked inside its distro, and can be gone or unreachable.
+    useStore.getState().pushToast({ tone: 'error', text: "Couldn't create the session", sub: errorText(e) })
+    return
+  }
   const store = useStore.getState()
   store.upsert(s)
   store.openSession(s.id)
@@ -40,6 +64,12 @@ export function startFromSidebar(id: string): void {
   registry.getOrCreate(id)
   const { cols, rows } = registry.refit(id)
   void window.terminator.startSession(id, cols, rows)
+}
+
+/** The message of an IPC rejection, without Electron's "Error invoking remote method" preamble. */
+export function errorText(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  return raw.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 }
 
 export function copyPath(path: string, what: string): void {
@@ -103,23 +133,26 @@ export function toastMenu(
 }
 
 /** Build/Run for a project, reusing that project's one terminal per task. */
-export async function runProjectTask(
-  project: { name: string; path: string },
-  task: 'build' | 'run',
-): Promise<void> {
+export async function runProjectTask(project: ProjectRef, task: 'build' | 'run'): Promise<void> {
   const store = useStore.getState()
   let target = Object.values(store.sessions).find(
-    (x) => x.task === task && x.projectPath === project.path,
+    (x) => x.task === task && x.projectPath === project.path && sameRuntime(x.runtime, project.runtime),
   )
   if (!target) {
-    target = await window.terminator.createSession({
-      kind: 'shell',
-      mode: 'normal',
-      task,
-      name: task === 'build' ? 'Build' : 'Run',
-      projectName: project.name,
-      projectPath: project.path,
-    })
+    try {
+      target = await window.terminator.createSession({
+        kind: 'shell',
+        mode: 'normal',
+        task,
+        name: task === 'build' ? 'Build' : 'Run',
+        projectName: project.name,
+        projectPath: project.path,
+        ...(project.runtime ? { runtime: project.runtime } : {}),
+      })
+    } catch (e) {
+      store.pushToast({ tone: 'error', text: `Couldn't start ${task}`, sub: errorText(e) })
+      return
+    }
     store.upsert(target)
   }
   store.openSession(target.id)
@@ -139,7 +172,7 @@ export interface MenuCtx {
   /** Resolved sessions for a 'sessions' target; empty for a project target. */
   sessions: Session[]
   /** The project the menu is about. */
-  project: { name: string; path: string } | null
+  project: ProjectRef | null
   /**
    * Sessions in that project's *folder* — what Build/Run/Stop and the folder
    * actions mean, since those run somewhere rather than on a list of rows.
@@ -179,7 +212,7 @@ function joinGroups(groups: MenuNode[][]): MenuNode[] {
 }
 
 /** The five session types, as menu rows that create in `project` immediately. */
-function typeItems(project: { name: string; path: string }, keyPrefix: string): MenuNode[] {
+function typeItems(project: ProjectRef, keyPrefix: string): MenuNode[] {
   return TYPES.map((t) => ({
     kind: 'item' as const,
     id: `${keyPrefix}:${t.key}`,
@@ -189,7 +222,7 @@ function typeItems(project: { name: string; path: string }, keyPrefix: string): 
   }))
 }
 
-function moreOptions(project: { name: string; path: string }): MenuNode {
+function moreOptions(project: ProjectRef): MenuNode {
   return {
     kind: 'item',
     id: 'new:more',
@@ -197,9 +230,11 @@ function moreOptions(project: { name: string; path: string }): MenuNode {
     icon: 'settings',
     note: 'name, worktree',
     run: () =>
-      useStore
-        .getState()
-        .setShowNew(true, { projectPath: project.path, projectName: project.name }),
+      useStore.getState().setShowNew(true, {
+        projectPath: project.path,
+        projectName: project.name,
+        runtime: project.runtime,
+      }),
   }
 }
 
@@ -211,14 +246,14 @@ function moreOptions(project: { name: string; path: string }): MenuNode {
  */
 interface Folders {
   /** The session's own folder: the worktree when it has one, else the project. */
-  session: { label: string; path: string; project: { name: string; path: string } }
+  session: { label: string; path: string; project: ProjectRef }
   /** The repo the worktree was cut from. Null when there is no worktree, so the
    *  extra menu level disappears entirely for an ordinary session. */
-  project: { label: string; path: string; project: { name: string; path: string } } | null
+  project: { label: string; path: string; project: ProjectRef } | null
 }
 
 function foldersOf(s: Session): Folders {
-  const asProject = { name: s.projectName, path: s.projectPath }
+  const asProject: ProjectRef = { name: s.projectName, path: s.projectPath, runtime: s.runtime }
   if (!s.worktreePath) {
     return { session: { label: s.projectName, path: s.projectPath, project: asProject }, project: null }
   }
@@ -229,7 +264,7 @@ function foldersOf(s: Session): Folders {
       // A session created here runs *in* the worktree but still belongs to this
       // project's group. It gets no worktreePath of its own, so it never offers
       // to delete a worktree it doesn't own — that stays with the session that made it.
-      project: { name: s.projectName, path: s.worktreePath },
+      project: { name: s.projectName, path: s.worktreePath, runtime: s.runtime },
     },
     project: { label: `project ${s.projectName}`, path: s.projectPath, project: asProject },
   }
@@ -280,11 +315,12 @@ function headingSection(ctx: MenuCtx): MenuNode[] {
     // thing on one screen reads as a bug — and the destructive row below acts on
     // the group, so the narrower number would understate what it takes.
     const n = ctx.groupSessions.length
+    const where = ctx.target.runtime ? ` · ${runtimeLabel(ctx.target.runtime)}` : ''
     return [
       {
         kind: 'heading',
         label: `${ctx.target.name} · ${n} session${n === 1 ? '' : 's'}`,
-        sub: ctx.target.path,
+        sub: `${ctx.target.path}${where}`,
       },
     ]
   }
@@ -293,7 +329,8 @@ function headingSection(ctx: MenuCtx): MenuNode[] {
   if (ctx.sessions.length > 1) {
     return [{ kind: 'heading', label: `${ctx.sessions.length} sessions` }]
   }
-  return [{ kind: 'heading', label: s.name, sub: `${s.projectName} · ${s.branch}` }]
+  const where = isWsl(s) ? ` · ${runtimeLabel(s.runtime)}` : ''
+  return [{ kind: 'heading', label: s.name, sub: `${s.projectName} · ${s.branch}${where}` }]
 }
 
 /**
@@ -333,7 +370,7 @@ function openSection(ctx: MenuCtx): MenuNode[] {
 
 function newSessionSection(ctx: MenuCtx): MenuNode[] {
   if (ctx.target.kind === 'project') {
-    const p = { name: ctx.target.name, path: ctx.target.path }
+    const p: ProjectRef = { name: ctx.target.name, path: ctx.target.path, runtime: ctx.target.runtime }
     return [
       {
         kind: 'sub',
@@ -574,8 +611,8 @@ function projectDestructiveSection(ctx: MenuCtx): MenuNode[] {
 
 function projectTaskSection(ctx: MenuCtx): MenuNode[] {
   if (ctx.target.kind !== 'project') return []
-  const p = { name: ctx.target.name, path: ctx.target.path }
-  const cfg = ctx.settings?.projects.find((x) => x.path === p.path)
+  const p: ProjectRef = { name: ctx.target.name, path: ctx.target.path, runtime: ctx.target.runtime }
+  const cfg = ctx.settings ? findProject(ctx.settings.projects, p.path, p.runtime) : undefined
   const runSession = ctx.projectSessions.find((s) => s.task === 'run')
   const out: MenuNode[] = []
   // Configured or absent — the header's dimmed-button treatment doesn't come along.
@@ -611,16 +648,17 @@ function projectTaskSection(ctx: MenuCtx): MenuNode[] {
 
 function projectViewSection(ctx: MenuCtx): MenuNode[] {
   if (ctx.target.kind !== 'project') return []
-  const name = ctx.target.name
-  // Project groups key `collapsed` by name; branch subtrees use branchKey(id).
-  const isCollapsed = !!ctx.collapsed[name]
+  // Project groups key `collapsed` by groupKey (the name, for a Windows project);
+  // branch subtrees use branchKey(id).
+  const key = groupKey({ projectName: ctx.target.name, runtime: ctx.target.runtime })
+  const isCollapsed = !!ctx.collapsed[key]
   return [
     {
       kind: 'item',
       id: 'collapse',
       label: isCollapsed ? 'Expand group' : 'Collapse group',
       icon: 'chevron',
-      run: () => useStore.getState().toggleGroup(name),
+      run: () => useStore.getState().toggleGroup(key),
     },
   ]
 }

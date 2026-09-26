@@ -28,11 +28,13 @@ import type {
   AttachedItem,
 } from '../shared/types'
 import { quotePaths } from '../shared/prompt-path'
+import { isWsl } from '../shared/wsl-path'
 import * as ptyMgr from './pty-manager'
 import { getSession } from './state'
 import { loadSettings } from './settings'
-import { quoteFor } from './shell'
+import { quoteFor, shquote } from './shell'
 import { editorArgv, editorName, launchDetached } from './links'
+import { probe, winToLinux } from './wsl'
 
 /** Extensions Claude can look at as images (and that we can thumbnail). */
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'])
@@ -127,7 +129,7 @@ function thumbFor(path: string): string | undefined {
   }
 }
 
-function itemFor(path: string): AttachedItem {
+function itemFor(path: string, sessionPath?: string): AttachedItem {
   let isDir = false
   try {
     isDir = statSync(path).isDirectory()
@@ -137,6 +139,7 @@ function itemFor(path: string): AttachedItem {
   return {
     name: basename(path) || path,
     path,
+    ...(sessionPath && sessionPath !== path ? { sessionPath } : {}),
     kind: isDir ? 'dir' : IMAGE_EXT.has(ext(path)) ? 'image' : 'file',
     thumb: isDir ? undefined : thumbFor(path),
   }
@@ -170,13 +173,38 @@ function saveBytes(name: string, bytes: Uint8Array): string {
  * A shell gets the plainly shell-quoted path with a trailing space, which is what
  * dropping a file on any other terminal does. No newline: it's never executed.
  */
-function typeIntoSession(id: string, kind: 'claude' | 'shell', paths: string[]): void {
+function typeIntoSession(id: string, kind: 'claude' | 'shell', paths: string[], wsl: boolean): void {
   if (kind === 'claude') {
     ptyMgr.writePty(id, `\x1b[200~${quotePaths(paths)} \x1b[201~`)
     return
   }
-  const shell = loadSettings().defaultShell
-  ptyMgr.writePty(id, `${paths.map((p) => quoteFor(shell, p)).join(' ')} `)
+  // A WSL shell is a Linux shell, whatever the Windows default shell is.
+  const quote = wsl ? shquote : (p: string) => quoteFor(loadSettings().defaultShell, p)
+  ptyMgr.writePty(id, `${paths.map(quote).join(' ')} `)
+}
+
+/**
+ * The paths as the session's own process names them. A Windows session's are the
+ * paths themselves; a WSL session reads a drive through its mount (`/mnt/c/…`) and
+ * its own files by their Linux paths. A file it can't reach at all — on another
+ * distro, or a network share — fails the whole attach, like any other bad file.
+ */
+async function sessionPaths(id: string, paths: string[]): Promise<{ paths: string[] } | { error: string }> {
+  const s = getSession(id)
+  if (!s || !isWsl(s)) return { paths }
+  const p = await probe(s.runtime.distro)
+  if (!p.ok) return { error: p.reason || `couldn't reach ${s.runtime.distro}` }
+  const out: string[] = []
+  for (const path of paths) {
+    const linux = winToLinux(p, path)
+    if (!linux) {
+      return {
+        error: `${basename(path) || path} isn't anywhere ${p.distro} can reach — it's on another distro or a network share`,
+      }
+    }
+    out.push(linux)
+  }
+  return { paths: out }
 }
 
 /**
@@ -191,7 +219,7 @@ function typeIntoSession(id: string, kind: 'claude' | 'shell', paths: string[]):
 function target(
   id: string,
   deliver: AttachDeliver,
-): { kind: 'claude' | 'shell' } | { error: string } {
+): { kind: 'claude' | 'shell'; wsl: boolean } | { error: string } {
   const s = getSession(id)
   if (!s) return { error: 'that session is gone' }
   if (s.kind === 'editor' || s.kind === 'browser') {
@@ -207,7 +235,7 @@ function target(
   if (deliver === 'caller' && s.kind !== 'claude') {
     return { error: 'only a Claude session can hold an attachment for its next message' }
   }
-  return { kind: s.kind }
+  return { kind: s.kind, wsl: isWsl(s) }
 }
 
 /**
@@ -215,7 +243,10 @@ function target(
  * it. The renderer only routes here when the clipboard actually holds an image,
  * so an empty read means it changed underneath us.
  */
-export function attachClipboardImage(id: string, deliver: AttachDeliver = 'pty'): AttachResult {
+export async function attachClipboardImage(
+  id: string,
+  deliver: AttachDeliver = 'pty',
+): Promise<AttachResult> {
   const t = target(id, deliver)
   if ('error' in t) return { ok: false, reason: t.error }
 
@@ -227,9 +258,11 @@ export function attachClipboardImage(id: string, deliver: AttachDeliver = 'pty')
   }
   if (!path) return { ok: false, reason: 'the clipboard no longer holds an image' }
 
-  if (deliver === 'pty') typeIntoSession(id, t.kind, [path])
+  const mapped = await sessionPaths(id, [path])
+  if ('error' in mapped) return { ok: false, reason: mapped.error }
+  if (deliver === 'pty') typeIntoSession(id, t.kind, mapped.paths, t.wsl)
   pruneAttachments()
-  const items = [itemFor(path)]
+  const items = [itemFor(path, mapped.paths[0])]
   remember(items)
   return {
     ok: true,
@@ -243,11 +276,11 @@ export function attachClipboardImage(id: string, deliver: AttachDeliver = 'pty')
  * to the attachments folder first. Either every file resolves or nothing is
  * typed, so a partly-failed drop can't leave half a reference in the prompt.
  */
-export function attachFiles(
+export async function attachFiles(
   id: string,
   files: AttachFileInput[],
   deliver: AttachDeliver = 'pty',
-): AttachResult {
+): Promise<AttachResult> {
   const t = target(id, deliver)
   if ('error' in t) return { ok: false, reason: t.error }
   if (!files.length) return { ok: false, reason: 'nothing to attach — the drop carried no files' }
@@ -277,9 +310,11 @@ export function attachFiles(
     }
   }
 
-  const items = paths.map(itemFor)
+  const mapped = await sessionPaths(id, paths)
+  if ('error' in mapped) return { ok: false, reason: mapped.error }
+  const items = paths.map((p, i) => itemFor(p, mapped.paths[i]))
   remember(items)
-  if (deliver === 'pty') typeIntoSession(id, t.kind, paths)
+  if (deliver === 'pty') typeIntoSession(id, t.kind, mapped.paths, t.wsl)
   pruneAttachments()
   const dirs = items.filter((i) => i.kind === 'dir').length
   return {

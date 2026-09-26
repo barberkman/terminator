@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { ProjectConfig, Session } from '../../shared/types'
+import type { ProjectConfig, Session, SessionRuntime } from '../../shared/types'
+import { findProject, groupKey, runtimeLabel, sameRuntime } from '../../shared/wsl-path'
+import { RuntimeChip } from './RuntimeChip'
 import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, statusMark, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { runProjectTask, stopProjectTask } from '../menus'
@@ -334,6 +336,7 @@ function Row({
               <Icon name="lock" size={11} />
             </span>
           )}
+          <RuntimeChip runtime={session.runtime} />
           {session.notified && (
             <span
               style={{
@@ -550,7 +553,9 @@ function RailTab({
  */
 function RailGroupDivider({ group }: { group: ProjectGroup }): React.JSX.Element {
   const menuOpen = useStore(
-    (s) => s.contextMenu?.target.kind === 'project' && s.contextMenu.target.name === group.name,
+    (s) =>
+      s.contextMenu?.target.kind === 'project' &&
+      groupKey({ projectName: s.contextMenu.target.name, runtime: s.contextMenu.target.runtime }) === group.key,
   )
   const [hover, setHover] = useState(false)
   const n = group.sessions.length
@@ -561,10 +566,11 @@ function RailGroupDivider({ group }: { group: ProjectGroup }): React.JSX.Element
         kind: 'project',
         name: group.name,
         path: group.sessions[0]?.projectPath ?? '',
+        runtime: group.runtime,
       })}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      title={`${group.name} · ${n} session${n === 1 ? '' : 's'} — right-click for the project menu`}
+      title={`${group.name}${group.runtime ? ` (${runtimeLabel(group.runtime)})` : ''} · ${n} session${n === 1 ? '' : 's'} — right-click for the project menu`}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -605,11 +611,14 @@ function RailGroupDivider({ group }: { group: ProjectGroup }): React.JSX.Element
 function ProjectCommandsMenu({
   projectName,
   projectPath,
+  runtime,
   proj,
   onClose,
 }: {
   projectName: string
   projectPath: string
+  /** Where the project lives — the same path in WSL and on Windows is two projects. */
+  runtime?: SessionRuntime
   proj?: ProjectConfig
   onClose: () => void
 }): React.JSX.Element {
@@ -624,14 +633,20 @@ function ProjectCommandsMenu({
     const buildCommand = build.trim()
     const runCommand = run.trim()
     const stopCommand = stop.trim()
-    const exists = settings.projects.some((p) => p.path === projectPath)
+    const same = (p: ProjectConfig) => p.path === projectPath && sameRuntime(p.runtime, runtime)
+    const exists = settings.projects.some(same)
     const projects = exists
-      ? settings.projects.map((p) =>
-          p.path === projectPath ? { ...p, buildCommand, runCommand, stopCommand } : p,
-        )
+      ? settings.projects.map((p) => (same(p) ? { ...p, buildCommand, runCommand, stopCommand } : p))
       : [
           ...settings.projects,
-          { name: projectName, path: projectPath, buildCommand, runCommand, stopCommand },
+          {
+            name: projectName,
+            path: projectPath,
+            ...(runtime ? { runtime } : {}),
+            buildCommand,
+            runCommand,
+            stopCommand,
+          },
         ]
     const result = await window.terminator.updateSettings({ projects })
     setSettings(result)
@@ -747,14 +762,14 @@ function Group({
   slots: Map<string, number>
   altHeld: boolean
 }): React.JSX.Element {
-  const isCollapsed = useStore((s) => !!s.collapsed[group.name])
+  const isCollapsed = useStore((s) => !!s.collapsed[group.key])
   const collapsedMap = useStore((s) => s.collapsed)
   const toggleGroup = useStore((s) => s.toggleGroup)
   const settings = useStore((s) => s.settings)
   const [menuOpen, setMenuOpen] = useState(false)
 
   const projectPath = group.sessions[0]?.projectPath ?? ''
-  const proj = settings?.projects.find((p) => p.path === projectPath)
+  const proj = settings ? findProject(settings.projects, projectPath, group.runtime) : undefined
   const buildCmd = proj?.buildCommand?.trim()
   const runCmd = proj?.runCommand?.trim()
   const stopCmd = proj?.stopCommand?.trim()
@@ -765,7 +780,7 @@ function Group({
   // Both live in menus.ts so the header buttons and the group's context menu run
   // exactly one implementation.
   const runTask = (task: 'build' | 'run') =>
-    runProjectTask({ name: group.name, path: projectPath }, task)
+    runProjectTask({ name: group.name, path: projectPath, runtime: group.runtime }, task)
 
   const stopTask = async () => {
     if (!runSession) return
@@ -803,8 +818,8 @@ function Group({
   return (
     <div>
       <div
-        onClick={() => toggleGroup(group.name)}
-        onContextMenu={menuOpener({ kind: 'project', name: group.name, path: projectPath })}
+        onClick={() => toggleGroup(group.key)}
+        onContextMenu={menuOpener({ kind: 'project', name: group.name, path: projectPath, runtime: group.runtime })}
         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '13px 4px 6px', cursor: 'pointer' }}
       >
         <span
@@ -830,6 +845,7 @@ function Group({
         >
           {group.name}
         </span>
+        <RuntimeChip runtime={group.runtime} />
         <span style={{ fontSize: 10, color: C.faint2 }}>{group.sessions.length}</span>
         <span style={{ flex: 1, height: 1, background: C.hair, minWidth: 8 }} />
         <div
@@ -861,6 +877,7 @@ function Group({
             <ProjectCommandsMenu
               projectName={group.name}
               projectPath={projectPath}
+              runtime={group.runtime}
               proj={proj}
               onClose={() => setMenuOpen(false)}
             />

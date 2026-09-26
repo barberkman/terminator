@@ -79,7 +79,11 @@ const api: TerminatorApi = {
     ipcRenderer.send(Channels.promptEditReply, { file, verb: 'opened' }),
   promptEditorStatus: () => ipcRenderer.invoke(Channels.promptEditorStatus),
 
-  pickFolder: () => ipcRenderer.invoke(Channels.pickFolder),
+  wslDistros: (force?: boolean) => ipcRenderer.invoke(Channels.wslDistros, !!force),
+  wslProbe: (distro: string, force?: boolean) =>
+    ipcRenderer.invoke(Channels.wslProbe, { distro, force: !!force }),
+
+  pickFolder: (defaultPath?: string) => ipcRenderer.invoke(Channels.pickFolder, defaultPath),
   pickFile: (title?: string) => ipcRenderer.invoke(Channels.pickFile, title),
   getSettings: () => ipcRenderer.invoke(Channels.settingsGet),
   updateSettings: (patch: Partial<Settings>) => ipcRenderer.invoke(Channels.settingsUpdate, patch),

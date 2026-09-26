@@ -18,32 +18,65 @@
 // defensive: unknown record types are copied through untouched, unparseable lines
 // are skipped (the parent may be mid-write), and the parent file is never modified.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, promises as fsp } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { TranscriptPrompt } from '../shared/types'
+import type { SessionRuntime, TranscriptPrompt } from '../shared/types'
+import { isWsl, linuxToHost } from '../shared/wsl-path'
 import { expandHome } from './pty-manager'
+import { readyProbe } from './wsl'
 
 /** One parsed transcript line. The format is Claude's, so nothing is assumed. */
 export type Record_ = Record<string, unknown>
 
-/** The directory Claude keeps a working directory's transcripts in. */
-function transcriptDir(cwd: string): string {
-  const abs = expandHome(cwd) || cwd
-  return join(homedir(), '.claude', 'projects', abs.replace(/[^a-zA-Z0-9]/g, '-'))
+/** The folder name Claude files a working directory's transcripts under. */
+export function encodeCwd(cwd: string): string {
+  return cwd.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
-export function transcriptPath(sessionId: string, cwd: string): string {
-  return join(transcriptDir(cwd), `${sessionId}.jsonl`)
+/** Where a Windows session's transcripts live: the Windows user's ~/.claude. */
+export function windowsTranscriptDir(cwd: string): string {
+  const abs = expandHome(cwd) || cwd
+  return join(homedir(), '.claude', 'projects', encodeCwd(abs))
 }
 
 /**
- * Whether Claude already has a saved conversation for this session id in cwd's
- * project. Ground truth for --resume vs --session-id: an in-memory flag can't
- * know it for sessions restored across an app restart.
+ * The directory Claude keeps a working directory's transcripts in, for a session
+ * running in `runtime`. A WSL session's Claude is a Linux program: it keeps them
+ * under the *distro* user's config folder, keyed by the Linux cwd, and this process
+ * reaches that folder through the distro's UNC share.
  */
-export function hasTranscript(sessionId: string, cwd: string): boolean {
-  return existsSync(transcriptPath(sessionId, cwd))
+export async function transcriptDirFor(
+  runtime: SessionRuntime | undefined,
+  cwd: string,
+): Promise<string> {
+  if (!runtime || !isWsl({ runtime })) return windowsTranscriptDir(cwd)
+  const p = await readyProbe(runtime.distro)
+  return linuxToHost(p.distro, `${p.claudeDir}/projects/${encodeCwd(cwd)}`)
+}
+
+export function transcriptFile(dir: string, sessionId: string): string {
+  return join(dir, `${sessionId}.jsonl`)
+}
+
+/**
+ * Whether Claude already has a saved conversation for this session id in that
+ * folder. Ground truth for --resume vs --session-id: an in-memory flag can't know
+ * it for sessions restored across an app restart. Synchronous, for the Windows
+ * launch path, which reaches its pty without awaiting anything.
+ */
+export function hasTranscript(dir: string, sessionId: string): boolean {
+  return existsSync(transcriptFile(dir, sessionId))
+}
+
+/** `hasTranscript` without blocking — a WSL share can take seconds to answer. */
+export async function transcriptExists(dir: string, sessionId: string): Promise<boolean> {
+  try {
+    await fsp.access(transcriptFile(dir, sessionId))
+    return true
+  } catch {
+    return false
+  }
 }
 
 function parseLines(raw: string): (Record_ | null)[] {
@@ -98,12 +131,10 @@ export function isHumanPrompt(rec: Record_): boolean {
 }
 
 /** Every prompt the user typed in a session, oldest first. Empty if unreadable. */
-export function listPrompts(sessionId: string, cwd: string): TranscriptPrompt[] {
-  const file = transcriptPath(sessionId, cwd)
-  if (!existsSync(file)) return []
+export async function listPrompts(dir: string, sessionId: string): Promise<TranscriptPrompt[]> {
   let raw: string
   try {
-    raw = readFileSync(file, 'utf8')
+    raw = await fsp.readFile(transcriptFile(dir, sessionId), 'utf8')
   } catch {
     return []
   }
@@ -122,8 +153,12 @@ export function listPrompts(sessionId: string, cwd: string): TranscriptPrompt[] 
 
 export interface ForkInput {
   parentSessionId: string
+  /** The parent's transcript folder (see `transcriptDirFor`). */
+  parentDir: string
   parentCwd: string
   newSessionId: string
+  /** Where the branch's transcript goes — in the same runtime as the parent's. */
+  newDir: string
   newCwd: string
   /** uuid of the first prompt to leave behind; null copies the whole transcript. */
   cutBeforeUuid: string | null
@@ -136,13 +171,16 @@ export interface ForkInput {
  * structurally valid transcript (no need to walk the parentUuid chain).
  * The parent file is only ever read.
  */
-export function forkTranscript(input: ForkInput): { ok: true } | { ok: false; reason: string } {
-  const src = transcriptPath(input.parentSessionId, input.parentCwd)
-  if (!existsSync(src)) return { ok: false, reason: 'the parent session has no saved conversation yet' }
+export async function forkTranscript(
+  input: ForkInput,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   let raw: string
   try {
-    raw = readFileSync(src, 'utf8')
-  } catch {
+    raw = await fsp.readFile(transcriptFile(input.parentDir, input.parentSessionId), 'utf8')
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { ok: false, reason: 'the parent session has no saved conversation yet' }
+    }
     return { ok: false, reason: "couldn't read the parent transcript" }
   }
 
@@ -172,15 +210,17 @@ export function forkTranscript(input: ForkInput): { ok: true } | { ok: false; re
   }
   if (!out.length) return { ok: false, reason: 'nothing to branch from — the transcript is empty' }
 
-  const dest = transcriptPath(input.newSessionId, input.newCwd)
-  if (existsSync(dest)) return { ok: false, reason: 'a conversation already exists for the new session id' }
+  const dest = transcriptFile(input.newDir, input.newSessionId)
+  if (await transcriptExists(input.newDir, input.newSessionId)) {
+    return { ok: false, reason: 'a conversation already exists for the new session id' }
+  }
   try {
-    mkdirSync(transcriptDir(input.newCwd), { recursive: true })
+    await fsp.mkdir(input.newDir, { recursive: true })
     // Same atomic write as persistence.ts: a half-written transcript would make
     // Claude refuse to resume.
     const tmp = `${dest}.${process.pid}.tmp`
-    writeFileSync(tmp, `${out.join('\n')}\n`, 'utf8')
-    renameSync(tmp, dest)
+    await fsp.writeFile(tmp, `${out.join('\n')}\n`, 'utf8')
+    await fsp.rename(tmp, dest)
   } catch (e) {
     return { ok: false, reason: `couldn't write the branch transcript: ${String(e).slice(0, 120)}` }
   }

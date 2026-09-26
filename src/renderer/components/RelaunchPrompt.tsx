@@ -246,6 +246,7 @@ export function RelaunchPrompt(): React.JSX.Element | null {
                     }}
                   >
                     {s.projectName}
+                    {s.runtime ? ` · WSL ${s.runtime.distro}` : ''}
                     {s.worktreePath ? ` · worktree ⑂ ${s.branch}` : ''}
                   </span>
                 </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { groupKey, runtimeKey, sameRuntime } from '../../shared/wsl-path'
 import { buildMenu } from '../menus'
 import { useStore } from '../state/store'
 import { MenuPanel } from './ContextMenu'
@@ -49,19 +50,20 @@ export function SessionContextMenu(): React.JSX.Element | null {
   )
 
   /**
-   * The group behind a project target, by projectName — because that is how the
+   * The group behind a project target, by groupKey — because that is how the
    * sidebar draws groups (buildGroups) and the header you right-clicked is one.
    * `projectSessions` below is path-scoped on purpose: Build/Run and the folder
    * actions run *in a folder*. The two lists disagree about a session started in
    * a worktree of the project, which keeps the group's name and carries the
    * worktree as its path — and a group-wide action has to mean the rows you see.
    */
-  const groupName = target?.kind === 'project' ? target.name : null
+  const groupName =
+    target?.kind === 'project' ? groupKey({ projectName: target.name, runtime: target.runtime }) : null
   const groupSessions = useMemo(
     () =>
       groupName === null
         ? []
-        : order.map((id) => sessions[id]).filter((s) => s && s.projectName === groupName),
+        : order.map((id) => sessions[id]).filter((s) => s && groupKey(s) === groupName),
     [groupName, order, sessions],
   )
 
@@ -76,12 +78,15 @@ export function SessionContextMenu(): React.JSX.Element | null {
     if (!target) return []
     const project =
       target.kind === 'project'
-        ? { name: target.name, path: target.path }
+        ? { name: target.name, path: target.path, runtime: target.runtime }
         : resolved[0]
-          ? { name: resolved[0].projectName, path: resolved[0].projectPath }
+          ? { name: resolved[0].projectName, path: resolved[0].projectPath, runtime: resolved[0].runtime }
           : null
+    // A folder in a runtime: the same Linux path in two distros is two folders.
     const projectSessions = project
-      ? order.map((id) => sessions[id]).filter((s) => s && s.projectPath === project.path)
+      ? order
+          .map((id) => sessions[id])
+          .filter((s) => s && s.projectPath === project.path && sameRuntime(s.runtime, project.runtime))
       : []
     return buildMenu({
       target,
@@ -102,7 +107,7 @@ export function SessionContextMenu(): React.JSX.Element | null {
   const t = menu.target
   const key =
     t.kind === 'project'
-      ? `p:${t.path}`
+      ? `p:${runtimeKey(t.runtime)}:${t.path}`
       : t.kind === 'app'
         ? `a:${menu.x},${menu.y}`
         : `s:${t.ids.join(',')}:${menu.x},${menu.y}`

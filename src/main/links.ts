@@ -19,7 +19,7 @@
 
 import { spawn } from 'node:child_process'
 import { webUrl } from '../shared/url'
-import { statSync } from 'node:fs'
+import { promises as fsp, statSync } from 'node:fs'
 import { isAbsolute, resolve, sep } from 'node:path'
 import { shell } from 'electron'
 import {
@@ -29,9 +29,11 @@ import {
   type OpenFileResult,
   type OpenLinkResult,
 } from '../shared/types'
+import { isWsl, linuxToHost, posixResolve, posixWithin, sessionFolder } from '../shared/wsl-path'
 import { loadSettings } from './settings'
 import { expandHome } from './pty-manager'
 import { getSession } from './state'
+import { expandLinuxHome, probe } from './wsl'
 
 /** Same idea as MAX_URL_LENGTH, for a path-like token out of the scrollback. */
 const MAX_PATH_LENGTH = 1024
@@ -123,11 +125,33 @@ export async function openLink(raw: string, browserId?: string): Promise<OpenLin
  * enforces, so a path in output can't reach anything the session couldn't.
  * Null for anything that isn't an existing file inside that folder.
  */
-export function resolveOutputPath(sessionId: string, token: string): string | null {
+export async function resolveOutputPath(sessionId: string, token: string): Promise<string | null> {
   const session = getSession(sessionId)
   if (!session) return null
   const raw = token.trim()
   if (!raw || raw.length > MAX_PATH_LENGTH) return null
+
+  // A WSL session prints Linux paths, so they are resolved by Linux rules against its
+  // Linux folder — `~` being the distro user's home — and only then mapped to the
+  // share this process reads through. The containment check is done on the Linux
+  // side, where the session's own idea of "inside" lives.
+  if (isWsl(session)) {
+    const root = sessionFolder(session)
+    let linux = raw
+    if (raw === '~' || raw.startsWith('~/')) {
+      const p = await probe(session.runtime.distro)
+      if (!p.ok) return null
+      linux = expandLinuxHome(p, raw)
+    }
+    linux = posixResolve(root, linux)
+    if (!posixWithin(root, linux)) return null
+    const host = linuxToHost(session.runtime.distro, linux)
+    try {
+      return (await fsp.stat(host)).isFile() ? host : null
+    } catch {
+      return null
+    }
+  }
 
   const root = resolve(expandHome(session.worktreePath || session.projectPath) || session.projectPath)
   const expanded = expandHome(raw) || raw
@@ -177,7 +201,7 @@ export function editorArgv(args: string[], path: string, line?: number, column?:
  * it in someone else's program's output, which is a suggestion, not permission.
  */
 export async function openInEditor(input: OpenFileInput): Promise<OpenFileResult> {
-  const abs = resolveOutputPath(input.sessionId, input.path)
+  const abs = await resolveOutputPath(input.sessionId, input.path)
   if (!abs) {
     return { ok: false, reason: "that file isn't inside the session's folder any more" }
   }

@@ -1,5 +1,6 @@
 import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
+import { hostFolder, sessionFolder } from '../shared/wsl-path'
 import { COLOR_RE, DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
 import type {
   AttachDeliver,
@@ -33,8 +34,9 @@ import { loadSettings, rememberProject, saveSettings } from './settings'
 import { loadCustomThemes, saveCustomThemes } from './theme-store'
 import { loadUsage } from './usage-store'
 import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
-import { forkTranscript, listPrompts } from './transcript'
+import { forkTranscript, listPrompts, transcriptDirFor, transcriptFile } from './transcript'
 import { readConversation } from './conversation'
+import { listDistros, normalizeCreateInput, probe } from './wsl'
 import { sendPrompt } from './send-prompt'
 import { setPendingPrompt } from './prefill'
 import { finishEdit, markEditOpen, promptEditorStatus } from './prompt-edit'
@@ -46,7 +48,12 @@ export function registerIpc(getWin: () => BrowserWindow): void {
 
   // ---- sessions ----
   ipcMain.handle(Channels.sessionList, () => state.listSessions())
-  ipcMain.handle(Channels.sessionCreate, async (_e, input: CreateSessionInput) => {
+  ipcMain.handle(Channels.sessionCreate, async (_e, raw: CreateSessionInput) => {
+    // A WSL folder is settled before anything exists: the distro picked (a
+    // \\wsl.localhost path names its own), the path made Linux, and resolved inside
+    // the distro. A Windows request comes back untouched. Throws a readable reason,
+    // which the New Session dialog shows.
+    const input = await normalizeCreateInput(raw)
     const session = state.createSession(input)
     // A Build/Run terminal reuses its project's path; that project is already in
     // recents from its first non-task session, so only remember on real sessions.
@@ -55,11 +62,11 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const inKnownWorktree = state
       .listSessions()
       .some((x) => !!x.worktreePath && x.worktreePath === session.projectPath)
-    if (!input.task && !inKnownWorktree) rememberProject(input.projectPath, input.projectName)
+    if (!input.task && !inKnownWorktree) rememberProject(input.projectPath, input.projectName, input.runtime)
     // Create the worktree before returning so the PTY launches in it (any kind).
     if (input.worktree) {
       try {
-        const path = await addWorktree(input.projectPath, session.branch)
+        const path = await addWorktree(input.projectPath, session.branch, session.runtime)
         state.updateSession(session.id, { worktreePath: path })
       } catch (e) {
         state.updateSession(session.id, {
@@ -72,9 +79,8 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   })
   ipcMain.handle(
     Channels.sessionStart,
-    (_e, { id, cols, rows }: { id: string; cols?: number; rows?: number }) => {
-      startSession(getWin(), id, { cols, rows })
-    },
+    (_e, { id, cols, rows }: { id: string; cols?: number; rows?: number }) =>
+      startSession(getWin(), id, { cols, rows }),
   )
   ipcMain.handle(Channels.sessionRemove, (_e, id: string) => state.removeSession(id))
   ipcMain.handle(
@@ -120,10 +126,14 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   ipcMain.on(Channels.sessionReorder, (_e, ids: string[]) => state.reorderSessions(ids))
 
   // ---- conversation branching ----
-  ipcMain.handle(Channels.sessionListPrompts, (_e, id: string): TranscriptPrompt[] => {
+  ipcMain.handle(Channels.sessionListPrompts, async (_e, id: string): Promise<TranscriptPrompt[]> => {
     const s = state.getSession(id)
     if (!s || s.kind !== 'claude') return []
-    return listPrompts(s.id, s.worktreePath || s.projectPath)
+    try {
+      return await listPrompts(await transcriptDirFor(s.runtime, sessionFolder(s)), s.id)
+    } catch {
+      return [] // a WSL distro that can't be reached has no prompts to offer
+    }
   })
 
   // ---- conversation view ----
@@ -131,11 +141,17 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   // session id, like every other path in this file — never taken from the renderer.
   ipcMain.handle(
     Channels.sessionConversation,
-    (_e, { id, from }: { id: string; from: number }): ConversationSlice => {
+    async (_e, { id, from }: { id: string; from: number }): Promise<ConversationSlice> => {
       const s = state.getSession(id)
       const empty = { items: [], outputs: {}, nextOffset: 0, reset: false, exists: false }
       if (!s || s.kind !== 'claude') return empty
-      return readConversation(s.id, s.worktreePath || s.projectPath, Math.max(0, from | 0))
+      let dir: string
+      try {
+        dir = await transcriptDirFor(s.runtime, sessionFolder(s))
+      } catch {
+        return empty
+      }
+      return readConversation(transcriptFile(dir, s.id), Math.max(0, from | 0))
     },
   )
   // Driving the session from that document: the prompt is typed into the pty,
@@ -161,7 +177,7 @@ export function registerIpc(getWin: () => BrowserWindow): void {
       let worktreePath: string | undefined
       if (input.worktree) {
         try {
-          worktreePath = await addWorktree(parent.projectPath, branchName)
+          worktreePath = await addWorktree(parent.projectPath, branchName, parent.runtime)
         } catch (e) {
           return { ok: false, reason: `worktree failed: ${String(e).slice(0, 120)}` }
         }
@@ -174,6 +190,8 @@ export function registerIpc(getWin: () => BrowserWindow): void {
           name: input.name?.trim() || `${parent.name} ⑂`,
           projectPath: parent.projectPath,
           projectName: parent.projectName,
+          // A branch runs where its parent does: its transcript is seeded there.
+          runtime: parent.runtime,
         },
         { parentId: parent.id, branchedFrom: parent.name, branchPoint: input.keptPrompts },
       )
@@ -185,15 +203,25 @@ export function registerIpc(getWin: () => BrowserWindow): void {
       // Cutting above the first prompt means "same project, blank slate": there is
       // no history to carry, so leave the transcript unseeded and let the launcher
       // start it with --session-id like any new session.
+      const newCwd = worktreePath || parent.projectPath
       const forked =
         input.keptPrompts > 0
-          ? forkTranscript({
-              parentSessionId: parent.id,
-              parentCwd,
-              newSessionId: session.id,
-              newCwd: worktreePath || parent.projectPath,
-              cutBeforeUuid: input.cutBeforeUuid,
-            })
+          ? await transcriptDirFor(parent.runtime, parentCwd).then(
+              async (parentDir) =>
+                forkTranscript({
+                  parentSessionId: parent.id,
+                  parentDir,
+                  parentCwd,
+                  newSessionId: session.id,
+                  newDir: await transcriptDirFor(parent.runtime, newCwd),
+                  newCwd,
+                  cutBeforeUuid: input.cutBeforeUuid,
+                }),
+              (e: unknown) => ({
+                ok: false as const,
+                reason: `couldn't reach the conversation: ${e instanceof Error ? e.message : String(e)}`,
+              }),
+            )
           : ({ ok: true } as const)
       if (!forked.ok) {
         // Leave nothing behind: the session never ran, and its worktree would be
@@ -260,9 +288,10 @@ export function registerIpc(getWin: () => BrowserWindow): void {
 
   // ---- filesystem (editor sessions) ----
   // Root is resolved here from the session id — never trusted from the renderer.
+  // A WSL session's files are read through its distro's share (\\wsl.localhost\…).
   const editorRoot = (sessionId: string): string | null => {
     const s = state.getSession(sessionId)
-    return s ? s.worktreePath || s.projectPath : null
+    return s ? hostFolder(s) : null
   }
   ipcMain.handle(Channels.fsList, (_e, { sessionId, dir }: { sessionId: string; dir: string }) => {
     const root = editorRoot(sessionId)
@@ -304,10 +333,20 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   )
   ipcMain.handle(Channels.promptEditorStatus, () => promptEditorStatus())
 
+  // ---- WSL ----
+  ipcMain.handle(Channels.wslDistros, (_e, force?: boolean) => listDistros(!!force))
+  ipcMain.handle(Channels.wslProbe, async (_e, { distro, force }: { distro: string; force?: boolean }) => {
+    if (typeof distro !== 'string' || !distro.trim()) throw new Error('no distro named')
+    // Only what the renderer shows; the rest is main's business.
+    const { launchShell: _launch, exeLinux: _exe, ...shown } = await probe(distro.trim(), !!force)
+    return shown
+  })
+
   // ---- dialogs / settings ----
-  ipcMain.handle(Channels.pickFolder, async () => {
+  ipcMain.handle(Channels.pickFolder, async (_e, defaultPath?: string) => {
     const r = await dialog.showOpenDialog(getWin(), {
       properties: ['openDirectory', 'createDirectory'],
+      ...(typeof defaultPath === 'string' && defaultPath ? { defaultPath } : {}),
     })
     return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
   })

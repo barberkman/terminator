@@ -6,8 +6,10 @@ import {
   USAGE_REFRESH_DEFAULT,
   USAGE_REFRESH_MAX,
   USAGE_REFRESH_MIN,
+  type SessionRuntime,
   type Settings,
 } from '../shared/types'
+import { isWsl, sameRuntime, validRuntime } from '../shared/wsl-path'
 import { DEFAULT_THEME_ID } from '../shared/themes'
 import { defaultShell } from './shell'
 
@@ -66,6 +68,14 @@ export function defaultSettings(): Settings {
     },
     // Empty = derive a Chrome-like UA from Electron's own. See browser.ts.
     browser: { userAgent: '' },
+    // Linux-side counterparts of the Windows settings above, for WSL sessions. `~` is
+    // expanded inside the distro. The blanks mean "same as the Windows setting".
+    wsl: {
+      worktreesRoot: '~/terminator-worktrees',
+      gitGuiCommand: '',
+      claudeCommand: '',
+      claudeReadonlyCommand: '',
+    },
   }
 }
 
@@ -95,6 +105,7 @@ function merge(base: Settings, patch: Partial<Settings>): Settings {
     // is what makes removing one in Settings actually remove it.
     links: { ...base.links, ...(patch.links ?? {}) },
     browser: { ...base.browser, ...(patch.browser ?? {}) },
+    wsl: { ...base.wsl, ...(patch.wsl ?? {}) },
     usageRefreshSeconds: clampRefresh(
       'usageRefreshSeconds' in patch ? patch.usageRefreshSeconds : base.usageRefreshSeconds,
     ),
@@ -121,12 +132,16 @@ export function loadSettings(): Settings {
   return value
 }
 
-/** Add a project to the recents list (deduped, capped) so it shows in New Session. */
-export function rememberProject(path: string, name?: string): void {
+/**
+ * Add a project to the recents list (deduped, capped) so it shows in New Session. A
+ * project is its path *in* a runtime: `/home/me/api` in two distros is two projects.
+ */
+export function rememberProject(path: string, name?: string, runtime?: SessionRuntime): void {
   const s = loadSettings()
-  if (s.projects.some((p) => p.path === path)) return
+  if (s.projects.some((p) => p.path === path && sameRuntime(validRuntime(p.runtime), runtime))) return
   const projName = name?.trim() || path.split(/[/\\]/).filter(Boolean).pop() || path
-  const projects = [{ name: projName, path }, ...s.projects].slice(0, 12)
+  const entry = isWsl({ runtime }) ? { name: projName, path, runtime } : { name: projName, path }
+  const projects = [entry, ...s.projects].slice(0, 12)
   saveSettings({ projects })
 }
 

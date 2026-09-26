@@ -12,6 +12,7 @@ import {
   setWindow as setPromptEditWindow,
 } from './prompt-edit'
 import { loadPersisted, setWindow, wireProcessEvents } from './state'
+import { reapAllOnQuit, wireLauncher } from './session-launcher'
 import { startReportServer, stopReportServer } from './report-server'
 import { applyGlobalShortcut, disposeGlobalShortcut } from './window-toggle'
 import { loadSettings } from './settings'
@@ -115,6 +116,7 @@ app.whenReady().then(async () => {
   // stale ones before anything can add more.
   pruneAttachments()
   wireProcessEvents()
+  wireLauncher()
   registerIpc(() => win as BrowserWindow)
   // No menu bar on Windows and Linux, where a bare Alt is what summons one — and
   // Alt is a session shortcut here (Alt+1..9 switches sessions), so the summoning
@@ -144,6 +146,8 @@ app.on('before-quit', () => {
   // save gets written out rather than dropped.
   flushUsage()
   killAll()
+  // A WSL Claude hears about that only as a hang-up; make sure none outlives the app.
+  reapAllOnQuit()
   closeFsWatchers()
   disposePromptEditor()
   stopReportServer()

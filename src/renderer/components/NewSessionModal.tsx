@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { SessionRuntime, WslProbe } from '../../shared/types'
+import { linuxToHost, parseWslUnc, runtimeKey, sameRuntime } from '../../shared/wsl-path'
 import { C, accentA, ink, sz } from '../theme'
 import { Icon } from '../icons'
+import { errorText } from '../menus'
 import { TYPES, TYPE_MAP, type TypeKey } from '../sessionTypes'
 import { useStore } from '../state/store'
+import { RuntimeChip } from './RuntimeChip'
 
 function basename(p: string): string {
   return p.split(/[/\\]/).filter(Boolean).pop() ?? ''
@@ -36,8 +40,13 @@ export function NewSessionModal(): React.JSX.Element | null {
   const setSettings = useStore((s) => s.setSettings)
   const sessions = useStore((s) => s.sessions)
   const order = useStore((s) => s.order)
+  const distros = useStore((s) => s.wslDistros) ?? []
 
   const [folder, setFolder] = useState('')
+  /** Where the session runs. Undefined = Windows. */
+  const [runtime, setRuntime] = useState<SessionRuntime | undefined>(undefined)
+  /** What the chosen distro said about itself — its home for Browse, and anything missing. */
+  const [probe, setProbe] = useState<WslProbe | null>(null)
   const [name, setName] = useState('')
   const [kind, setKind] = useState<TypeKey>('claude')
   const [worktree, setWorktree] = useState(false)
@@ -50,17 +59,21 @@ export function NewSessionModal(): React.JSX.Element | null {
     const seen = new Set<string>()
     // `removable` is true only for remembered projects with no live session — a
     // session-backed project can't be deleted from the list while its session exists.
-    const list: { name: string; path: string; removable: boolean }[] = []
+    // Keyed by runtime and path together: the same Linux path in two distros, or a
+    // WSL and a Windows project that happen to match, are different projects.
+    const list: { name: string; path: string; runtime?: SessionRuntime; removable: boolean }[] = []
     for (const id of order) {
       const s = sessions[id]
-      if (s && !seen.has(s.projectPath)) {
-        seen.add(s.projectPath)
-        list.push({ name: s.projectName, path: s.projectPath, removable: false })
+      const key = s ? `${runtimeKey(s.runtime)}|${s.projectPath}` : ''
+      if (s && !seen.has(key)) {
+        seen.add(key)
+        list.push({ name: s.projectName, path: s.projectPath, runtime: s.runtime, removable: false })
       }
     }
     for (const p of settings?.projects ?? []) {
-      if (!seen.has(p.path)) {
-        seen.add(p.path)
+      const key = `${runtimeKey(p.runtime)}|${p.path}`
+      if (!seen.has(key)) {
+        seen.add(key)
         list.push({ ...p, removable: true })
       }
     }
@@ -81,20 +94,64 @@ export function NewSessionModal(): React.JSX.Element | null {
   useEffect(() => {
     if (!show) return
     setFolder(prefill?.projectPath ?? '')
+    setRuntime(prefill?.runtime)
     setName('')
     setKind('claude')
     setWorktree(false)
     setBranch('')
+    // Distros come and go (an install, an unregister); listing never boots one.
+    void useStore.getState().loadWslDistros(true)
   }, [show, prefill])
+
+  // Ask the chosen distro about itself: its home is where Browse opens, and a
+  // missing `claude` or a closed way back is better said here than found later.
+  const distro = runtime?.kind === 'wsl' ? runtime.distro : ''
+  useEffect(() => {
+    setProbe(null)
+    if (!show || !distro) return
+    let live = true
+    window.terminator
+      .wslProbe(distro)
+      .then((p) => live && setProbe(p))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [show, distro])
 
   if (!show) return null
 
   const reset = () => {
     setFolder('')
+    setRuntime(undefined)
     setName('')
     setKind('claude')
     setWorktree(false)
     setBranch('')
+  }
+
+  /** The registered spelling of a distro named in a path, which may be any case. */
+  const distroNamed = (n: string): string =>
+    distros.find((d) => d.name.toLowerCase() === n.toLowerCase())?.name ?? n
+  const defaultDistro = (): string => distros.find((d) => d.isDefault)?.name ?? distros[0]?.name ?? ''
+
+  /**
+   * A folder as the user gave it, settled into what will be sent: a \\wsl.localhost
+   * path picks its distro and becomes the Linux path it stands for, and a bare
+   * `/…` path — which means nothing on Windows — goes to the default distro. Anything
+   * else keeps the runtime already chosen.
+   */
+  const settleFolder = (raw: string): void => {
+    const unc = parseWslUnc(raw)
+    if (unc) {
+      setRuntime({ kind: 'wsl', distro: distroNamed(unc.distro) })
+      setFolder(unc.linux)
+      return
+    }
+    setFolder(raw)
+    if (!runtime && distros.length && raw.startsWith('/') && !raw.startsWith('//')) {
+      setRuntime({ kind: 'wsl', distro: defaultDistro() })
+    }
   }
   const close = () => {
     setShowNew(false)
@@ -102,21 +159,27 @@ export function NewSessionModal(): React.JSX.Element | null {
   }
 
   const browse = async () => {
-    const picked = await window.terminator.pickFolder()
+    // A WSL session browses its distro: from the folder typed so far, else its home.
+    let start: string | undefined
+    if (distro) {
+      const linux = folder.trim().startsWith('/') ? folder.trim() : probe?.home
+      if (linux) start = linuxToHost(distro, linux)
+    }
+    const picked = await window.terminator.pickFolder(start)
     if (picked) {
-      setFolder(picked)
+      settleFolder(picked)
       // Not for a browser session: the folder only decides which group it lands
       // in, and naming it after one would take it out of the Web / Web 2 run.
       if (!name && kind !== 'browser') setName(basename(picked))
     }
   }
 
-  const removeRecent = async (path: string) => {
+  const removeRecent = async (path: string, rt?: SessionRuntime) => {
     if (!settings) return
-    const projects = settings.projects.filter((p) => p.path !== path)
+    const projects = settings.projects.filter((p) => !(p.path === path && sameRuntime(p.runtime, rt)))
     const result = await window.terminator.updateSettings({ projects })
     setSettings(result)
-    if (folder === path) setFolder('')
+    if (folder === path && sameRuntime(runtime, rt)) setFolder('')
   }
 
   const create = async () => {
@@ -129,14 +192,32 @@ export function NewSessionModal(): React.JSX.Element | null {
         projectPath: folder.trim(),
         worktree,
         branch: worktree ? branch.trim() || undefined : undefined,
+        ...(runtime ? { runtime } : {}),
       })
       useStore.getState().upsert(session)
       useStore.getState().openSession(session.id)
       close()
+    } catch (e) {
+      // Stays open, so the folder can be fixed rather than retyped. A WSL folder is
+      // checked inside its distro, which is where most of these come from.
+      useStore.getState().pushToast({ tone: 'error', text: "Couldn't create the session", sub: errorText(e) })
     } finally {
       setBusy(false)
     }
   }
+
+  /** One thing worth knowing about the chosen distro before starting there, or ''. */
+  const probeHint = ((): string => {
+    if (!distro || !probe) return ''
+    if (!probe.ok) return probe.reason || `${distro} isn't answering`
+    if (!probe.interop || !probe.exeReachable) {
+      return "WSL interop is off in this distro, so sessions here can't report their status."
+    }
+    if (kind === 'claude' || kind === 'claude-ro') {
+      if (!probe.claudePath) return `claude isn't on the PATH in ${distro} — install it there first.`
+    }
+    return ''
+  })()
 
   return (
     <div
@@ -190,13 +271,66 @@ export function NewSessionModal(): React.JSX.Element | null {
         </div>
 
         <div style={{ padding: '0 20px 4px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* Only where there is a choice: no WSL, no row. */}
+          {distros.length > 0 && (
+            <div>
+              <Label>RUN IN</Label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[undefined, ...distros.map((d): SessionRuntime => ({ kind: 'wsl', distro: d.name }))].map(
+                  (rt) => {
+                    const selected = sameRuntime(rt, runtime)
+                    return (
+                      <button
+                        key={runtimeKey(rt)}
+                        onClick={() => {
+                          if (selected) return
+                          setRuntime(rt)
+                          // A folder only means something in the runtime it was picked
+                          // in, so switching starts the folder over.
+                          setFolder('')
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 7,
+                          padding: '7px 12px',
+                          borderRadius: 999,
+                          cursor: 'pointer',
+                          font: 'inherit',
+                          fontSize: 12,
+                          color: selected ? C.textHi : C.text,
+                          background: selected ? accentA(0.08) : C.input,
+                          border: `1px solid ${selected ? C.accentBorder : C.border2}`,
+                        }}
+                      >
+                        {rt ? `WSL · ${rt.distro}` : 'Windows'}
+                      </button>
+                    )
+                  },
+                )}
+              </div>
+              {probeHint && (
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 7 }}>{probeHint}</div>
+              )}
+            </div>
+          )}
+
           <div>
             <Label>PROJECT FOLDER</Label>
             <div style={{ display: 'flex', gap: 8, marginBottom: recents.length ? 9 : 0 }}>
               <input
                 value={folder}
                 onChange={(e) => setFolder(e.target.value)}
-                placeholder="~/code/my-project"
+                // Settled when you leave the box rather than on every keystroke, so a
+                // half-typed \\wsl.localhost path isn't rewritten out from under you.
+                onBlur={(e) => settleFolder(e.target.value.trim())}
+                onPaste={(e) => {
+                  const text = e.clipboardData.getData('text').trim()
+                  if (!parseWslUnc(text)) return
+                  e.preventDefault()
+                  settleFolder(text)
+                }}
+                placeholder={distro ? `${probe?.home || '~'}/code/my-project` : '~/code/my-project'}
                 style={{ ...inputStyle, flex: 1, minWidth: 0 }}
               />
               <button
@@ -231,12 +365,15 @@ export function NewSessionModal(): React.JSX.Element | null {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 140, overflowY: 'auto' }}>
                   {recents.map((rf) => {
-                  const selected = folder === rf.path
+                  const selected = folder === rf.path && sameRuntime(runtime, rf.runtime)
                   return (
                     <div
-                      key={rf.path}
+                      key={`${runtimeKey(rf.runtime)}|${rf.path}`}
                       className="cc-row"
-                      onClick={() => setFolder(rf.path)}
+                      onClick={() => {
+                        setFolder(rf.path)
+                        setRuntime(rf.runtime)
+                      }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -251,8 +388,11 @@ export function NewSessionModal(): React.JSX.Element | null {
                         <Icon name="folder" size={14} />
                       </span>
                       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        <span style={{ fontSize: 12, color: C.textHi, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {rf.name}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                          <span style={{ fontSize: 12, color: C.textHi, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {rf.name}
+                          </span>
+                          <RuntimeChip runtime={rf.runtime} />
                         </span>
                         <span style={{ fontSize: 10.5, color: C.dim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {rf.path}
@@ -268,7 +408,7 @@ export function NewSessionModal(): React.JSX.Element | null {
                           className="cc-x"
                           onClick={(e) => {
                             e.stopPropagation()
-                            void removeRecent(rf.path)
+                            void removeRecent(rf.path, rf.runtime)
                           }}
                           title="Remove from recent projects"
                           style={{
