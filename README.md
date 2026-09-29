@@ -580,6 +580,10 @@ In a terminal pane:
 - **✕ in a pane header** closes that pane; its neighbour takes the space and the session keeps
   running in the sidebar. It's next to, but deliberately apart from, the power button that stops
   the session itself.
+- **Removing the session in the only pane** moves that pane to the nearest session in the same
+  project — the next one down in the sidebar, or the one above if it was the last. You land on
+  the empty page only once the project has nothing left. In a split, the pane closes instead and
+  its neighbour takes the space.
 - **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
   still reaches the program in the pane, untouched.)
 - **Ctrl/Cmd+F** in a conversation opens its find box. **Esc** then closes the box rather than

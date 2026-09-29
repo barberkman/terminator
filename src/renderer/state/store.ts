@@ -514,17 +514,29 @@ export const useStore = create<StoreState>((set, get) => ({
       // It used to backfill from `order` instead, which made sense when panes
       // were fixed furniture you couldn't get rid of — with splits you make
       // yourself, conjuring an unrelated session into the gap is just a layout
-      // you didn't ask for. Removing the only pane's session empties it rather
-      // than closing it, because there is always exactly one pane.
+      // you didn't ask for.
+      //
+      // The only pane can't close — there is always exactly one — so it moves to
+      // the session nearest the one that went, within the same project: you
+      // closed one of a set you were working through, and the empty page would
+      // make you go and pick the next yourself. Staying inside the project is
+      // what keeps this from being the old backfill. It empties only once the
+      // project has nothing left.
       let panes = st.panes.slice()
       let tree = st.tree
       let focused = st.focused
       for (let i = panes.length - 1; i >= 0; i--) {
         if (panes[i] !== id) continue
         if (panes.length === 1) {
-          panes = ['']
+          panes = [nearestInProject(st.order, st.sessions, id)]
           tree = { kind: 'leaf' }
           focused = 0
+          // Shown now, so it has been seen — the same as openSession.
+          const next = sessions[panes[0]]
+          if (next?.notified) {
+            window.terminator.clearNotified(next.id)
+            sessions[next.id] = { ...next, notified: false }
+          }
         } else {
           panes.splice(i, 1)
           tree = removeAt(tree, i)
@@ -908,6 +920,22 @@ export function subtreeIds(
     ids.push(order[i])
   }
   return ids
+}
+
+/**
+ * What the only pane shows once `id` is removed: the next session down in its
+ * project group, in sidebar order, or the one above when `id` was the last.
+ * '' when it was the project's only session. Takes the slices from *before* the
+ * removal, since `id` has to be found to have neighbours.
+ */
+function nearestInProject(order: string[], sessions: Record<string, Session>, id: string): string {
+  const s = sessions[id]
+  if (!s) return ''
+  const key = groupKey(s)
+  const same = order.filter((x) => x === id || (sessions[x] && groupKey(sessions[x]) === key))
+  const at = same.indexOf(id)
+  if (at < 0) return ''
+  return same[at + 1] ?? same[at - 1] ?? ''
 }
 
 /**

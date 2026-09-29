@@ -97,6 +97,11 @@ function Dialog({ title, body, confirmLabel, cancelLabel, onConfirm, onCancel }:
  * scheduling; main coalesces the saves behind it either way.
  */
 async function removeGroup(ids: string[], worktrees: boolean): Promise<void> {
+  // Emptied up front when it shows one of these: the only pane moves to the next
+  // session in the project as each one goes, and here every one of those is going
+  // too — it would open each of them in turn just to watch it be removed.
+  const st = useStore.getState()
+  if (st.panes.length === 1 && ids.includes(st.panes[0])) st.closePane(0)
   for (const id of [...ids].reverse()) {
     const s = useStore.getState().sessions[id]
     if (!s) continue
