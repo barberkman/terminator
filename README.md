@@ -599,7 +599,10 @@ above a group's dots in the collapsed rail, or the collapsed rail's sidebar butt
 (see **Session menus** above); arrows and Enter move and pick, **Esc** closes one level.
 
 Elsewhere in the app: **Ctrl/Cmd+N** new session, **Ctrl/Cmd+B** toggle sidebar, **Alt+1..9**
-jump to a session, **Esc** closes the top modal. The global show/hide hotkey (default `F12`)
+jump to a session, **Alt+↓ / Alt+↑** step to the next / previous session in sidebar order
+(wrapping at the ends, and skipping sessions folded out of view), **Esc** closes the top modal.
+The Alt shortcuts work from any pane, a browser page included — in an editor pane they take
+the place of move-line-up/down. The global show/hide hotkey (default `F12`)
 and the notes hotkey (default `Ctrl/Cmd+Shift+N`) are configurable in Settings.
 
 ## Relaunching at startup

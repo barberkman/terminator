@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { UI_BASE_FONT_SIZE, UI_BASE_ICON_SCALE } from '../shared/types'
-import { buildGroups, shortcutSlots, useStore } from './state/store'
+import { buildGroups, shortcutSlots, sidebarNeighbour, useStore } from './state/store'
 import * as registry from './term/registry'
 import { Sidebar } from './components/Sidebar'
 import { PaneGrid } from './components/PaneGrid'
@@ -121,25 +121,48 @@ export function App(): React.JSX.Element {
   }, [setShowNew, toggleSidebar])
 
   // Alt+1..9 jumps to the Nth session in grouped order — the same slots the sidebar
-  // prints beside each session, so both come from `shortcutSlots`. Capture phase +
-  // stopPropagation so it fires before xterm forwards Alt+digit to the PTY — i.e. it
-  // works even while a terminal is focused. Reads fresh store state, so it never
-  // needs re-binding.
+  // prints beside each session, so both come from `shortcutSlots`. Alt+Down / Alt+Up
+  // step to the next / previous row the sidebar shows, wrapping at the ends
+  // (`sidebarNeighbour`). Capture phase + stopPropagation so they fire before xterm
+  // forwards the key to the PTY, or CodeMirror moves a line — i.e. they work
+  // whatever pane has focus. Alt+Shift+Up/Down is left to the editor, which copies
+  // a line with it. Reads fresh store state, so it never needs re-binding.
+  //
+  // A browser page with focus is the exception: the keydown goes to the guest and
+  // never reaches this window, so main catches the same keys there and sends their
+  // `code` over (`onSessionKey`). When that switches, focus is taken off the
+  // <webview> first — the page may be about to be parked, and a parked guest
+  // holding focus would swallow every keystroke after the switch somewhere you
+  // can't see. When it doesn't, the page keeps focus.
   useEffect(() => {
-    const onAltDigit = (e: KeyboardEvent) => {
-      if (!e.altKey || e.ctrlKey || e.metaKey) return
-      const m = /^Digit([1-9])$/.exec(e.code)
-      if (!m) return
+    const switchByCode = (code: string, fromGuest = false): boolean => {
       const st = useStore.getState()
-      if (st.showNew || st.showSettings || st.themeEditorFor || st.branchFor || st.relaunchOffer || st.contextMenu) return // don't switch underneath a modal
-      const target = shortcutSlots(buildGroups(st.order, st.sessions))[Number(m[1]) - 1]
-      if (!target) return
+      if (st.showNew || st.showSettings || st.themeEditorFor || st.branchFor || st.relaunchOffer || st.contextMenu) return false // don't switch underneath a modal
+      const groups = buildGroups(st.order, st.sessions)
+      const digit = /^Digit([1-9])$/.exec(code)
+      const target = digit
+        ? shortcutSlots(groups)[Number(digit[1]) - 1]
+        : code === 'ArrowDown' || code === 'ArrowUp'
+          ? sidebarNeighbour(groups, st.collapsed, st.sidebarHidden, st.panes[st.focused] ?? '', code === 'ArrowDown' ? 1 : -1)
+          : ''
+      if (!target) return false
+      if (fromGuest) (document.activeElement as HTMLElement | null)?.blur()
+      st.openSession(target)
+      return true
+    }
+    const onAltKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return
+      if (e.shiftKey && (e.code === 'ArrowDown' || e.code === 'ArrowUp')) return
+      if (!switchByCode(e.code)) return
       e.preventDefault()
       e.stopPropagation()
-      st.openSession(target)
     }
-    window.addEventListener('keydown', onAltDigit, true)
-    return () => window.removeEventListener('keydown', onAltDigit, true)
+    window.addEventListener('keydown', onAltKey, true)
+    const offSessionKey = window.terminator.onSessionKey((code) => switchByCode(code, true))
+    return () => {
+      window.removeEventListener('keydown', onAltKey, true)
+      offSessionKey()
+    }
   }, [])
 
   // Escape closes the topmost open modal. Bubble phase and only acts when a modal

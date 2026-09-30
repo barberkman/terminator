@@ -167,6 +167,25 @@ function guard(contents: WebContents): void {
       contents.reload()
       return
     }
+    // Alt+1..9 and Alt+Up/Down switch session, and would do nothing from inside a
+    // page for the same reason: the window never sees the keydown. Main can't pick
+    // the session — it doesn't know the sidebar — so it hands the code to the
+    // window, which runs the switch it would have run itself. Alt+Shift+arrow is
+    // left alone to match the window's own handler. A page loses these keys even
+    // when there's nowhere to switch to; few pages want them, and switching from
+    // anywhere is the point.
+    if (
+      input.alt &&
+      !input.control &&
+      !input.meta &&
+      (/^Digit[1-9]$/.test(input.code) || (!input.shift && (input.code === 'ArrowUp' || input.code === 'ArrowDown')))
+    ) {
+      const host = contents.hostWebContents
+      if (!host || host.isDestroyed()) return
+      e.preventDefault()
+      host.send(Channels.browserSessionKey, input.code)
+      return
+    }
     // `code`, not `key`, so a non-US layout still finds the F — the same
     // layout-independence the renderer's own shortcut matching is built on.
     if (input.code !== 'KeyF' || input.alt || input.shift || !(input.control || input.meta)) return
