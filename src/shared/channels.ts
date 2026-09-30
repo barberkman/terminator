@@ -54,6 +54,9 @@ export const Channels = {
   // main -> renderer: Ctrl/Cmd+F pressed inside a guest page. The payload is the
   // guest's webContents id; the pane that owns that guest opens its find bar.
   browserFind: 'browser:find',
+  // main -> renderer: Alt+1..9 or Alt+Up/Down pressed inside a guest page. The
+  // payload is the key's `code`; the window switches session as if it had seen it.
+  browserSessionKey: 'browser:sessionKey',
 
   // Claude's Ctrl+G, when Settings points it at an Editor pane. main -> renderer
   // opens the prompt in a tab; the reply releases the session, which is blocked

@@ -388,7 +388,7 @@ let nextToastId = 1
  * until there were enough of them that forgetting the next overlay in one of them
  * became the likely outcome.
  *
- * Deliberately *not* used by all of them. App.tsx's Alt+1..9 and Notes handlers
+ * Deliberately *not* used by all of them. App.tsx's session-switch and Notes handlers
  * each check a different subset on purpose — the Notes accelerator has to keep
  * working while Notes is open, or it couldn't close it — and folding those into
  * this would be a behaviour change dressed up as tidying. This is the full list,
@@ -997,6 +997,45 @@ export function shortcutSlots(groups: ProjectGroup[]): string[] {
     }
   }
   return ids
+}
+
+/**
+ * The session Alt+Down (dir 1) or Alt+Up (dir -1) steps to from `current`: the
+ * next row in the sidebar, wrapping at either end. '' when there is nowhere to go.
+ *
+ * Unlike `shortcutSlots`, this skips what the sidebar isn't showing — sessions in
+ * a collapsed project or under a folded branch. A slot number has to stay put
+ * while you fold things; a step has to land on a row you can see, or the
+ * highlight vanishes and you're somewhere the sidebar can't tell you about. The
+ * rail (`railMode`) shows every session, folded or not, so there everything counts.
+ *
+ * Walks the full grouped order rather than the visible rows alone, so a `current`
+ * that is itself hidden — reached with Alt+N — still steps to its nearest visible
+ * neighbour. An empty pane ('' or unknown) starts from before the first row.
+ */
+export function sidebarNeighbour(
+  groups: ProjectGroup[],
+  collapsed: Record<string, boolean>,
+  railMode: boolean,
+  current: string,
+  dir: 1 | -1,
+): string {
+  const all = groups.flatMap((g) => g.sessions.map((s) => s.id))
+  const visible = new Set(
+    railMode
+      ? all
+      : groups.flatMap((g) => (collapsed[g.key] ? [] : buildRows(g, collapsed).map((r) => r.session.id))),
+  )
+  const n = all.length
+  const at = all.indexOf(current)
+  // Not on the list: pretend we're just outside it, so next lands on the first
+  // row and previous on the last.
+  const from = at >= 0 ? at : dir === 1 ? -1 : n
+  for (let i = 1; i <= n; i++) {
+    const id = all[(((from + dir * i) % n) + n) % n]
+    if (id !== current && visible.has(id)) return id
+  }
+  return ''
 }
 
 /**

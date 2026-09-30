@@ -830,6 +830,12 @@ export interface TerminatorApi {
    * component, exactly as F5 is.
    */
   onBrowserFind(cb: (guestId: number) => void): () => void
+  /**
+   * Alt+1..9 or Alt+Up/Down pressed inside an in-app browser page, reported with
+   * the key's `code` (`Digit3`, `ArrowDown`…). The page had focus, so the window's
+   * own keydown listener never saw it; App feeds the code to the same switch.
+   */
+  onSessionKey(cb: (code: string) => void): () => void
 
   // attachments
   /** Save the clipboard image to disk and reference it in the session. */

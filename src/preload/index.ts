@@ -114,6 +114,7 @@ const api: TerminatorApi = {
   browserCacheSize: () => ipcRenderer.invoke(Channels.browserCacheSize),
   clearBrowserData: (what: BrowserClearWhat) => ipcRenderer.invoke(Channels.browserClear, what),
   onBrowserFind: (cb: (guestId: number) => void) => on(Channels.browserFind, cb),
+  onSessionKey: (cb: (code: string) => void) => on(Channels.browserSessionKey, cb),
 
   attachClipboardImage: (id: string, deliver?: AttachDeliver) =>
     ipcRenderer.invoke(Channels.attachClipboard, { id, deliver }),
