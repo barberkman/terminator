@@ -23,6 +23,7 @@ import { Choice, Field, Section, inputStyle, smallBtn } from './controls'
 import { applyThemeFromSettings } from '../theme-apply'
 import { freeName, upsert, writeThemes } from '../themeActions'
 import { eventToAccelerator } from '../shortcuts'
+import { clickLabel } from '../term/links'
 
 const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited', 'idle']
 
@@ -382,6 +383,10 @@ export function SettingsView(): React.JSX.Element | null {
     ? wslDistros.map((d) => d.name).join(', ')
     : 'no distros installed'
   const inAppDefault = draft.links?.defaultBrowserId === IN_APP_BROWSER_ID
+  // The draft's value, not the live one, so the wording below follows the toggle
+  // before Save does.
+  const requireCtrlClick = draft.links?.requireCtrlClick ?? true
+  const linkClick = clickLabel(requireCtrlClick)
   const defaultBrowserName = inAppDefault
     ? IN_APP_BROWSER_NAME
     : draft.links?.browsers.find((b) => b.id === draft.links.defaultBrowserId)?.name
@@ -882,7 +887,7 @@ export function SettingsView(): React.JSX.Element | null {
           {section(
             'links',
             'LINKS AND FILE PATHS',
-            `${(draft.links?.enabled ?? true) ? 'Clickable' : 'Plain text'} · ${
+            `${(draft.links?.enabled ?? true) ? `${linkClick} to open` : 'Plain text'} · ${
               (draft.links?.browsers ?? []).length
             } browser${(draft.links?.browsers ?? []).length === 1 ? '' : 's'}`,
             (
@@ -902,8 +907,22 @@ export function SettingsView(): React.JSX.Element | null {
                 </Field>
 
                 <Field
+                  label="OPENING A LINK"
+                  hint="What it takes to open a link or file path, in a pane and in the conversation view alike. Requiring Ctrl (Cmd on macOS) means clicking into a pane to focus it never opens whatever link happens to be under the pointer. Right-click shows the link menu either way."
+                >
+                  <Choice
+                    value={requireCtrlClick}
+                    onPick={(requireCtrlClick) => patchLinks({ requireCtrlClick })}
+                    options={[
+                      { value: false, label: 'Click' },
+                      { value: true, label: clickLabel(true) },
+                    ]}
+                  />
+                </Field>
+
+                <Field
                   label="BROWSERS FOR LINKS"
-                  hint="The program and its arguments are kept apart and handed straight to the process, so a path with spaces (Program Files) needs no quoting. A plain click uses the default; right-click a link for the rest. With no browser here, links open in your OS default."
+                  hint={`The program and its arguments are kept apart and handed straight to the process, so a path with spaces (Program Files) needs no quoting. ${linkClick} uses the default; right-click a link for the rest. With no browser here, links open in your OS default.`}
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <InAppBrowserRow
@@ -966,10 +985,10 @@ export function SettingsView(): React.JSX.Element | null {
                     </button>
                     <div style={{ fontSize: 10.5, color: C.dim }}>
                       {inAppDefault
-                        ? 'A plain click opens the link here, in a browser pane.'
+                        ? `${linkClick} opens the link here, in a browser pane.`
                         : defaultBrowserName
-                          ? `A plain click opens ${defaultBrowserName}.`
-                          : 'A plain click opens your OS default browser.'}
+                          ? `${linkClick} opens ${defaultBrowserName}.`
+                          : `${linkClick} opens your OS default browser.`}
                     </div>
                   </div>
                 </Field>
@@ -1015,7 +1034,7 @@ export function SettingsView(): React.JSX.Element | null {
                 {!!editorLabel && (
                   <Field
                     label="OPENS FILE PATHS IN"
-                    hint="Which of the two a plain click uses. Right-click a path for the other one either way. An attachment opened from its toast always goes to the program (or your OS default): it lives outside every session's folder, and an Editor pane only reads inside one."
+                    hint={`Which of the two ${linkClick} opens. Right-click a path for the other one either way. An attachment opened from its toast always goes to the program (or your OS default): it lives outside every session's folder, and an Editor pane only reads inside one.`}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       <Choice

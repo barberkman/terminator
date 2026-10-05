@@ -338,8 +338,9 @@ displaced by ours.
 
 ## Links
 
-A URL a session prints is a link: it underlines under the pointer and opens on click, in the
-browser you picked, so a link from Claude no longer needs selecting, copying and a window switch.
+A URL a session prints is a link: it underlines under the pointer and opens on **Ctrl+click**
+(**Cmd+click** on macOS), in the browser you picked, so a link from Claude no longer needs
+selecting, copying and a window switch.
 
 - **Which browser** — Settings → **BROWSERS FOR LINKS**. Each entry is a name, the program, and
   the arguments it launches with; `--incognito` is the case this was built for, but the arguments
@@ -348,8 +349,13 @@ browser you picked, so a link from Claude no longer needs selecting, copying and
   `C:\Program Files\Google\Chrome\Application\chrome.exe` needs no quoting and is never
   re-split on its spaces. **Browse…** picks it from disk. With the list empty, links open in your
   OS default browser.
-- **More than one** — mark one as **Default** for a plain click, and **right-click any link** for
-  the rest: the in-app browser, every configured browser, the system default, and Copy link.
+- **Ctrl, so it's on purpose** — a plain click doesn't open anything, so clicking into a pane to
+  focus it never opens the link that happened to be under the pointer. Settings → **OPENING A
+  LINK** switches back to a plain click if you'd rather. The same rule covers file paths and the
+  links in a conversation.
+- **More than one** — mark one as **Default** for the click that opens, and **right-click any
+  link** for the rest: the in-app browser, every configured browser, the system default, and Copy
+  link.
   That's the way to open something in a normal window when your default is incognito, without a
   trip through Settings.
 - **Or don't leave at all** — the first row in that list is the **in-app browser**, which opens
@@ -360,7 +366,7 @@ browser you picked, so a link from Claude no longer needs selecting, copying and
 - **Selecting still works** — a click only opens a link if it *was* a click: no drag between press
   and release, nothing selected. Drag-select a URL to copy it and nothing opens; double-click to
   select it and nothing opens either (opening waits out the double-click window first).
-  **Ctrl/Cmd+click** opens as well, out of habit; **Shift+click** never does.
+  **Shift+click** and **Alt+click** never do.
 - **Only web links** — `http` and `https`, and nothing else. The URL is re-validated in the main
   process before anything launches, and reaches the browser as a single argument, so terminal
   output can't open a `file:`, reach a custom scheme handler, or smuggle in flags of its own.
@@ -377,16 +383,16 @@ meant. Only paths that actually exist inside that folder become links, so ordina
 `and/or` stays text. Turn it off in Settings → **FILE PATHS IN OUTPUT**, or turn the whole thing
 off with **LINKS IN TERMINAL OUTPUT**.
 
-- **In the app** — a click opens an **Editor pane** for that project, and opens one if there
-  isn't one already, the way a clicked web link opens a browser pane. A second path opens as
-  another tab in the same pane rather than a second pane: the pane is the project, the tabs are
-  the files.
+- **In the app** — a Ctrl/Cmd+click opens an **Editor pane** for that project, and opens one if
+  there isn't one already, the way a clicked web link opens a browser pane. A second path opens
+  as another tab in the same pane rather than a second pane: the pane is the project, the tabs
+  are the files.
 - **Or in your own editor** — Settings → **EXTERNAL EDITOR**. Set the program and its arguments
   and it can have your clicks instead. Program and arguments are stored and passed
   **separately**, straight to the process with no shell in between, so
   `C:\Program Files\Microsoft VS Code\Code.exe` needs no quoting. **Browse…** picks it from disk.
 - **Which of the two** — with a program set, Settings → **OPENS FILE PATHS IN** decides what a
-  plain click does; without one there's nothing to decide and clicks stay in the app. Either way
+  click does; without one there's nothing to decide and clicks stay in the app. Either way
   **right-click any path** for the other one, plus Copy path. Configuring a program is still all
   it takes to send clicks there, so nothing moves under you when you first set one.
 - **Jumping to the line** — every editor spells it differently, so the arguments take
@@ -440,9 +446,9 @@ Ctrl+G is another tab rather than another pane.
 A pane that shows a web page, for when leaving the app is the annoying part — a diagram Claude
 generated, say, which lives behind a claude.ai login and so can't just be opened anywhere.
 
-- **How one opens** — three ways. Click a link with the in-app browser set as your Default; or
-  right-click any link and pick it; or open an empty one with no link at all, from the sidebar's
-  **New session here** → **Browser** or the New Session dialog, and type an address.
+- **How one opens** — three ways. Ctrl/Cmd+click a link with the in-app browser set as your
+  Default; or right-click any link and pick it; or open an empty one with no link at all, from the
+  sidebar's **New session here** → **Browser** or the New Session dialog, and type an address.
 - **A link opens a new pane every time**, the way a browser opens a new tab, so the page you were
   already reading stays where it is. The pane belongs to the project the link came from and lands
   under it in the sidebar as **Web**, then **Web 2**, and so on.
@@ -561,11 +567,12 @@ In a terminal pane:
 - **Ctrl/Cmd+C** — copies the selection; with nothing selected it sends `^C` (interrupt).
 - **Ctrl/Cmd+V** — pastes: an image if the clipboard holds one, otherwise text.
 - **Ctrl/Cmd+Shift+V** — pastes text, never the image. The way out when the clipboard holds both.
-- **Click a link** — opens it in your configured browser; **right-click a link** for the other
-  browsers and Copy link. See **Links** above for what stops a selection from opening one.
-- **Click a file path** — opens it wherever Settings → **OPENS FILE PATHS IN** says: an Editor
-  pane, made if there isn't one already, or your configured editor. **Right-click** for the other
-  one, and Copy path.
+- **Ctrl/Cmd+click a link** — opens it in your configured browser; **right-click a link** for the
+  other browsers and Copy link. A plain click opens nothing unless Settings → **OPENING A LINK**
+  says so. See **Links** above for what stops a selection from opening one.
+- **Ctrl/Cmd+click a file path** — opens it wherever Settings → **OPENS FILE PATHS IN** says: an
+  Editor pane, made if there isn't one already, or your configured editor. **Right-click** for the
+  other one, and Copy path.
 - **Ctrl+G** (Claude sessions) — Claude's own key for writing the prompt somewhere roomier. It
   goes to your `$VISUAL`/`$EDITOR`, or to an Editor pane here if you've asked for that. See
   **Writing a prompt in an Editor pane** above.
@@ -651,11 +658,12 @@ set to — and which ones you left open is remembered:
 - `notifications` — see below.
 - `attachments.allowClaudeRead` / `attachments.keepDays` — see **Images and files** above.
 - `links.browsers` (each `{ id, name, command, args }`), `links.defaultBrowserId`,
-  `links.enabled`, `links.openFilePaths`, `links.editor` (`{ command, args }`),
-  `links.defaultEditorId` — see **Links** above. `defaultBrowserId` also takes the reserved value
-  `in-app`, which is the in-app browser; it is not in `browsers`, having no program to store.
-  `defaultEditorId` takes the same reserved value for an in-app Editor pane, and empty — the
-  default — means `links.editor` if one is set, a pane if not.
+  `links.enabled`, `links.requireCtrlClick` (default `true`), `links.openFilePaths`,
+  `links.editor` (`{ command, args }`), `links.defaultEditorId` — see **Links** above.
+  `defaultBrowserId` also takes the reserved value `in-app`, which is the in-app browser; it is
+  not in `browsers`, having no program to store. `defaultEditorId` takes the same reserved value
+  for an in-app Editor pane, and empty — the default — means `links.editor` if one is set, a
+  pane if not.
 - `promptEditorId` — where Claude's Ctrl+G opens the prompt. The reserved value `in-app` is an
   Editor pane; empty — the default — leaves the session's environment alone, so Ctrl+G goes on
   using whatever `$VISUAL`/`$EDITOR` already named. See **Writing a prompt in an Editor pane**.

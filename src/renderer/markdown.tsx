@@ -10,7 +10,7 @@
 import { useState } from 'react'
 import { webUrl, webUrlRe } from '../shared/url'
 import { C } from './theme'
-import { openMenuForTarget, openWeb, trimUrl } from './term/links'
+import { clickLabel, clickOpens, openMenuForTarget, openWeb, trimUrl } from './term/links'
 
 /**
  * A link in rendered markdown. Never a plain anchor.
@@ -29,6 +29,9 @@ import { openMenuForTarget, openWeb, trimUrl } from './term/links'
  *
  * A URL that doesn't pass keeps its text and loses its link: the words are still
  * the author's, they just aren't a door.
+ *
+ * It takes the same gesture as a terminal link, too — Ctrl/Cmd+click while that
+ * setting is on — so there's one rule to remember rather than one per view.
  */
 function MdLink({ href, children }: { href: string; children: React.ReactNode }): React.JSX.Element {
   const url = webUrl(href)
@@ -36,9 +39,10 @@ function MdLink({ href, children }: { href: string; children: React.ReactNode })
   return (
     <a
       href={url}
-      title={url}
+      title={`${url} — ${clickLabel()} to open`}
       onClick={(e) => {
         e.preventDefault()
+        if (!clickOpens(e)) return
         void openWeb(url)
       }}
       onContextMenu={(e) => {
