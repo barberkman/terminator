@@ -353,6 +353,13 @@ export interface EditorOption {
 export interface LinkSettings {
   /** Off = terminal output is inert text again: no underline, no hover, no click. */
   enabled: boolean
+  /**
+   * On = a link opens only on Ctrl+click (Cmd+click on macOS); a plain click does
+   * nothing. Clicking into a pane to focus it lands on a link often enough that
+   * opening one should take a deliberate gesture. Applies to every link: terminal
+   * output, file paths, and links in rendered markdown.
+   */
+  requireCtrlClick: boolean
   browsers: BrowserOption[]
   /** Which browser a plain click uses. Empty (or unknown) = the OS default handler. */
   defaultBrowserId: string

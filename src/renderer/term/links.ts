@@ -22,7 +22,9 @@ import { C, FONT } from '../theme'
 //   2. Not opening them by accident. xterm activates a link whenever mousedown
 //      and mouseup land on the same one — which is exactly what selecting half a
 //      URL to copy it, or double-clicking to select it, looks like. Selection
-//      wins every time, so a click has to prove it was a click.
+//      wins every time, so a click has to prove it was a click. And by default it
+//      has to carry Ctrl/Cmd as well: clicking into a pane to focus it lands on a
+//      link often enough that a bare click shouldn't open anything.
 //   3. Saying where one goes before it's clicked. Hence the hover tooltip, which
 //      names both the target and the browser that will open it.
 //
@@ -76,6 +78,7 @@ export type LinkTarget =
 
 let settings: LinkSettings = {
   enabled: true,
+  requireCtrlClick: true,
   browsers: [],
   defaultBrowserId: '',
   openFilePaths: true,
@@ -320,6 +323,22 @@ function cancelPendingOpen(): void {
 }
 
 /**
+ * Whether a click carries the modifier that opening a link needs. Ctrl or Cmd on
+ * every OS: Cmd is the macOS habit, where Ctrl+click is the system right-click,
+ * and accepting both costs nothing anywhere else. Shared with markdown links, so
+ * the rule is the same wherever a link is.
+ */
+export function clickOpens(ev: { ctrlKey: boolean; metaKey: boolean }): boolean {
+  return !settings.requireCtrlClick || ev.ctrlKey || ev.metaKey
+}
+
+/** The gesture that opens a link, as the hover text and Settings name it. */
+export function clickLabel(requireCtrlClick = settings.requireCtrlClick): string {
+  if (!requireCtrlClick) return 'Click'
+  return window.terminator.platform === 'darwin' ? 'Cmd+click' : 'Ctrl+click'
+}
+
+/**
  * Whether an activation was a click and not the tail of a selection. xterm fires
  * activate on any mouseup that ends on the link it started on, so both a drag
  * across a URL and a double-click on one arrive here looking like clicks. A drag
@@ -327,9 +346,10 @@ function cancelPendingOpen(): void {
  */
 function wasRealClick(term: Terminal, ev: MouseEvent): boolean {
   if (ev.button !== 0) return false
-  // Ctrl/Cmd+click is the habitual open-a-link gesture, so it counts too. Shift
-  // and Alt don't: terminals already spend those on extending a selection.
+  // Shift and Alt never open: terminals already spend those on extending a
+  // selection. Ctrl/Cmd always may, and with requireCtrlClick on it's required.
   if (ev.altKey || ev.shiftKey) return false
+  if (!clickOpens(ev)) return false
   if (down && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > DRAG_SLOP) return false
   return !term.hasSelection()
 }
@@ -575,6 +595,7 @@ export function hoveredTarget(): LinkTarget | null {
 }
 
 function describe(target: LinkTarget): { text: string; sub: string } {
+  const click = clickLabel()
   if (target.kind === 'file') {
     const editor = externalEditor()
     // Three readings, because there are three situations: no program configured, one
@@ -583,17 +604,17 @@ function describe(target: LinkTarget): { text: string; sub: string } {
     return {
       text: target.label,
       sub: !editor
-        ? 'Click to open in an editor pane · right-click for more'
+        ? `${click} to open in an editor pane · right-click for more`
         : inAppEditorIsDefault()
-          ? `Click to open in an editor pane · right-click for ${editor}`
-          : `Click to open in ${editor} · right-click for an editor pane`,
+          ? `${click} to open in an editor pane · right-click for ${editor}`
+          : `${click} to open in ${editor} · right-click for an editor pane`,
     }
   }
   const browser = defaultTarget()
   const where = browser ? browser.name : 'your default browser'
   // The in-app row and the system-default row always exist, so there is always
   // somewhere else to send it — no need to work out whether the menu is worth it.
-  return { text: target.url, sub: `Click to open in ${where} · right-click for others` }
+  return { text: target.url, sub: `${click} to open in ${where} · right-click for others` }
 }
 
 export function hideTooltip(): void {

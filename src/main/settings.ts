@@ -55,6 +55,9 @@ export function defaultSettings(): Settings {
     // that happens today when you copy one out by hand, just without the copying.
     links: {
       enabled: true,
+      // A plain click opening a link was too easy to do by accident — clicking into
+      // a pane to focus it is all it takes. Ctrl/Cmd+click is the deliberate gesture.
+      requireCtrlClick: true,
       browsers: [],
       defaultBrowserId: '',
       openFilePaths: true,
