@@ -7,6 +7,7 @@ import {
   type Settings,
 } from '../shared/types'
 import { findProject, groupKey, isWsl, runtimeLabel, sameRuntime } from '../shared/wsl-path'
+import { editorLabel } from '../shared/editor-name'
 import type { IconName } from './icons'
 import type { MenuNode } from './components/ContextMenu'
 import { TYPES, TYPE_MAP, type TypeKey } from './sessionTypes'
@@ -75,6 +76,23 @@ export function errorText(e: unknown): string {
 export function copyPath(path: string, what: string): void {
   window.terminator.clipboardWrite(path)
   useStore.getState().pushToast({ tone: 'ok', text: `Copied ${what}`, sub: path, icon: 'copy' })
+}
+
+/**
+ * The pane header's editor button and its right-click row. Main says why when the
+ * editor didn't start, and that has to be shown: the folder and git buttons can
+ * afford to fail silently, but this one is pressed expecting a window.
+ */
+export async function openProjectEditor(id: string, which?: FolderChoice): Promise<void> {
+  let reason: string
+  try {
+    const res = await window.terminator.openProjectEditor(id, which)
+    if (res.ok) return
+    reason = res.reason
+  } catch (e) {
+    reason = errorText(e)
+  }
+  useStore.getState().pushToast({ tone: 'error', text: "Couldn't open the editor", sub: reason, icon: 'editor' })
 }
 
 /**
@@ -458,6 +476,9 @@ function editSection(ctx: MenuCtx): MenuNode[] {
 }
 
 function folderSection(ctx: MenuCtx): MenuNode[] {
+  // No row for an editor that isn't set: an empty command is how the button is hidden.
+  const projectEditor = ctx.settings?.projectEditor
+  const editor = projectEditor?.command.trim() ? editorLabel(projectEditor) : ''
   if (ctx.target.kind === 'project') {
     const id = ctx.projectSessions[0]?.id
     if (!id) return []
@@ -484,6 +505,17 @@ function folderSection(ctx: MenuCtx): MenuNode[] {
         icon: 'git',
         run: () => void window.terminator.openGitGui(id, 'project'),
       },
+      ...(editor
+        ? [
+            {
+              kind: 'item' as const,
+              id: 'editor',
+              label: `Open in ${editor}`,
+              icon: 'editor' as const,
+              run: () => void openProjectEditor(id, 'project'),
+            },
+          ]
+        : []),
     ]
   }
   if (ctx.sessions.length !== 1) return []
@@ -499,6 +531,9 @@ function folderSection(ctx: MenuCtx): MenuNode[] {
     folderAction('git', 'Open in git tool', 'git', f, (which) =>
       void window.terminator.openGitGui(s.id, which),
     ),
+    ...(editor
+      ? [folderAction('editor', `Open in ${editor}`, 'editor', f, (which) => void openProjectEditor(s.id, which))]
+      : []),
   ]
 }
 

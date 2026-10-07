@@ -6,6 +6,7 @@ import {
   USAGE_REFRESH_DEFAULT,
   USAGE_REFRESH_MAX,
   USAGE_REFRESH_MIN,
+  type EditorOption,
   type SessionRuntime,
   type Settings,
 } from '../shared/types'
@@ -20,6 +21,14 @@ function defaultGitGui(): string {
   return 'git-gui'
 }
 
+function defaultProjectEditor(): EditorOption {
+  // An app started from Finder or the Dock gets launchd's bare PATH, which doesn't
+  // reach the `code` shim VS Code installs into /usr/local/bin — so on macOS the
+  // app is named to `open` instead, which needs no PATH at all.
+  if (process.platform === 'darwin') return { command: 'open', args: ['-a', 'Visual Studio Code'] }
+  return { command: 'code', args: [] }
+}
+
 export function defaultSettings(): Settings {
   return {
     modes: {
@@ -29,6 +38,7 @@ export function defaultSettings(): Settings {
     defaultShell: defaultShell(),
     shellArgs: [],
     gitGuiCommand: defaultGitGui(),
+    projectEditor: defaultProjectEditor(),
     worktreesRoot: join(homedir(), 'terminator-worktrees'),
     projects: [],
     notifications: {
@@ -102,6 +112,7 @@ function merge(base: Settings, patch: Partial<Settings>): Settings {
     ...base,
     ...patch,
     modes: { ...base.modes, ...(patch.modes ?? {}) },
+    projectEditor: { ...base.projectEditor, ...(patch.projectEditor ?? {}) },
     notifications: { ...base.notifications, ...(patch.notifications ?? {}) },
     attachments: { ...base.attachments, ...(patch.attachments ?? {}) },
     // browsers[] is replaced wholesale (it's a list, not a set of fields), which

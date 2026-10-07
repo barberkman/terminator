@@ -16,6 +16,7 @@ export const Channels = {
   runTaskCommand: 'session:runTaskCommand',
   sessionOpenGitGui: 'session:openGitGui',
   sessionOpenInFolder: 'session:openInFolder',
+  sessionOpenProjectEditor: 'session:openProjectEditor',
   sessionClearNotified: 'session:clearNotified',
   sessionReorder: 'session:reorder',
   sessionListPrompts: 'session:listPrompts',

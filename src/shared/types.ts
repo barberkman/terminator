@@ -523,6 +523,13 @@ export interface Settings {
   defaultShell: string
   shellArgs: string[]
   gitGuiCommand: string
+  /**
+   * The code editor the pane header's editor button opens a session's folder in.
+   * Same command/args split as `links.editor`: the folder replaces `{path}` where
+   * an argument names it, and is appended last otherwise. An empty command hides
+   * the button. Defaults to VS Code.
+   */
+  projectEditor: EditorOption
   worktreesRoot: string
   projects: ProjectConfig[]
   notifications: NotificationSettings
@@ -702,6 +709,8 @@ export interface TerminatorApi {
   runTaskCommand(id: string, task: TaskCommand): Promise<void>
   openGitGui(id: string, which?: FolderChoice): Promise<void>
   openInFolder(id: string, which?: FolderChoice): Promise<void>
+  /** Open a session's folder in Settings' project editor. Says why when it couldn't. */
+  openProjectEditor(id: string, which?: FolderChoice): Promise<OpenFileResult>
   removeWorktree(id: string): Promise<void>
   clearNotified(id: string): void
   /** Persist a new full session order (used by sidebar drag-reorder). */

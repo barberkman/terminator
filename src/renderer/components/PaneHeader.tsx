@@ -1,13 +1,15 @@
 import { useRef, useState } from 'react'
 import type { Session } from '../../shared/types'
+import { editorLabel } from '../../shared/editor-name'
 import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { RuntimeChip } from './RuntimeChip'
 import * as registry from '../term/registry'
+import { openProjectEditor } from '../menus'
 
 /**
- * The header's icon buttons (lock, transcript, folder, git, power).
+ * The header's icon buttons (lock, transcript, folder, git, editor, power).
  *
  * The border is three longhands rather than the `border` shorthand on purpose.
  * Palette tokens are `var()` references, so a `border: 1px solid var(…)` shorthand
@@ -192,6 +194,8 @@ export function PaneHeader({
   const closePane = useStore((s) => s.closePane)
   // A parked browser pane has a header but no split, so there is nothing to close.
   const canClosePane = useStore((s) => s.panes.length > 1 && index >= 0)
+  // Settings → PROJECT EDITOR. An empty command is how the button is turned off.
+  const projectEditor = useStore((s) => s.settings?.projectEditor)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isClaude = session.kind === 'claude'
@@ -417,6 +421,15 @@ export function PaneHeader({
         <button onClick={() => void window.terminator.openGitGui(session.id)} title="Open folder in git tool" style={iconBtn()}>
           <Icon name="git" size={15} />
         </button>
+        {!!projectEditor?.command.trim() && (
+          <button
+            onClick={() => void openProjectEditor(session.id)}
+            title={`Open folder in ${editorLabel(projectEditor)}`}
+            style={iconBtn()}
+          >
+            <Icon name="editor" size={15} />
+          </button>
+        )}
         <button
           onClick={() => setConfirm({ kind: 'close', id: session.id, name: session.name })}
           title="Close session"

@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { extname, join } from 'node:path'
 
 /**
  * Resolve the default shell for new sessions. Single source of truth shared by
@@ -24,6 +24,25 @@ function findOnPath(name: string): string | undefined {
   for (const dir of dirs) {
     const full = join(dir, name)
     if (existsSync(full)) return full
+  }
+  return undefined
+}
+
+/**
+ * Where a program named without a folder would be found, the way cmd.exe looks
+ * it up: each PATH directory in turn, trying every PATHEXT extension when the
+ * name has none. Not the bare name first — VS Code's `bin` folder holds a `code`
+ * sh script for Git Bash right next to the `code.cmd` that Windows means.
+ * Windows-only; undefined when nothing matches.
+ */
+export function findCommand(name: string): string | undefined {
+  if (extname(name)) return findOnPath(name)
+  const exts = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+  for (const dir of (process.env.PATH || '').split(';').filter(Boolean)) {
+    for (const ext of exts) {
+      const full = join(dir, name + ext.toLowerCase())
+      if (existsSync(full)) return full
+    }
   }
   return undefined
 }
