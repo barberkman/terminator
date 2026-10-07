@@ -33,7 +33,7 @@ import {
 import { loadSettings, rememberProject, saveSettings } from './settings'
 import { loadCustomThemes, saveCustomThemes } from './theme-store'
 import { loadUsage } from './usage-store'
-import { addWorktree, openGitGui, openInFolder, removeWorktree } from './worktree'
+import { addWorktree, openGitGui, openInFolder, openProjectEditor, removeWorktree } from './worktree'
 import { forkTranscript, listPrompts, transcriptDirFor, transcriptFile } from './transcript'
 import { readConversation } from './conversation'
 import { listDistros, normalizeCreateInput, probe } from './wsl'
@@ -120,6 +120,10 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   ipcMain.handle(
     Channels.sessionOpenInFolder,
     (_e, { id, which }: { id: string; which?: FolderChoice }) => openInFolder(id, which),
+  )
+  ipcMain.handle(
+    Channels.sessionOpenProjectEditor,
+    (_e, { id, which }: { id: string; which?: FolderChoice }) => openProjectEditor(id, which),
   )
   ipcMain.handle(Channels.worktreeRemove, (_e, id: string) => removeWorktree(id))
   ipcMain.on(Channels.sessionClearNotified, (_e, id: string) => state.clearNotified(id))

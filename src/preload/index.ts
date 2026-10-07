@@ -43,6 +43,8 @@ const api: TerminatorApi = {
     ipcRenderer.invoke(Channels.sessionOpenGitGui, { id, which }),
   openInFolder: (id, which?: FolderChoice) =>
     ipcRenderer.invoke(Channels.sessionOpenInFolder, { id, which }),
+  openProjectEditor: (id, which?: FolderChoice) =>
+    ipcRenderer.invoke(Channels.sessionOpenProjectEditor, { id, which }),
   removeWorktree: (id) => ipcRenderer.invoke(Channels.worktreeRemove, id),
   clearNotified: (id) => ipcRenderer.send(Channels.sessionClearNotified, id),
   reorderSessions: (ids) => ipcRenderer.send(Channels.sessionReorder, ids),

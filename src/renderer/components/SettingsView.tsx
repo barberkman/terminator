@@ -35,8 +35,8 @@ const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited', 'idl
  * was open — including the main process's repair when a theme in use is deleted.
  */
 const OWNED = [
-  'modes', 'defaultShell', 'gitGuiCommand', 'worktreesRoot', 'notifications', 'terminalFont',
-  'fontSize', 'iconScale', 'sidebarSide', 'relaunchOnStartup', 'globalToggleShortcut',
+  'modes', 'defaultShell', 'gitGuiCommand', 'projectEditor', 'worktreesRoot', 'notifications',
+  'terminalFont', 'fontSize', 'iconScale', 'sidebarSide', 'relaunchOnStartup', 'globalToggleShortcut',
   'notesShortcut', 'attachments', 'links', 'browser', 'settingsOpen', 'usageRefreshSeconds',
   'promptEditorId', 'wsl',
 ] as const satisfies readonly (keyof Settings)[]
@@ -270,13 +270,19 @@ const EDITOR_EXAMPLES: [string, string][] = [
  * The one external editor a clicked file path opens in. Same command/args split
  * as a browser (so `C:\Program Files\…` needs no quoting), plus the placeholders
  * that let each editor's own way of naming a line work.
+ *
+ * Also the project editor's row, which differs only in what clearing it means.
  */
 function EditorRow({
   editor,
   onChange,
+  clearTitle = 'Go back to opening file paths in an in-app Editor pane',
+  argsPlaceholder = '-g {path}:{line}',
 }: {
   editor: EditorOption
   onChange: (e: EditorOption) => void
+  clearTitle?: string
+  argsPlaceholder?: string
 }): React.JSX.Element {
   const [argsText, setArgsText] = useState(() => formatArgs(editor.args))
 
@@ -302,7 +308,7 @@ function EditorRow({
         {!!editor.command.trim() && (
           <button
             onClick={() => onChange({ command: '', args: [] })}
-            title="Go back to opening file paths in an in-app Editor pane"
+            title={clearTitle}
             style={{ ...smallBtn, color: C.danger }}
           >
             Clear
@@ -311,7 +317,7 @@ function EditorRow({
       </div>
       <input
         style={inputStyle}
-        placeholder="-g {path}:{line}"
+        placeholder={argsPlaceholder}
         value={argsText}
         onChange={(e) => {
           setArgsText(e.target.value)
@@ -583,6 +589,17 @@ export function SettingsView(): React.JSX.Element | null {
               </Field>
               <Field label="GIT GUI COMMAND" hint="Launched with a session's folder by the git button. App never merges.">
                 <input style={inputStyle} value={draft.gitGuiCommand} onChange={(e) => patch({ gitGuiCommand: e.target.value })} />
+              </Field>
+              <Field
+                label="PROJECT EDITOR"
+                hint="Opens a session's folder from the editor button in the pane header (VS Code by default). The folder goes last, or wherever {path} appears in the arguments. Clear it to hide the button."
+              >
+                <EditorRow
+                  editor={draft.projectEditor}
+                  onChange={(projectEditor) => patch({ projectEditor })}
+                  clearTitle="Hide the editor button"
+                  argsPlaceholder="--new-window"
+                />
               </Field>
               <Field label="WORKTREES ROOT" hint="Where new git worktrees are created.">
                 <input style={inputStyle} value={draft.worktreesRoot} onChange={(e) => patch({ worktreesRoot: e.target.value })} />

@@ -79,6 +79,9 @@ code-signed, so the first launch gets a SmartScreen warning: **More info → Run
 - **Open in git GUI**: launches your configured git tool on the session's folder for manual
   merging. The app never merges; after you close a worktree session it offers to remove the
   worktree.
+- **Open in your editor**: the `</>` button in each pane header opens the session's folder in
+  VS Code, or whichever editor you set as **PROJECT EDITOR** in Settings. Clear the setting to
+  hide the button.
 
 ## How Claude state detection works
 
@@ -149,8 +152,9 @@ gaps.
 worktree and the project it was cut from. Starting another Claude in the worktree means two
 agents editing one working copy; starting a *terminal* there is exactly what you want, to run
 tests on what Claude just wrote. So the menu never guesses: **New session here**, **Copy path**,
-**Open folder** and **Open in git tool** each name the two folders and let you pick. With no
-worktree that level isn't there and they're plain entries.
+**Open folder**, **Open in git tool** and **Open in VS Code** (or your project editor) each name
+the two folders and let you pick. With no worktree that level isn't there and they're plain
+entries.
 
 The same menu is on the **session tabs of the collapsed rail**, and **project group headers**
 get a per-project one: a new session in that project, its Build/Run/Stop commands (only the ones
@@ -552,7 +556,8 @@ A few things to know:
 - **Symlinks inside a WSL project** open as "missing" in the Editor pane: Windows can't follow a
   Linux symlink through the share. The session's own folder is resolved to its real path when you
   create it, so a symlinked project folder itself is fine.
-- An external editor gets the share path. VS Code asks once to allow the `wsl.localhost` host.
+- An external editor gets the share path — the project editor too. VS Code asks once to allow
+  the `wsl.localhost` host.
 
 ## Keyboard & mouse
 
@@ -648,6 +653,11 @@ set to — and which ones you left open is remembered:
   `claude-readonly`). The app appends `--session-id` / `--resume` / `--settings`, so a custom
   read-only command must forward appended args (e.g. `exec claude --permission-mode plan "$@"`).
 - `defaultShell`, `gitGuiCommand`, `worktreesRoot`, `projects`.
+- `projectEditor` (`{ command, args }`) — what the pane header's editor button opens a session's
+  folder in. Default `code` (VS Code); on macOS `open -a "Visual Studio Code"`, since an app
+  started from the Dock doesn't see the `code` shim on PATH. The folder replaces `{path}` in the
+  args, or is appended last. An empty command hides the button. On Windows a bare name is looked
+  up on PATH, and a `.cmd` shim like `code.cmd` is run through `cmd.exe`.
 - `theme` — the active colour theme (see below), and `customTheme` for per-token overrides.
   Themes of your own live in their own file, `themes.json`, alongside this one.
 - `relaunchOnStartup` — offer to relaunch last time's sessions when the app starts (default

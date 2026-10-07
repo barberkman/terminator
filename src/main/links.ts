@@ -17,7 +17,7 @@
 // that session could already reach, and the editor is launched with the file as
 // its own argv element.
 
-import { spawn } from 'node:child_process'
+import { spawn, type SpawnOptions } from 'node:child_process'
 import { webUrl } from '../shared/url'
 import { promises as fsp, statSync } from 'node:fs'
 import { isAbsolute, resolve, sep } from 'node:path'
@@ -48,12 +48,19 @@ export { webUrl } from '../shared/url'
  * null on success, the reason otherwise. Exported because opening an attachment
  * launches the same configured editor the same way — no shell, one argv element
  * per argument — and that guarantee is worth stating in one place only.
+ *
+ * `opts` exists for the one caller that has to go through cmd.exe on Windows (see
+ * `launchEditor` in worktree.ts) and quotes the command line itself.
  */
-export function launchDetached(exe: string, args: string[]): Promise<string | null> {
+export function launchDetached(
+  exe: string,
+  args: string[],
+  opts: Pick<SpawnOptions, 'windowsHide' | 'windowsVerbatimArguments'> = {},
+): Promise<string | null> {
   return new Promise((done) => {
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn(exe, args, { detached: true, stdio: 'ignore', shell: false })
+      child = spawn(exe, args, { ...opts, detached: true, stdio: 'ignore', shell: false })
     } catch (e) {
       done(String(e).slice(0, 160))
       return
