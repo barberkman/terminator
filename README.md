@@ -54,6 +54,10 @@ code-signed, so the first launch gets a SmartScreen warning: **More info → Run
 - **New session**: pick a folder, name it, choose a type — **Claude**, **Claude (read-only)**,
   **Terminal**, **Editor** or **Browser** — and optionally create a **git worktree** on a new
   branch.
+- **Editor panes** show the project's file tree beside tabs; the button in the tree's header
+  folds it down to a thin rail when you want the room. Syntax highlighting covers about 150
+  languages — shell, YAML, Rust, Go, C/C++, SQL, Dockerfiles and the rest — each loaded the
+  first time a file of that kind opens, and code blocks inside Markdown are highlighted too.
 - **Status** updates live. Claude sessions report rich states (working / waiting / idle /
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
 - **WSL** (Windows): a session can run inside a WSL distro instead — a native Linux shell, or

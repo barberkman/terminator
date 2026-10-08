@@ -10,6 +10,8 @@ import { FileTree } from './FileTree'
 
 const MIN_TREE = 150
 const MAX_TREE = 520
+/** Width of the rail the file tree folds down to. */
+const TREE_RAIL = 30
 /** Stable empty array so the zustand selector doesn't return a fresh ref each render. */
 const NO_TABS: string[] = []
 
@@ -21,6 +23,33 @@ const STATUS_MESSAGE: Record<Exclude<TabStatus, 'ok'>, string> = {
   binary: "This looks like a binary file — it can't be edited here.",
   tooLarge: 'This file is too large to open (over 2 MB).',
   missing: 'This file no longer exists on disk.',
+}
+
+/** The file tree's hide/show button: the same quiet square as a tab's ✕. */
+function TreeToggle({ sessionId, hidden, style }: { sessionId: string; hidden: boolean; style?: React.CSSProperties }): React.JSX.Element {
+  return (
+    <button
+      onClick={() => useEditorStore.getState().setTreeHidden(sessionId, !hidden)}
+      title={hidden ? 'Show files' : 'Hide files'}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: sz(18),
+        height: sz(18),
+        borderRadius: 4,
+        border: 'none',
+        background: 'transparent',
+        color: C.muted,
+        cursor: 'pointer',
+        padding: 0,
+        flex: 'none',
+        ...style,
+      }}
+    >
+      <Icon name="sidebar" size={13} />
+    </button>
+  )
 }
 
 /** A single tab in the tab bar. */
@@ -213,6 +242,7 @@ export function EditorPaneBody({ session }: { session: Session }): React.JSX.Ele
   const [treeWidth, setTreeWidth] = useState(240)
   const openPaths = useEditorStore((s) => s.sessions[sessionId]?.openPaths ?? NO_TABS)
   const activePath = useEditorStore((s) => s.sessions[sessionId]?.activePath ?? null)
+  const treeHidden = useEditorStore((s) => s.sessions[sessionId]?.treeHidden ?? false)
 
   // Load + watch the root once; keep-alive state lives in the editor registry/store,
   // so this only kicks off initial listing (idempotent) — it is NOT torn down on
@@ -240,22 +270,33 @@ export function EditorPaneBody({ session }: { session: Session }): React.JSX.Ele
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', background: C.bg }}>
-      {/* File tree */}
-      <div style={{ width: treeWidth, flex: 'none', minWidth: 0, display: 'flex', flexDirection: 'column', background: C.sidebar, borderRight: `1px solid ${C.border}` }}>
+      {/* Folded file tree */}
+      {treeHidden && (
+        <div style={{ width: TREE_RAIL, flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 6, background: C.sidebar, borderRight: `1px solid ${C.border}` }}>
+          <TreeToggle sessionId={sessionId} hidden />
+        </div>
+      )}
+
+      {/* File tree — kept mounted while folded, so it comes back where it was scrolled to */}
+      <div style={{ width: treeWidth, flex: 'none', minWidth: 0, display: treeHidden ? 'none' : 'flex', flexDirection: 'column', background: C.sidebar, borderRight: `1px solid ${C.border}` }}>
         <div style={{ padding: '9px 12px 7px', fontSize: 10.5, letterSpacing: 0.6, color: C.dim, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7 }}>
           <span style={{ display: 'flex', color: C.kindIcon }}>
             <Icon name="folder" size={12} />
           </span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basename(sessionFolder(session)).toUpperCase()}</span>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{basename(sessionFolder(session)).toUpperCase()}</span>
+          {/* Negative margins so the button doesn't make the header any taller. */}
+          <TreeToggle sessionId={sessionId} hidden={false} style={{ margin: '-3px -6px -3px 0' }} />
         </div>
         <FileTree sessionId={sessionId} root={root} />
       </div>
 
       {/* Drag handle */}
-      <div
-        onMouseDown={startResize}
-        style={{ width: 5, flex: 'none', cursor: 'col-resize', background: 'transparent', marginLeft: -3, marginRight: -2, zIndex: 1 }}
-      />
+      {!treeHidden && (
+        <div
+          onMouseDown={startResize}
+          style={{ width: 5, flex: 'none', cursor: 'col-resize', background: 'transparent', marginLeft: -3, marginRight: -2, zIndex: 1 }}
+        />
+      )}
 
       {/* Tabs + editor */}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
