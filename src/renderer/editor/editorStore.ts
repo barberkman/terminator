@@ -28,10 +28,12 @@ export interface SessionEditor {
   expanded: Record<string, boolean>
   /** dir path -> cached listing. */
   listings: Record<string, DirEntry[]>
+  /** File tree folded down to a rail. Here rather than in the pane so a layout change keeps it. */
+  treeHidden: boolean
 }
 
 function emptySession(): SessionEditor {
-  return { openPaths: [], activePath: null, tabs: {}, expanded: {}, listings: {} }
+  return { openPaths: [], activePath: null, tabs: {}, expanded: {}, listings: {}, treeHidden: false }
 }
 
 interface EditorStoreState {
@@ -43,6 +45,7 @@ interface EditorStoreState {
   patchTab(id: string, path: string, patch: Partial<Tab>): void
   setListing(id: string, dir: string, entries: DirEntry[]): void
   setExpanded(id: string, dir: string, expanded: boolean): void
+  setTreeHidden(id: string, hidden: boolean): void
   clearSession(id: string): void
 }
 
@@ -115,6 +118,10 @@ export const useEditorStore = create<EditorStoreState>((set) => ({
 
   setExpanded(id, dir, expanded) {
     set((st) => withSession(st, id, (s) => ({ ...s, expanded: { ...s.expanded, [dir]: expanded } })))
+  },
+
+  setTreeHidden(id, hidden) {
+    set((st) => withSession(st, id, (s) => (s.treeHidden === hidden ? s : { ...s, treeHidden: hidden })))
   },
 
   clearSession(id) {
