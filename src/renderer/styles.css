@@ -286,7 +286,8 @@ textarea {
   background: var(--c-panel2);
 }
 
-/* Fenced code block with a hover-revealed copy button */
+/* Fenced code block with a hover-revealed copy button. Long lines wrap inside the
+   box, so the whole block reads without a sideways scroll. */
 .md-pre {
   margin: 0.7em 0;
 }
@@ -295,6 +296,8 @@ textarea {
   border: 1px solid rgba(var(--c-ink-rgb), 0.1);
   border-radius: 8px;
   padding: 12px 14px;
+  /* Never scrolls now that lines wrap, but it keeps the floated copy button
+     inside the box (a block formatting context contains its floats). */
   overflow-x: auto;
   margin: 0;
 }
@@ -302,7 +305,8 @@ textarea {
   font-family: inherit;
   font-size: 12px;
   color: var(--c-text);
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .md-copy {
   opacity: 0;

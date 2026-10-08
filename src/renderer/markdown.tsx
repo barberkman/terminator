@@ -9,7 +9,7 @@
 
 import { useState } from 'react'
 import { webUrl, webUrlRe } from '../shared/url'
-import { C } from './theme'
+import { C, FONT } from './theme'
 import { clickLabel, clickOpens, openMenuForTarget, openWeb, trimUrl } from './term/links'
 
 /**
@@ -55,7 +55,13 @@ function MdLink({ href, children }: { href: string; children: React.ReactNode })
   )
 }
 
-/** A fenced code block rendered with a hover-revealed Copy button (top-right). */
+/**
+ * A fenced code block rendered with a hover-revealed Copy button (top-right).
+ *
+ * The button floats inside the `<pre>` rather than sitting on top of it: lines
+ * wrap, so a long first line would otherwise run underneath it. Floated, the first
+ * line wraps short of the button and every line after it gets the full width.
+ */
 export function CodeBlock({ text }: { text: string }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
   const copy = () => {
@@ -64,27 +70,30 @@ export function CodeBlock({ text }: { text: string }): React.JSX.Element {
     setTimeout(() => setCopied(false), 1200)
   }
   return (
-    <div className="md-pre" style={{ position: 'relative' }}>
-      <button
-        className="md-copy"
-        onClick={copy}
-        style={{
-          position: 'absolute',
-          top: 7,
-          right: 7,
-          padding: '3px 9px',
-          background: C.panel2,
-          border: `1px solid ${C.border3}`,
-          borderRadius: 6,
-          color: copied ? C.accentSoft : C.muted,
-          font: 'inherit',
-          fontSize: 10.5,
-          cursor: 'pointer',
-        }}
-      >
-        {copied ? 'Copied' : 'Copy'}
-      </button>
+    <div className="md-pre">
       <pre>
+        <button
+          className="md-copy"
+          onClick={copy}
+          style={{
+            float: 'right',
+            // Pulled into the pre's padding: 7px from the outer top and right edges.
+            margin: '-6px -8px 0 8px',
+            padding: '3px 9px',
+            background: C.panel2,
+            border: `1px solid ${C.border3}`,
+            borderRadius: 6,
+            color: copied ? C.accentSoft : C.muted,
+            font: 'inherit',
+            // The pre's own font is the platform monospace, not the app's.
+            fontFamily: FONT,
+            fontSize: 10.5,
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
         <code>{text}</code>
       </pre>
     </div>
