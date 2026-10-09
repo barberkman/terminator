@@ -69,6 +69,7 @@ export const Channels = {
 
   // filesystem (editor sessions)
   fsList: 'fs:list',
+  fsListFiles: 'fs:list-files',
   fsRead: 'fs:read',
   fsWrite: 'fs:write',
   fsWatch: 'fs:watch',

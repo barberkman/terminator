@@ -58,6 +58,17 @@ code-signed, so the first launch gets a SmartScreen warning: **More info → Run
   folds it down to a thin rail when you want the room. Syntax highlighting covers about 150
   languages — shell, YAML, Rust, Go, C/C++, SQL, Dockerfiles and the rest — each loaded the
   first time a file of that kind opens, and code blocks inside Markdown are highlighted too.
+  - **A click in the tree opens a preview tab**, as in VS Code: its name is in italics, and the
+    next file you click replaces it in the same place instead of adding a tab. **Editing** the
+    file or **double-clicking** it — in the tree or on the tab — keeps the tab open. A file that's
+    already open is just brought forward. Settings → **EDITOR** turns previews off, so every
+    click keeps its tab.
+  - **Middle-click a tab** to close it.
+  - **Ctrl/Cmd+P** is Quick Open: type part of a file's name and Enter opens it, in a tab that
+    stays. It searches every file in the project that `.gitignore` doesn't leave out (outside a
+    git repo, everything but `.git` and `node_modules`), and `name:42` lands on line 42. The
+    shortcut works while an Editor pane has focus — a terminal still gets Ctrl+P, bash's
+    previous-history — and is changed or turned off in Settings → **EDITOR**.
 - **Status** updates live. Claude sessions report rich states (working / waiting / idle /
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
 - **WSL** (Windows): a session can run inside a WSL distro instead — a native Linux shell, or
@@ -618,6 +629,10 @@ In a terminal pane:
   alone and still reaches the program running in it — as it does in an editor pane, where it
   opens the editor's own search.
 
+In an editor pane: **Ctrl/Cmd+P** opens Quick Open (↑/↓ and Enter pick, Esc closes),
+**double-click** a file in the tree or a tab to keep a preview tab open, and **middle-click** a
+tab to close it.
+
 In a browser pane: **F5** reloads the page and **Ctrl/Cmd+F** finds in it, either one from the
 page itself or from the pane's chrome.
 
@@ -629,8 +644,8 @@ Elsewhere in the app: **Ctrl/Cmd+N** new session, **Ctrl/Cmd+B** toggle sidebar,
 jump to a session, **Alt+↓ / Alt+↑** step to the next / previous session in sidebar order
 (wrapping at the ends, and skipping sessions folded out of view), **Esc** closes the top modal.
 The Alt shortcuts work from any pane, a browser page included — in an editor pane they take
-the place of move-line-up/down. The global show/hide hotkey (default `F12`)
-and the notes hotkey (default `Ctrl/Cmd+Shift+N`) are configurable in Settings.
+the place of move-line-up/down. The global show/hide hotkey (default `F12`), the notes hotkey
+(default `Ctrl/Cmd+Shift+N`) and Quick Open (default `Ctrl/Cmd+P`) are configurable in Settings.
 
 ## Relaunching at startup
 
@@ -692,6 +707,9 @@ set to — and which ones you left open is remembered:
 - `promptEditorId` — where Claude's Ctrl+G opens the prompt. The reserved value `in-app` is an
   Editor pane; empty — the default — leaves the session's environment alone, so Ctrl+G goes on
   using whatever `$VISUAL`/`$EDITOR` already named. See **Writing a prompt in an Editor pane**.
+- `editorPreviewTabs` — a click in an Editor pane's tree opens a preview tab (default `true`).
+  `quickOpenShortcut` — Quick Open's key in an Editor pane, as an Electron accelerator (default
+  `CommandOrControl+P`; empty turns it off). See **Editor panes** above.
 - `browser.userAgent` — what the in-app browser calls itself. Empty (the default) derives a
   Chrome-like one from Electron's own. See **In-app browser** above.
 - `wsl.worktreesRoot` (default `~/terminator-worktrees`, a Linux path), `wsl.gitGuiCommand`,

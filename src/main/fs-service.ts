@@ -15,12 +15,17 @@ import {
   type Dirent,
   type FSWatcher,
 } from 'node:fs'
+import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
+import { promisify } from 'node:util'
 import type { BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
-import type { DirEntry, FileReadResult, FsChange } from '../shared/types'
+import type { DirEntry, FileListResult, FileReadResult, FsChange } from '../shared/types'
 import { parseWslUnc } from '../shared/wsl-path'
+import { wslExec } from './wsl'
+
+const pExecFile = promisify(execFile)
 
 /** Files larger than this are refused (returned as `tooLarge`, not read). */
 const MAX_BYTES = 2 * 1024 * 1024
@@ -37,6 +42,20 @@ const POLL_MS = 1000
 const SELF_WRITE_POLLED_MS = POLL_MS * 2 + 500
 /** Our atomic-write temp suffix — skipped in tree/file change detection. */
 const TMP_RE = /\.\d+\.tmp$/
+/** Most files `listFiles` hands Quick Open; past this it says the list is truncated. */
+const MAX_LISTED = 50_000
+/** How long `git ls-files` gets before Quick Open walks the tree instead. */
+const GIT_LIST_MS = 15_000
+/** How long the walk gets before it stops and says the list is truncated. */
+const WALK_MS = 10_000
+/** Directories the walk never enters: version-control internals and installed dependencies. */
+const WALK_SKIP = new Set(['.git', '.hg', '.svn', 'node_modules'])
+/**
+ * Tracked files plus untracked ones `.gitignore` doesn't exclude, NUL-separated.
+ * `core.fsmonitor` off because it names a program for git to run, and a project's
+ * own config can set it.
+ */
+const GIT_LIST = ['-c', 'core.fsmonitor=false', 'ls-files', '-z', '--cached', '--others', '--exclude-standard']
 
 let mainWindow: BrowserWindow | null = null
 
@@ -128,6 +147,81 @@ export async function listDir(root: string, dir: string): Promise<DirEntry[]> {
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
   })
   return out
+}
+
+/**
+ * Every file under `root`, for Quick Open: root-relative and `/`-separated, so the
+ * renderer joins them onto its root the way the tree builds its paths.
+ *
+ * `git ls-files` first: it knows what `.gitignore` leaves out, and for a WSL session it
+ * runs inside the distro, which is far quicker than listing the share a directory at a
+ * time. A walk is the fallback for no git, a folder that isn't a repo, or git failing.
+ */
+export async function listFiles(
+  root: string,
+  wsl?: { distro: string; cwd: string },
+): Promise<FileListResult> {
+  const out = await gitListFiles(toAbs(root), wsl)
+  if (out === null) return walkFiles(toAbs(root))
+  const seen = new Set<string>()
+  // A conflicted file is listed once per stage.
+  for (const f of out.split('\0')) {
+    if (!f || seen.has(f)) continue
+    if (seen.size >= MAX_LISTED) return { files: [...seen], truncated: true }
+    seen.add(f)
+  }
+  return { files: [...seen], truncated: false }
+}
+
+/** `git ls-files`' output, or null when git couldn't give one. Never throws. */
+async function gitListFiles(root: string, wsl?: { distro: string; cwd: string }): Promise<string | null> {
+  try {
+    if (wsl) {
+      const r = await wslExec(wsl.distro, wsl.cwd, ['git', ...GIT_LIST], { timeoutMs: GIT_LIST_MS })
+      return r.code === 0 ? r.stdout : null
+    }
+    // `-C`, not a `cwd`: on Windows a program is looked for in the child's working
+    // directory before PATH, so a `git.exe` in the project would be the one to run.
+    const { stdout } = await pExecFile('git', ['-C', root, ...GIT_LIST], {
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: GIT_LIST_MS,
+    })
+    return stdout
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Breadth-first, so a cut-off list still has the files nearest the root. Doesn't follow
+ * symlinks (`Dirent.isDirectory()` is false for one, as in `listDir`), so it can neither
+ * loop nor leave the root. Async throughout: the first read of a WSL share boots its VM.
+ */
+async function walkFiles(root: string): Promise<FileListResult> {
+  const files: string[] = []
+  const dirs = ['']
+  const deadline = Date.now() + WALK_MS
+  for (let i = 0; i < dirs.length; i++) {
+    if (Date.now() > deadline) return { files, truncated: true }
+    const rel = dirs[i]
+    let ents: Dirent[]
+    try {
+      ents = await fsp.readdir(rel ? join(root, rel) : root, { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const e of ents) {
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (e.isDirectory()) {
+        if (!WALK_SKIP.has(e.name)) dirs.push(r)
+      } else if (!TMP_RE.test(e.name)) {
+        if (files.length >= MAX_LISTED) return { files, truncated: true }
+        files.push(r)
+      }
+    }
+  }
+  return { files, truncated: false }
 }
 
 export async function readFile(root: string, path: string): Promise<FileReadResult> {

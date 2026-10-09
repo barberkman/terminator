@@ -7,6 +7,8 @@ import { useEditorStore, type TabStatus } from '../editor/editorStore'
 import * as editor from '../editor/registry'
 import { sendBack, usePromptEdits } from '../promptEdit'
 import { FileTree } from './FileTree'
+import { QuickOpen, useQuickOpenKeys } from './QuickOpen'
+import { useStore } from '../state/store'
 
 const MIN_TREE = 150
 const MAX_TREE = 520
@@ -67,6 +69,17 @@ function Tab({
   return (
     <div
       onClick={() => editor.setActive(sessionId, path)}
+      onDoubleClick={() => editor.pinTab(sessionId, path)}
+      // Middle-click closes, as in a browser. Taken at mousedown too, or Chromium starts
+      // autoscrolling the tab bar (and Linux pastes the primary selection).
+      onMouseDown={(e) => {
+        if (e.button === 1) e.preventDefault()
+      }}
+      onAuxClick={(e) => {
+        if (e.button !== 1) return
+        e.preventDefault()
+        editor.closeTab(sessionId, path)
+      }}
       title={path}
       style={{
         display: 'flex',
@@ -86,7 +99,16 @@ function Tab({
       <span style={{ display: 'flex', flex: 'none', color: tab.changedOnDisk ? C.accent : C.faint }}>
         <Icon name="file" size={12} />
       </span>
-      <span style={{ fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      {/* Italic marks a preview tab, as in VS Code: the next file opened from the tree replaces it. */}
+      <span
+        style={{
+          fontSize: 12,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          fontStyle: tab.preview ? 'italic' : 'normal',
+        }}
+      >
         {tab.name}
       </span>
       {tab.dirty ? (
@@ -223,7 +245,9 @@ function EditorArea({ sessionId, activePath }: { sessionId: string; activePath: 
         </div>
       )}
       {hasView ? (
-        <div ref={hostRef} onMouseDown={() => activePath && editor.focusTab(sessionId, activePath)} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }} />
+        // `isolation` keeps CodeMirror's own layers (gutters, tooltips: z-index up to 500)
+        // stacked in here, so Quick Open above the editor doesn't have to outbid them.
+        <div ref={hostRef} onMouseDown={() => activePath && editor.focusTab(sessionId, activePath)} style={{ flex: 1, minHeight: 0, overflow: 'hidden', isolation: 'isolate' }} />
       ) : (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center', color: C.dim, fontSize: 12.5 }}>
           {STATUS_MESSAGE[tab.status as Exclude<TabStatus, 'ok'>] ?? 'Unable to open this file.'}
@@ -243,6 +267,24 @@ export function EditorPaneBody({ session }: { session: Session }): React.JSX.Ele
   const openPaths = useEditorStore((s) => s.sessions[sessionId]?.openPaths ?? NO_TABS)
   const activePath = useEditorStore((s) => s.sessions[sessionId]?.activePath ?? null)
   const treeHidden = useEditorStore((s) => s.sessions[sessionId]?.treeHidden ?? false)
+  const focusedHere = useStore((s) => s.panes[s.focused] === sessionId)
+  const [quickOpen, setQuickOpen] = useState(false)
+  useQuickOpenKeys(focusedHere, () => setQuickOpen(true))
+  const closeQuickOpen = (refocus: boolean): void => {
+    setQuickOpen(false)
+    const p = useEditorStore.getState().sessions[sessionId]?.activePath
+    if (refocus && p) editor.focusTab(sessionId, p)
+  }
+
+  // Previews turned off in Settings: a preview tab left from before is kept like any
+  // other, since nothing will come along to replace it now.
+  const previewTabs = useStore((s) => s.settings?.editorPreviewTabs ?? true)
+  useEffect(() => {
+    if (previewTabs) return
+    const s = useEditorStore.getState().sessions[sessionId]
+    const p = s?.openPaths.find((x) => s.tabs[x]?.preview)
+    if (p) editor.pinTab(sessionId, p)
+  }, [previewTabs, sessionId])
 
   // Load + watch the root once; keep-alive state lives in the editor registry/store,
   // so this only kicks off initial listing (idempotent) — it is NOT torn down on
@@ -299,7 +341,8 @@ export function EditorPaneBody({ session }: { session: Session }): React.JSX.Ele
       )}
 
       {/* Tabs + editor */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        {quickOpen && <QuickOpen sessionId={sessionId} root={root} onClose={closeQuickOpen} />}
         {openPaths.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'stretch', height: 34, flex: 'none', background: C.footer, borderBottom: `1px solid ${C.border}`, overflowX: 'auto' }}>
             {openPaths.map((p) => (

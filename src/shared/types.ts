@@ -573,6 +573,18 @@ export interface Settings {
   globalToggleShortcut: string
   /** Electron accelerator to toggle the Notes overlay (renderer-side). Empty = disabled. */
   notesShortcut: string
+  /**
+   * Electron accelerator for an Editor pane's Quick Open (find a file by name).
+   * Renderer-side and only while an Editor pane is the focused one, so a terminal
+   * still gets the key (Ctrl+P is bash's previous-history). Empty = disabled.
+   */
+  quickOpenShortcut: string
+  /**
+   * A single click in an Editor pane's file tree opens a preview tab, which the next
+   * click replaces until you edit the file or double-click it. Off: every click keeps
+   * its tab, as before.
+   */
+  editorPreviewTabs: boolean
   /** Single freeform markdown note, edited from Settings → Notes. */
   notes: string
   /**
@@ -678,6 +690,15 @@ export type FileReadResult =
   | { ok: true; content: string }
   | { ok: false; reason: 'binary' | 'tooLarge' | 'missing' }
 
+/**
+ * Every file under a session's root, for Quick Open: paths relative to the root,
+ * `/`-separated. `truncated` when the project has more than the listing will hold.
+ */
+export interface FileListResult {
+  files: string[]
+  truncated: boolean
+}
+
 /** A watched path changed on disk. `dir` re-lists a directory; the rest touch a file. */
 export interface FsChange {
   sessionId: string
@@ -747,6 +768,7 @@ export interface TerminatorApi {
 
   // filesystem (editor sessions) — every op is scoped to the session's root
   fsList(sessionId: string, dir: string): Promise<DirEntry[]>
+  fsListFiles(sessionId: string): Promise<FileListResult>
   fsRead(sessionId: string, path: string): Promise<FileReadResult>
   fsWrite(sessionId: string, path: string, content: string): Promise<void>
   fsWatch(sessionId: string, path: string): void
