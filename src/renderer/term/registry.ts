@@ -6,6 +6,7 @@ import { type ThemePalette, themeById } from '../../shared/themes'
 import { useStore } from '../state/store'
 import { attachClipboardImage } from '../attach'
 import * as links from './links'
+import * as chips from './image-chips'
 
 // One persistent xterm Terminal per session, alive for the session's lifetime
 // regardless of which pane (if any) currently shows it. Hidden terminals are
@@ -209,6 +210,8 @@ export function getOrCreate(id: string): Entry {
   // Registered before the right-click handler below so a press is recorded (and
   // any open link menu dismissed) before anything else acts on it.
   links.attachLinks(id, term, host)
+  // So a pasted image's `[Image #N]` chip can be traced back to its file.
+  chips.track(id, term)
 
   // Right-click copies the selection, same as Ctrl/Cmd+C. Capture phase so xterm
   // never sees the button — it would otherwise report it to a mouse-tracking child
@@ -284,6 +287,7 @@ export function dispose(id: string): void {
   // The tooltip lives inside the terminal's own element; the menu doesn't.
   links.closeMenu()
   links.hideTooltip()
+  chips.forget(id)
   try {
     e.term.dispose()
   } catch {
