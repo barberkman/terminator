@@ -2,10 +2,12 @@
 // drop into a list of files, hand them to the main process, and report back.
 //
 // Every path through here ends in a toast — attached (with a thumbnail, since the
-// terminal itself can't show you one) or the reason it didn't.
+// terminal itself can't show you one) or the reason it didn't. In a Claude pane the
+// pasted image is also reachable from its `[Image #N]` chip (see watchChips).
 
 import type { AttachFileInput, AttachResult } from '../shared/types'
 import { useStore } from './state/store'
+import * as chips from './term/image-chips'
 
 /** A pathless drop we're willing to read into memory before giving up. */
 const MAX_INLINE_BYTES = 25 * 1024 * 1024
@@ -145,6 +147,23 @@ async function filesFromDrop(dt: DataTransfer): Promise<AttachFileInput[]> {
   return out
 }
 
+/**
+ * In a Claude pane an image's path doesn't stay on screen: Claude swaps it for an
+ * `[Image #N]` chip, and the chip is what you'd click to see the image again. So
+ * the chip floor has to be read *before* anything is typed (null when the pane
+ * isn't Claude's), and the chips watched for after. See term/image-chips.ts.
+ */
+function chipFloor(sessionId: string): number | null {
+  if (useStore.getState().sessions[sessionId]?.kind !== 'claude') return null
+  return chips.chipFloor(sessionId)
+}
+
+function watchChips(sessionId: string, floor: number | null, result: AttachResult): void {
+  if (floor === null || !result.ok) return
+  const images = result.items.filter((i) => i.kind === 'image').map((i) => i.path)
+  chips.expectChips(sessionId, floor, images)
+}
+
 /** Attach whatever was dropped on a session's pane. */
 export async function attachDrop(sessionId: string, dt: DataTransfer): Promise<void> {
   try {
@@ -153,7 +172,10 @@ export async function attachDrop(sessionId: string, dt: DataTransfer): Promise<v
       fail('that drop carried no files — only files and folders can be attached')
       return
     }
-    report(await window.terminator.attachFiles(sessionId, files))
+    const floor = chipFloor(sessionId)
+    const result = await window.terminator.attachFiles(sessionId, files)
+    watchChips(sessionId, floor, result)
+    report(result)
   } catch (e) {
     // Nothing gets to fail quietly, including the plumbing itself.
     fail(String(e).slice(0, 200))
@@ -163,7 +185,10 @@ export async function attachDrop(sessionId: string, dt: DataTransfer): Promise<v
 /** Attach the clipboard's image (the caller has already checked there is one). */
 export async function attachClipboardImage(sessionId: string): Promise<void> {
   try {
-    report(await window.terminator.attachClipboardImage(sessionId))
+    const floor = chipFloor(sessionId)
+    const result = await window.terminator.attachClipboardImage(sessionId)
+    watchChips(sessionId, floor, result)
+    report(result)
   } catch (e) {
     fail(String(e).slice(0, 200))
   }

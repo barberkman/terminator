@@ -11,6 +11,8 @@ import { webUrl, webUrlRe } from '../../shared/url'
 import type { ProjectRef } from '../menus'
 import { useStore } from '../state/store'
 import * as editors from '../editor/registry'
+import { openAttachment } from '../attach'
+import { chipPath, chipRe } from './image-chips'
 import { C, FONT } from '../theme'
 
 // Clickable links in terminal output.
@@ -75,6 +77,9 @@ export type LinkTarget =
   // it. Optional because a link in the notes overlay has no session behind it.
   | { kind: 'web'; url: string; sessionId?: string }
   | { kind: 'file'; sessionId: string; path: string; line?: number; column?: number; label: string }
+  // Claude's `[Image #N]` chip for an image pasted in this run. `path` is the
+  // attachment's own, which is what main's receipt check knows it by.
+  | { kind: 'image'; path: string; label: string }
 
 let settings: LinkSettings = {
   enabled: true,
@@ -582,6 +587,7 @@ export function openFileTarget(target: Extract<LinkTarget, { kind: 'file' }>): v
 
 function open(target: LinkTarget, browserId?: string): void {
   if (target.kind === 'web') void openWeb(target.url, browserId, target.sessionId)
+  else if (target.kind === 'image') void openAttachment(target.path)
   else openFileTarget(target)
 }
 
@@ -596,6 +602,9 @@ export function hoveredTarget(): LinkTarget | null {
 
 function describe(target: LinkTarget): { text: string; sub: string } {
   const click = clickLabel()
+  if (target.kind === 'image') {
+    return { text: target.label, sub: `${click} to open the image · right-click for more` }
+  }
   if (target.kind === 'file') {
     const editor = externalEditor()
     // Three readings, because there are three situations: no program configured, one
@@ -763,6 +772,11 @@ export function openMenuForTarget(ev: MouseEvent, target: LinkTarget): boolean {
     el.appendChild(
       menuItem('Copy link', undefined, () => window.terminator.clipboardWrite(target.url)),
     )
+  } else if (target.kind === 'image') {
+    el.appendChild(menuItem('Open image', 'default', () => void openAttachment(target.path)))
+    el.appendChild(
+      menuItem('Copy path', undefined, () => window.terminator.clipboardWrite(target.path)),
+    )
   } else {
     const editor = externalEditor()
     const inApp = inAppEditorIsDefault()
@@ -870,6 +884,16 @@ function makeProvider(sessionId: string, term: Terminal): ILinkProvider {
         if (!range) continue
         taken.push([m.index, m.index + url.length - 1])
         links.push(makeLink(term, range, url, { kind: 'web', url, sessionId }))
+      }
+
+      // A pasted image's chip. Only the ones this run watched appear — see image-chips.ts.
+      for (const m of group.text.matchAll(chipRe())) {
+        if (m.index === undefined) continue
+        const path = chipPath(sessionId, Number(m[1]))
+        if (!path) continue
+        const range = rangeFor(group, m.index, m.index + m[0].length - 1)
+        if (!range) continue
+        links.push(makeLink(term, range, m[0], { kind: 'image', path, label: path }))
       }
 
       if (!settings.openFilePaths) {

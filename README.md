@@ -315,6 +315,15 @@ path is ever shown, so it also opens it:
   selected — Finder on macOS, your file manager elsewhere.
 - **Right-click the card** for both, plus **Copy path**.
 
+**Or click the chip.** In a Claude pane the path doesn't stay on screen: Claude swaps it for an
+`[Image #1]` chip. **Ctrl+click** the chip (**Cmd+click** on macOS) to open that image, the same
+way the card does. It works in the prompt before you send it, and in the conversation after.
+Hovering names the file; **right-click** for **Copy path**. Claude numbers the chips itself, so
+the app learns which chip is which by watching for the one each paste or drop produces. That
+means it only works for images that went in through this app's paste or drop, in this run of
+the app. A chip for an image Claude picked up any other way, or one left over from before a
+restart, stays plain text.
+
 Every toast shows how long it has left, as a hairline draining along the bottom of the card.
 Pointing at a toast, or tabbing onto it, **pauses its countdown** — the bar stops where it is, and
 picks up from there when you leave, rather than starting over. Five seconds is no time at all to
@@ -582,6 +591,8 @@ In a terminal pane:
 - **Ctrl/Cmd+click a file path** — opens it wherever Settings → **OPENS FILE PATHS IN** says: an
   Editor pane, made if there isn't one already, or your configured editor. **Right-click** for the
   other one, and Copy path.
+- **Ctrl/Cmd+click `[Image #N]`** (Claude sessions) — opens the image you pasted or dropped, in
+  the prompt or in the conversation. See **Images and files** above.
 - **Ctrl+G** (Claude sessions) — Claude's own key for writing the prompt somewhere roomier. It
   goes to your `$VISUAL`/`$EDITOR`, or to an Editor pane here if you've asked for that. See
   **Writing a prompt in an Editor pane** above.
