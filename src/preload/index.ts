@@ -64,6 +64,7 @@ const api: TerminatorApi = {
   onNavJump: (cb: (id: string) => void) => on(Channels.navJump, cb),
 
   fsList: (sessionId, dir) => ipcRenderer.invoke(Channels.fsList, { sessionId, dir }),
+  fsListFiles: (sessionId) => ipcRenderer.invoke(Channels.fsListFiles, { sessionId }),
   fsRead: (sessionId, path) => ipcRenderer.invoke(Channels.fsRead, { sessionId, path }),
   fsWrite: (sessionId, path, content) =>
     ipcRenderer.invoke(Channels.fsWrite, { sessionId, path, content }),

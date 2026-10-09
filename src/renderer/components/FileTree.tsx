@@ -2,9 +2,14 @@ import { C } from '../theme'
 import { Icon } from '../icons'
 import { useEditorStore } from '../editor/editorStore'
 import * as editor from '../editor/registry'
+import { useStore } from '../state/store'
 
-/** Join a directory and a child name with a POSIX separator (the app targets Linux). */
-function joinPath(dir: string, name: string): string {
+/**
+ * Join a directory and a child name with a POSIX separator (the app targets Linux).
+ * Also how Quick Open builds a file's path, so a file it opens is the same tab the
+ * tree's click would be.
+ */
+export function joinPath(dir: string, name: string): string {
   return dir.endsWith('/') ? dir + name : `${dir}/${name}`
 }
 
@@ -15,6 +20,7 @@ function Row({
   name,
   active,
   onClick,
+  onDoubleClick,
 }: {
   depth: number
   isDir: boolean
@@ -22,11 +28,13 @@ function Row({
   name: string
   active: boolean
   onClick: () => void
+  onDoubleClick?: () => void
 }): React.JSX.Element {
   return (
     <div
       className="cc-row"
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -57,6 +65,11 @@ function Row({
   )
 }
 
+/** Settings → EDITOR → PREVIEW TABS, read when the click lands so a change applies at once. */
+function previewTabs(): boolean {
+  return useStore.getState().settings?.editorPreviewTabs ?? true
+}
+
 function TreeNode({
   sessionId,
   path,
@@ -79,13 +92,30 @@ function TreeNode({
       if (expanded) editor.collapseDir(sessionId, path)
       else void editor.expandDir(sessionId, path)
     } else {
-      void editor.openFile(sessionId, path, name)
+      void editor.openFile(sessionId, path, name, { preview: previewTabs() })
     }
   }
 
+  // A double-click's own two clicks have already asked for a preview; this one opens
+  // the same way, so it lands in the preview's slot too, and then keeps it. Opening
+  // rather than just pinning covers a double-click quicker than the file's read.
+  const onDoubleClick = isDir
+    ? undefined
+    : () => {
+        void editor.openFile(sessionId, path, name, { preview: previewTabs() }).then(() => editor.pinTab(sessionId, path))
+      }
+
   return (
     <>
-      <Row depth={depth} isDir={isDir} expanded={expanded} name={name} active={active} onClick={onClick} />
+      <Row
+        depth={depth}
+        isDir={isDir}
+        expanded={expanded}
+        name={name}
+        active={active}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+      />
       {isDir &&
         expanded &&
         entries?.map((e) => (

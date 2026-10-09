@@ -38,7 +38,7 @@ const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'projectEditor', 'worktreesRoot', 'notifications',
   'terminalFont', 'fontSize', 'iconScale', 'sidebarSide', 'relaunchOnStartup', 'globalToggleShortcut',
   'notesShortcut', 'attachments', 'links', 'browser', 'settingsOpen', 'usageRefreshSeconds',
-  'promptEditorId', 'wsl',
+  'promptEditorId', 'wsl', 'quickOpenShortcut', 'editorPreviewTabs',
 ] as const satisfies readonly (keyof Settings)[]
 
 /** Cache size, at the resolution anyone reads it: "is that a lot?" */
@@ -152,7 +152,7 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (accel
       </button>
       <button
         onClick={() => onChange('')}
-        title="Disable the global shortcut"
+        title="Disable this shortcut"
         style={{
           padding: '0 14px',
           background: C.input,
@@ -634,6 +634,38 @@ export function SettingsView(): React.JSX.Element | null {
               </Field>
             </>
           ))}
+
+          {section(
+            'editor',
+            'EDITOR',
+            `${(draft.editorPreviewTabs ?? true) ? 'preview tabs' : 'every click keeps its tab'} · Quick Open ${draft.quickOpenShortcut || 'off'}`,
+            (
+              <>
+                <Field
+                  label="PREVIEW TABS"
+                  hint="How a click in an Editor pane's file tree opens a file. With preview tabs, one click opens it in a temporary tab — its name in italics — that the next click replaces, so browsing doesn't fill the tab bar. Editing the file or double-clicking it, in the tree or on its tab, keeps the tab."
+                >
+                  <Choice
+                    value={draft.editorPreviewTabs ?? true}
+                    onPick={(editorPreviewTabs) => patch({ editorPreviewTabs })}
+                    options={[
+                      { value: true, label: 'Preview, then keep' },
+                      { value: false, label: 'Every click keeps its tab' },
+                    ]}
+                  />
+                </Field>
+                <Field
+                  label="QUICK OPEN SHORTCUT"
+                  hint="Finds a file in the project by name and opens it, in the Editor pane that has focus — add :line to land on a line. A terminal pane keeps the key for its program. Click to record, Esc to cancel, Clear to disable. Applies after Save."
+                >
+                  <ShortcutRecorder
+                    value={draft.quickOpenShortcut ?? ''}
+                    onChange={(accel) => patch({ quickOpenShortcut: accel })}
+                  />
+                </Field>
+              </>
+            ),
+          )}
 
           {/* WSL exists only on Windows; elsewhere the section would be about nothing. */}
           {window.terminator.platform === 'win32' &&

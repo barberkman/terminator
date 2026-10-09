@@ -18,6 +18,12 @@ export interface Tab {
   /** Changed on disk while it had unsaved edits (non-destructive reload prompt). */
   changedOnDisk: boolean
   status: TabStatus
+  /**
+   * A preview tab: what a single click in the file tree opens. It is temporary —
+   * the next preview open replaces it in the same slot — until editing the file or
+   * double-clicking it (in the tree or on the tab) keeps it open. At most one per session.
+   */
+  preview: boolean
 }
 
 export interface SessionEditor {
@@ -39,7 +45,7 @@ function emptySession(): SessionEditor {
 interface EditorStoreState {
   sessions: Record<string, SessionEditor>
   ensure(id: string): void
-  openTab(id: string, tab: Tab): void
+  openTab(id: string, tab: Tab, replace?: string): void
   closeTab(id: string, path: string): void
   setActive(id: string, path: string): void
   patchTab(id: string, path: string, patch: Partial<Tab>): void
@@ -66,9 +72,20 @@ export const useEditorStore = create<EditorStoreState>((set) => ({
     set((st) => (st.sessions[id] ? {} : { sessions: { ...st.sessions, [id]: emptySession() } }))
   },
 
-  openTab(id, tab) {
+  openTab(id, tab, replace) {
     set((st) =>
       withSession(st, id, (s) => {
+        // `replace` is the preview tab this one takes over: same slot, the old one gone.
+        if (replace && replace !== tab.path && s.tabs[replace] && !s.tabs[tab.path]) {
+          const tabs = { ...s.tabs, [tab.path]: tab }
+          delete tabs[replace]
+          return {
+            ...s,
+            openPaths: s.openPaths.map((p) => (p === replace ? tab.path : p)),
+            tabs,
+            activePath: tab.path,
+          }
+        }
         const exists = !!s.tabs[tab.path]
         return {
           ...s,

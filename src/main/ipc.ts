@@ -1,6 +1,6 @@
 import { dialog, ipcMain, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
-import { hostFolder, sessionFolder } from '../shared/wsl-path'
+import { hostFolder, isWsl, sessionFolder } from '../shared/wsl-path'
 import { COLOR_RE, DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
 import type {
   AttachDeliver,
@@ -300,6 +300,13 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   ipcMain.handle(Channels.fsList, (_e, { sessionId, dir }: { sessionId: string; dir: string }) => {
     const root = editorRoot(sessionId)
     return root ? fsService.listDir(root, dir) : []
+  })
+  ipcMain.handle(Channels.fsListFiles, (_e, { sessionId }: { sessionId: string }) => {
+    const s = state.getSession(sessionId)
+    if (!s) return { files: [], truncated: false }
+    // A WSL session's git runs inside its distro, on the Linux path.
+    const wsl = isWsl(s) ? { distro: s.runtime.distro, cwd: sessionFolder(s) } : undefined
+    return fsService.listFiles(hostFolder(s), wsl)
   })
   ipcMain.handle(
     Channels.fsRead,

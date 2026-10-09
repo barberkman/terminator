@@ -58,6 +58,8 @@ export function defaultSettings(): Settings {
     promptEditorId: '',
     globalToggleShortcut: 'F12',
     notesShortcut: 'CommandOrControl+Shift+N',
+    quickOpenShortcut: 'CommandOrControl+P',
+    editorPreviewTabs: true,
     notes: '',
     usageRefreshSeconds: USAGE_REFRESH_DEFAULT,
     attachments: { allowClaudeRead: true, keepDays: 7 },
