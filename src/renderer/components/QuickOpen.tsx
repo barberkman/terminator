@@ -9,6 +9,7 @@ import { matchesAccelerator } from '../shortcuts'
 import { modalOpen, useStore } from '../state/store'
 import { inputStyle } from './controls'
 import { joinPath } from './FileTree'
+import { isPdfPath, openPdf } from '../pdf/open'
 
 // An Editor pane's Quick Open — VS Code's Ctrl+P. Type part of a file's name, pick
 // it, and it opens as a tab that stays. The list is every file under the pane's
@@ -152,6 +153,10 @@ export function QuickOpen({
     onClose(false)
     const path = joinPath(root, rel)
     const name = rel.slice(rel.lastIndexOf('/') + 1)
+    if (isPdfPath(name)) {
+      void openPdf(sessionId, path, { beside: true })
+      return
+    }
     // A deliberate open, so a tab that stays — and it keeps the file if it was the preview.
     void editor.openFile(sessionId, path, name).then(() => {
       if (line) editor.revealLine(sessionId, path, line)

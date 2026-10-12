@@ -7,6 +7,7 @@ import { errorText } from '../menus'
 import { TYPES, TYPE_MAP, type TypeKey } from '../sessionTypes'
 import { useStore } from '../state/store'
 import { RuntimeChip } from './RuntimeChip'
+import { pickedInside } from '../pdf/open'
 
 function basename(p: string): string {
   return p.split(/[/\\]/).filter(Boolean).pop() ?? ''
@@ -51,6 +52,8 @@ export function NewSessionModal(): React.JSX.Element | null {
   const [kind, setKind] = useState<TypeKey>('claude')
   const [worktree, setWorktree] = useState(false)
   const [branch, setBranch] = useState('')
+  /** The document for a PDF session, as the picker returned it. */
+  const [pdfFile, setPdfFile] = useState('')
   const [busy, setBusy] = useState(false)
 
   // Folders from existing session groups (current projects) first, then any
@@ -84,8 +87,10 @@ export function NewSessionModal(): React.JSX.Element | null {
     if (kind === 'shell') return 'shell'
     // Same name a link-opened one gets; main numbers it if the project has one already.
     if (kind === 'browser') return 'Web'
+    // Named for its document, the way main names one when nothing else does.
+    if (kind === 'pdf') return basename(pdfFile) || 'PDF'
     return basename(folder) || 'session'
-  }, [kind, folder])
+  }, [kind, folder, pdfFile])
 
   // Opened from a sidebar menu's "More options…": start on that project, with
   // name / type / worktree / branch still to choose. Seeding on open (rather than
@@ -99,6 +104,7 @@ export function NewSessionModal(): React.JSX.Element | null {
     setKind('claude')
     setWorktree(false)
     setBranch('')
+    setPdfFile('')
     // Distros come and go (an install, an unregister); listing never boots one.
     void useStore.getState().loadWslDistros(true)
   }, [show, prefill])
@@ -128,6 +134,7 @@ export function NewSessionModal(): React.JSX.Element | null {
     setKind('claude')
     setWorktree(false)
     setBranch('')
+    setPdfFile('')
   }
 
   /** The registered spelling of a distro named in a path, which may be any case. */
@@ -169,8 +176,37 @@ export function NewSessionModal(): React.JSX.Element | null {
     if (picked) {
       settleFolder(picked)
       // Not for a browser session: the folder only decides which group it lands
-      // in, and naming it after one would take it out of the Web / Web 2 run.
-      if (!name && kind !== 'browser') setName(basename(picked))
+      // in, and naming it after one would take it out of the Web / Web 2 run. Nor
+      // for a PDF, which is named for its document.
+      if (!name && kind !== 'browser' && kind !== 'pdf') setName(basename(picked))
+    }
+  }
+
+  /**
+   * Choose the document for a PDF session — starting in the folder, if there is one.
+   * The folder has to contain it (it is the boundary every read is held to), so a
+   * file picked from somewhere else brings the folder along: its own directory
+   * becomes the project. That is visible in the folder box, and any parent of it
+   * picked there afterwards still works.
+   */
+  const browsePdf = async () => {
+    const typed = folder.trim()
+    let start: string | undefined
+    if (distro) {
+      const linux = typed.startsWith('/') ? typed : probe?.home
+      if (linux) start = linuxToHost(distro, linux)
+    } else if (typed) {
+      start = typed
+    }
+    const picked = await window.terminator.pickFile({
+      title: 'Choose a PDF',
+      defaultPath: start,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
+    if (!picked) return
+    setPdfFile(picked)
+    if (!typed || !pickedInside({ path: typed, runtime }, picked)) {
+      settleFolder(picked.replace(/[/\\][^/\\]*$/, ''))
     }
   }
 
@@ -183,7 +219,7 @@ export function NewSessionModal(): React.JSX.Element | null {
   }
 
   const create = async () => {
-    if (!folder.trim() || busy) return
+    if (!folder.trim() || busy || (kind === 'pdf' && !pdfFile)) return
     setBusy(true)
     try {
       const session = await window.terminator.createSession({
@@ -193,6 +229,7 @@ export function NewSessionModal(): React.JSX.Element | null {
         worktree,
         branch: worktree ? branch.trim() || undefined : undefined,
         ...(runtime ? { runtime } : {}),
+        ...(kind === 'pdf' ? { file: pdfFile } : {}),
       })
       useStore.getState().upsert(session)
       useStore.getState().openSession(session.id)
@@ -205,6 +242,8 @@ export function NewSessionModal(): React.JSX.Element | null {
       setBusy(false)
     }
   }
+
+  const canCreate = !!folder.trim() && !busy && (kind !== 'pdf' || !!pdfFile)
 
   /** One thing worth knowing about the chosen distro before starting there, or ''. */
   const probeHint = ((): string => {
@@ -286,8 +325,9 @@ export function NewSessionModal(): React.JSX.Element | null {
                           if (selected) return
                           setRuntime(rt)
                           // A folder only means something in the runtime it was picked
-                          // in, so switching starts the folder over.
+                          // in, so switching starts the folder over — and the PDF in it.
                           setFolder('')
+                          setPdfFile('')
                         }}
                         style={{
                           display: 'flex',
@@ -457,9 +497,9 @@ export function NewSessionModal(): React.JSX.Element | null {
                     key={t.key}
                     onClick={() => {
                       setKind(t.key)
-                      // The toggle below is hidden for a browser session, so a tick
-                      // left over from another kind would be submitted unseen.
-                      if (t.key === 'browser') setWorktree(false)
+                      // The toggle below is hidden for a browser or PDF session, so a
+                      // tick left over from another kind would be submitted unseen.
+                      if (t.key === 'browser' || t.key === 'pdf') setWorktree(false)
                     }}
                     style={{
                       display: 'flex',
@@ -490,10 +530,60 @@ export function NewSessionModal(): React.JSX.Element | null {
             </div>
           </div>
 
+          {kind === 'pdf' && (
+            <div>
+              <Label>PDF FILE</Label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div
+                  title={pdfFile || undefined}
+                  style={{
+                    ...inputStyle,
+                    flex: 1,
+                    minWidth: 0,
+                    color: pdfFile ? C.textHi : C.dim,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    direction: pdfFile ? 'rtl' : undefined,
+                    textAlign: 'left',
+                  }}
+                >
+                  {/* rtl so a long path shows its file name rather than its drive. */}
+                  {pdfFile ? <bdi>{parseWslUnc(pdfFile)?.linux ?? pdfFile}</bdi> : 'Choose a PDF in the project'}
+                </div>
+                <button
+                  onClick={browsePdf}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '0 14px',
+                    background: C.input,
+                    border: `1px solid ${C.border3}`,
+                    borderRadius: 9,
+                    color: C.text,
+                    font: 'inherit',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    flex: 'none',
+                  }}
+                >
+                  <span style={{ display: 'flex', color: C.muted }}>
+                    <Icon name="pdf" size={14} />
+                  </span>
+                  Browse…
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* A browser session never touches the filesystem, so a worktree for
-              one would be a branch nothing could ever be committed on. The other
-              kinds all have a use for it, including the editor. */}
-          {kind !== 'browser' && (
+              one would be a branch nothing could ever be committed on; a PDF pane
+              only reads one file. The other kinds all have a use for it, including
+              the editor. */}
+          {kind !== 'browser' && kind !== 'pdf' && (
             <div>
               <div onClick={() => setWorktree((v) => !v)} style={{ display: 'flex', alignItems: 'center', gap: 11, cursor: 'pointer' }}>
                 <span
@@ -569,20 +659,20 @@ export function NewSessionModal(): React.JSX.Element | null {
           </button>
           <button
             onClick={create}
-            disabled={!folder.trim() || busy}
+            disabled={!canCreate}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 8,
               padding: '10px 20px',
-              background: !folder.trim() || busy ? accentA(0.4) : C.accent,
+              background: !canCreate ? accentA(0.4) : C.accent,
               border: 'none',
               borderRadius: 9,
               color: C.accentText,
               font: 'inherit',
               fontSize: 12.5,
               fontWeight: 700,
-              cursor: !folder.trim() || busy ? 'default' : 'pointer',
+              cursor: !canCreate ? 'default' : 'pointer',
             }}
           >
             Create session

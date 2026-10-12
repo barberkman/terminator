@@ -17,17 +17,18 @@ export interface PtyExit {
 
 // ---- Sessions --------------------------------------------------------------
 
-export type SessionKind = 'claude' | 'shell' | 'editor' | 'browser'
+export type SessionKind = 'claude' | 'shell' | 'editor' | 'browser' | 'pdf'
 export type SessionMode = 'normal' | 'readonly'
 
 /**
- * Kinds with no process of their own. An editor pane renders the filesystem and a
- * browser pane renders a page; neither has anything to start, stop or relaunch. Every
- * place that offers those verbs — or decides a restored session came back "not
- * running" — asks here rather than growing its own copy of the list.
+ * Kinds with no process of their own. An editor pane renders the filesystem, a
+ * browser pane renders a page and a PDF pane renders a document; none of them has
+ * anything to start, stop or relaunch. Every place that offers those verbs — or
+ * decides a restored session came back "not running" — asks here rather than
+ * growing its own copy of the list.
  */
 export function isProcessless(kind: SessionKind): boolean {
-  return kind === 'editor' || kind === 'browser'
+  return kind === 'editor' || kind === 'browser' || kind === 'pdf'
 }
 
 /** Unified status. Claude uses all five; plain shells use busy(=running)/idle/closed. */
@@ -126,6 +127,15 @@ export interface Session {
    * coming back with its scrollback.
    */
   url?: string
+  /**
+   * The document a `pdf` session shows: an absolute path as this process reaches it
+   * (a WSL session's through its distro's share), the same form an Editor tab's path
+   * takes. Inside the session's folder — main checks that when the session is made,
+   * and the file service again on every read.
+   */
+  file?: string
+  /** The page a `pdf` session was last on, so a restart reopens it there. */
+  pdfPage?: number
   status: SessionStatus
   /** Human-readable current activity, e.g. "waiting for input", "running tests". */
   activity: string
@@ -162,6 +172,8 @@ export interface CreateSessionInput {
   task?: 'build' | 'run'
   /** First page for a `browser` session. Ignored by every other kind. */
   url?: string
+  /** The document for a `pdf` session (see `Session.file`). Ignored by every other kind. */
+  file?: string
   /** Run inside this WSL distro. Absent = Windows. */
   runtime?: SessionRuntime
 }
@@ -691,6 +703,21 @@ export type FileReadResult =
   | { ok: false; reason: 'binary' | 'tooLarge' | 'missing' }
 
 /**
+ * Result of reading a file's raw bytes — what a PDF pane renders from. No binary
+ * sniff, and a much larger cap than a text read: a PDF is binary by definition.
+ */
+export type FileBytesResult =
+  | { ok: true; data: Uint8Array; mtimeMs: number }
+  | { ok: false; reason: 'tooLarge' | 'missing' }
+
+/** What a file picker is asked for: a title, where it opens, which files it lists. */
+export interface PickFileOptions {
+  title?: string
+  defaultPath?: string
+  filters?: { name: string; extensions: string[] }[]
+}
+
+/**
  * Every file under a session's root, for Quick Open: paths relative to the root,
  * `/`-separated. `truncated` when the project has more than the listing will hold.
  */
@@ -721,6 +748,10 @@ export interface TerminatorApi {
   renameSession(id: string, name: string): Promise<void>
   /** Remember the page a browser session is on, so a restart reopens it there. */
   setSessionUrl(id: string, url: string): Promise<void>
+  /** Remember the page a PDF session is on, so a restart reopens it there. */
+  setSessionPdfPage(id: string, page: number): Promise<void>
+  /** Hand a PDF session's document to the OS's own PDF viewer. Says why when it couldn't. */
+  openPdfOutside(id: string): Promise<{ ok: true } | { ok: false; reason: string }>
   setMode(id: string, mode: SessionMode): Promise<void>
   /** End a session's process on purpose, keeping the session. Lands 'closed', never 'error'. */
   stopSession(id: string): Promise<void>
@@ -770,6 +801,7 @@ export interface TerminatorApi {
   fsList(sessionId: string, dir: string): Promise<DirEntry[]>
   fsListFiles(sessionId: string): Promise<FileListResult>
   fsRead(sessionId: string, path: string): Promise<FileReadResult>
+  fsReadBytes(sessionId: string, path: string): Promise<FileBytesResult>
   fsWrite(sessionId: string, path: string, content: string): Promise<void>
   fsWatch(sessionId: string, path: string): void
   fsUnwatch(sessionId: string, path: string): void
@@ -800,8 +832,11 @@ export interface TerminatorApi {
   // dialogs / settings
   /** `defaultPath` opens the dialog there — a distro's home, for a WSL session. */
   pickFolder(defaultPath?: string): Promise<string | null>
-  /** Pick a single file (used to choose a browser executable). */
-  pickFile(title?: string): Promise<string | null>
+  /**
+   * Pick a single file — a browser or editor executable (a bare title), or a PDF
+   * (title, starting folder and a filter).
+   */
+  pickFile(opts?: string | PickFileOptions): Promise<string | null>
   getSettings(): Promise<Settings>
   updateSettings(patch: Partial<Settings>): Promise<Settings>
   getGlobalShortcutStatus(): Promise<{ accelerator: string; registered: boolean }>

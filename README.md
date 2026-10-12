@@ -52,8 +52,8 @@ code-signed, so the first launch gets a SmartScreen warning: **More info → Run
   there. Splits nest as deep as you like, dividers drag to resize, and each pane header has an
   **✕** that closes the pane without touching the session. Off-screen sessions keep running.
 - **New session**: pick a folder, name it, choose a type — **Claude**, **Claude (read-only)**,
-  **Terminal**, **Editor** or **Browser** — and optionally create a **git worktree** on a new
-  branch.
+  **Terminal**, **Editor**, **Browser** or **PDF** — and optionally create a **git worktree** on
+  a new branch.
 - **Editor panes** show the project's file tree beside tabs; the button in the tree's header
   folds it down to a thin rail when you want the room. Syntax highlighting covers about 150
   languages — shell, YAML, Rust, Go, C/C++, SQL, Dockerfiles and the rest — each loaded the
@@ -69,6 +69,11 @@ code-signed, so the first launch gets a SmartScreen warning: **More info → Run
     git repo, everything but `.git` and `node_modules`), and `name:42` lands on line 42. The
     shortcut works while an Editor pane has focus — a terminal still gets Ctrl+P, bash's
     previous-history — and is changed or turned off in Settings → **EDITOR**.
+  - **A `.pdf` in the tree or in Quick Open** opens in a **PDF pane** beside it rather than as a
+    tab. See **PDF panes** below.
+- **PDF panes** read a PDF from the project in the app's own theme — pages in the theme's
+  colours, with a toggle back to the original — and reload in place when the file is rewritten.
+  See below.
 - **Status** updates live. Claude sessions report rich states (working / waiting / idle /
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
 - **WSL** (Windows): a session can run inside a WSL distro instead — a native Linux shell, or
@@ -415,6 +420,9 @@ off with **LINKS IN TERMINAL OUTPUT**.
   there isn't one already, the way a clicked web link opens a browser pane. A second path opens
   as another tab in the same pane rather than a second pane: the pane is the project, the tabs
   are the files.
+- **A `.pdf` opens in a PDF pane** — always, whichever editor is your default, since a text
+  editor has nothing to show for one. Right-click it for your external editor anyway, or Copy
+  path. A PDF that's already open in a pane is brought forward rather than opened twice.
 - **Or in your own editor** — Settings → **EXTERNAL EDITOR**. Set the program and its arguments
   and it can have your clicks instead. Program and arguments are stored and passed
   **separately**, straight to the process with no shell in between, so
@@ -517,6 +525,46 @@ generated, say, which lives behind a claude.ai login and so can't just be opened
   download asks you where to put it, and popups — which is what a Google sign-in is — are
   allowed but pinned to the same storage, so the cookie they set is the one the pane reads.
   A pane that didn't ask for that storage isn't allowed to open at all.
+
+## PDF panes
+
+A pane that shows a PDF — the paper Claude just compiled, the spec it's working from, the report
+a build writes out — without leaving the app, and in the app's theme rather than as a white
+rectangle in the middle of a dark window.
+
+- **How one opens** — four ways. Click a `.pdf` in an Editor pane's tree, or pick one in its
+  Quick Open: it opens in a split beside the editor, so the tree stays where it was, and the next
+  PDF you click takes over that same pane rather than splitting again. Ctrl/Cmd+click a `.pdf`
+  path a session printed. Or make one on purpose — the New Session dialog's **PDF** type, or
+  **New session here** → **PDF…** in the sidebar — and pick the file.
+- **The file has to be inside the session's folder**, the same rule an Editor pane reads by.
+  Picking one from somewhere else in the New Session dialog moves the folder to the file's own;
+  the sidebar's **PDF…**, which is already committed to a project, says so instead.
+- **They're sessions, so they stay.** Each lands in the sidebar under its project, named after
+  the file, and comes back after a restart on the page you were reading. Nothing about one starts
+  or stops, so its menu offers no Start or Relaunch. Close the pane and come back — or split, or
+  move it — and you're on the same page, at the same zoom, scrolled where you were; nothing is
+  read or drawn again.
+- **In your theme.** Pages are drawn in the theme's colours: the paper is its background, black
+  text is its text colour, and everything between is spread across the two — so a dark theme
+  gives dark pages and *Paper* a cream one. Coloured text and diagrams keep their hue, lightened
+  or darkened to stay readable. The ◐ button in the toolbar shows the page **as printed**
+  instead, for photos and anything else whose colours are the point. Either way, picking a theme
+  — or editing one in the theme editor — repaints open PDFs as it does everything else.
+- **Live.** Rewrite the file — LaTeX, a build, Claude — and the pane reloads on the page you were
+  on. If the file disappears, the last version stays on screen under a note saying so, and it
+  picks up again when the file is back.
+- **The chrome** — previous / next page and a page box; zoom out, a zoom menu (Automatic, Page
+  fit, Page width and fixed sizes) and zoom in; the theme toggle; Reload; Copy path; and **Open
+  in your PDF viewer**, the PDF pane's way out. The document's title and its page count sit
+  along the bottom. **Ctrl/Cmd+F** finds in the document, in the same find bar the browser pane
+  has. **Ctrl/Cmd+wheel** zooms around the pointer.
+- **Links** inside the PDF work. One to another page in the document jumps there; one to a web
+  page opens the way a link in a terminal does — the same check, your chosen browser, and the
+  same Ctrl-to-open rule from Settings → **OPENING A LINK**.
+- **A reader, not an editor.** Form fields are shown, not filled in, and a PDF's own scripts
+  never run. A password-protected PDF asks for its password in the pane. Files over 256 MB are
+  left to your own PDF viewer.
 
 ## WSL sessions
 
@@ -636,6 +684,9 @@ tab to close it.
 In a browser pane: **F5** reloads the page and **Ctrl/Cmd+F** finds in it, either one from the
 page itself or from the pane's chrome.
 
+In a PDF pane: **Ctrl/Cmd+F** finds in the document, **Ctrl/Cmd+wheel** zooms, and once you've
+clicked into the pages **PageUp/PageDown/Home/End** scroll them.
+
 In the sidebar: **right-click** a session row, a collapsed-rail tab, a project header, the line
 above a group's dots in the collapsed rail, or the collapsed rail's sidebar button for its menu
 (see **Session menus** above); arrows and Enter move and pick, **Esc** closes one level.
@@ -722,10 +773,10 @@ set to — and which ones you left open is remembered:
 
 Settings → **THEME** is a grid of swatches, each painted in its own colours. Picking one applies
 it immediately — to the app chrome, the terminal panes (background, cursor, selection **and the
-16 ANSI colours**, so Claude's TUI takes on the theme) and the built-in file editor including
-its syntax colours. Nothing needs a restart, and terminals that are open — even the ones parked
-off-screen — repaint in place. The choice is saved as you make it; it doesn't wait for **Save
-settings**, and **Cancel** doesn't take it back.
+16 ANSI colours**, so Claude's TUI takes on the theme), the built-in file editor including its
+syntax colours, and the pages of any open PDF. Nothing needs a restart, and terminals that are
+open — even the ones parked off-screen — repaint in place. The choice is saved as you make it;
+it doesn't wait for **Save settings**, and **Cancel** doesn't take it back.
 
 - **Yours** — anything you've made. See *Making your own* below.
 - **Dark** — Terminator (the default), Darcula, One Dark, Dracula, Gruvbox Dark, JetBrains New Dark,
@@ -822,8 +873,9 @@ optional per-type overrides via `notifications.perType`. A runnable example is i
 ## Tech
 
 Electron + React + Vite (electron-vite), `@xterm/xterm` for the terminals, `@lydell/node-pty`
-for the PTYs. The main process owns session state, PTYs, the hook/statusLine server, settings,
-and persistence; the renderer mirrors session metadata and owns the keep-alive xterm instances.
+for the PTYs, `pdfjs-dist` (pdf.js) for the PDF panes. The main process owns session state,
+PTYs, the hook/statusLine server, settings, and persistence; the renderer mirrors session
+metadata and owns the keep-alive xterm instances.
 That split is why the startup relaunch prompt lives in the renderer: a session's terminal has to
 exist before its PTY starts or its first output has nowhere to land, and only the renderer can
 make one.

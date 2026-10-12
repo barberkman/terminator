@@ -10,6 +10,7 @@ export const Channels = {
   sessionRemove: 'session:remove',
   sessionRename: 'session:rename',
   sessionSetUrl: 'session:setUrl',
+  sessionSetPdfPage: 'session:setPdfPage',
   sessionSetMode: 'session:setMode',
   sessionStop: 'session:stop',
   sessionRelaunch: 'session:relaunch',
@@ -71,10 +72,14 @@ export const Channels = {
   fsList: 'fs:list',
   fsListFiles: 'fs:list-files',
   fsRead: 'fs:read',
+  fsReadBytes: 'fs:read-bytes',
   fsWrite: 'fs:write',
   fsWatch: 'fs:watch',
   fsUnwatch: 'fs:unwatch',
   fsChanged: 'fs:changed',
+
+  // a PDF pane's way out: its document in the OS's own viewer
+  pdfOpenOutside: 'pdf:openOutside',
 
   // WSL distros (listing, and what a distro says about itself)
   wslDistros: 'wsl:distros',

@@ -3,6 +3,7 @@ import { Icon } from '../icons'
 import { useEditorStore } from '../editor/editorStore'
 import * as editor from '../editor/registry'
 import { useStore } from '../state/store'
+import { isPdfPath, openPdf } from '../pdf/open'
 
 /**
  * Join a directory and a child name with a POSIX separator (the app targets Linux).
@@ -91,6 +92,11 @@ function TreeNode({
     if (isDir) {
       if (expanded) editor.collapseDir(sessionId, path)
       else void editor.expandDir(sessionId, path)
+    } else if (isPdfPath(name)) {
+      // A PDF is a document to read, not text to edit: it opens in a PDF pane beside
+      // this one. In a tab it would be "binary file" at best — and a small one with no
+      // NUL early on would open as text, where a save would ruin it.
+      void openPdf(sessionId, path, { beside: true })
     } else {
       void editor.openFile(sessionId, path, name, { preview: previewTabs() })
     }
@@ -99,7 +105,8 @@ function TreeNode({
   // A double-click's own two clicks have already asked for a preview; this one opens
   // the same way, so it lands in the preview's slot too, and then keeps it. Opening
   // rather than just pinning covers a double-click quicker than the file's read.
-  const onDoubleClick = isDir
+  // A PDF has no tab to keep: its clicks already opened (or raised) its pane.
+  const onDoubleClick = isDir || isPdfPath(name)
     ? undefined
     : () => {
         void editor.openFile(sessionId, path, name, { preview: previewTabs() }).then(() => editor.pinTab(sessionId, path))

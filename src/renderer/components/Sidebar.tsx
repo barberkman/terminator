@@ -286,6 +286,11 @@ function Row({
               <Icon name="globe" size={12} />
             </span>
           )}
+          {session.kind === 'pdf' && (
+            <span style={{ display: 'flex', color: C.kindIcon, flex: 'none' }}>
+              <Icon name="pdf" size={12} />
+            </span>
+          )}
           {editing ? (
             <input
               ref={nameRef}

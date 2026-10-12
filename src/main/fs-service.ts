@@ -21,7 +21,7 @@ import { basename, dirname, join, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import type { BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
-import type { DirEntry, FileListResult, FileReadResult, FsChange } from '../shared/types'
+import type { DirEntry, FileBytesResult, FileListResult, FileReadResult, FsChange } from '../shared/types'
 import { parseWslUnc } from '../shared/wsl-path'
 import { wslExec } from './wsl'
 
@@ -29,6 +29,12 @@ const pExecFile = promisify(execFile)
 
 /** Files larger than this are refused (returned as `tooLarge`, not read). */
 const MAX_BYTES = 2 * 1024 * 1024
+/**
+ * The same for a raw read (a PDF pane's document). Far larger, because nobody is
+ * going to type into it — but still a ceiling, since the whole file crosses IPC
+ * as one buffer.
+ */
+const MAX_RAW_BYTES = 256 * 1024 * 1024
 /** Trailing-debounce window for coalescing watcher events, per path. */
 const DEBOUNCE_MS = 120
 /** How long a self-write suppresses its own watcher echo. */
@@ -239,6 +245,45 @@ export async function readFile(root: string, path: string): Promise<FileReadResu
   // Binary sniff: a NUL byte in the first 8 KB means "don't try to edit this".
   if (buf.subarray(0, 8192).includes(0)) return { ok: false, reason: 'binary' }
   return { ok: true, content: buf.toString('utf8') }
+}
+
+/**
+ * A file's raw bytes, for a PDF pane. The same root scoping as `readFile`, but no
+ * binary sniff — a PDF is binary by definition — and a far larger cap. Electron
+ * structured-clones the Buffer, so it reaches the renderer as a Uint8Array.
+ */
+export async function readBytes(root: string, path: string): Promise<FileBytesResult> {
+  const abs = safe(root, path)
+  if (!abs) return { ok: false, reason: 'missing' }
+  let st
+  try {
+    st = await fsp.stat(abs)
+  } catch {
+    return { ok: false, reason: 'missing' }
+  }
+  if (!st.isFile()) return { ok: false, reason: 'missing' }
+  if (st.size > MAX_RAW_BYTES) return { ok: false, reason: 'tooLarge' }
+  try {
+    return { ok: true, data: await fsp.readFile(abs), mtimeMs: st.mtimeMs }
+  } catch {
+    // Removed between the stat and the read — a rebuild replacing it, say.
+    return { ok: false, reason: 'missing' }
+  }
+}
+
+/**
+ * A regular file inside `root`, as its absolute path — or null. For the checks made
+ * before anything is read: a PDF session is only made for a file its own folder
+ * contains, the same boundary every later read is held to.
+ */
+export async function fileInside(root: string, path: string): Promise<string | null> {
+  const abs = safe(root, path)
+  if (!abs) return null
+  try {
+    return (await fsp.stat(abs)).isFile() ? abs : null
+  } catch {
+    return null
+  }
 }
 
 export async function writeFile(root: string, path: string, content: string): Promise<void> {

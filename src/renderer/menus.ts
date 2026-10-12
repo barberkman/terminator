@@ -6,13 +6,14 @@ import {
   type SessionRuntime,
   type Settings,
 } from '../shared/types'
-import { findProject, groupKey, isWsl, runtimeLabel, sameRuntime } from '../shared/wsl-path'
+import { findProject, groupKey, hostFolder, isWsl, runtimeLabel, sameRuntime } from '../shared/wsl-path'
 import { editorLabel } from '../shared/editor-name'
 import type { IconName } from './icons'
 import type { MenuNode } from './components/ContextMenu'
 import { TYPES, TYPE_MAP, type TypeKey } from './sessionTypes'
 import * as registry from './term/registry'
 import { externalEditor } from './term/links'
+import { createPdfSession, pickedInside } from './pdf/open'
 import { useStore, type MenuTarget } from './state/store'
 
 // ---- actions ---------------------------------------------------------------
@@ -229,14 +230,37 @@ function joinGroups(groups: MenuNode[][]): MenuNode[] {
   return out
 }
 
-/** The five session types, as menu rows that create in `project` immediately. */
+/**
+ * A PDF session needs a document, so this one row asks first: a file picker opened
+ * in the project's folder. The file has to be inside it — that folder is what the
+ * pane reads through, and main refuses anything outside — so a pick from elsewhere
+ * is turned away with the reason rather than quietly re-homed in another project.
+ */
+async function createPdfIn(project: ProjectRef): Promise<void> {
+  const folder = hostFolder({ projectPath: project.path, runtime: project.runtime })
+  const picked = await window.terminator.pickFile({
+    title: 'Choose a PDF',
+    defaultPath: folder,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
+  if (!picked) return
+  if (!pickedInside(project, picked)) {
+    useStore.getState().pushToast({ tone: 'error', text: `Pick a PDF inside ${project.name}`, sub: folder })
+    return
+  }
+  const s = await createPdfSession(project, picked)
+  if (s) useStore.getState().openSession(s.id)
+}
+
+/** The session types, as menu rows that create in `project` immediately. */
 function typeItems(project: ProjectRef, keyPrefix: string): MenuNode[] {
   return TYPES.map((t) => ({
     kind: 'item' as const,
     id: `${keyPrefix}:${t.key}`,
-    label: t.label,
+    // The one row that asks something before it makes anything says so.
+    label: t.key === 'pdf' ? `${t.label}…` : t.label,
     icon: t.icon,
-    run: () => void createSessionIn(t.key, project),
+    run: () => void (t.key === 'pdf' ? createPdfIn(project) : createSessionIn(t.key, project)),
   }))
 }
 

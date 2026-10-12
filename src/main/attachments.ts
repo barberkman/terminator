@@ -222,8 +222,8 @@ function target(
 ): { kind: 'claude' | 'shell'; wsl: boolean } | { error: string } {
   const s = getSession(id)
   if (!s) return { error: 'that session is gone' }
-  if (s.kind === 'editor' || s.kind === 'browser') {
-    const what = s.kind === 'editor' ? 'an editor pane' : 'a browser pane'
+  if (s.kind === 'editor' || s.kind === 'browser' || s.kind === 'pdf') {
+    const what = s.kind === 'editor' ? 'an editor pane' : s.kind === 'pdf' ? 'a PDF pane' : 'a browser pane'
     return { error: `${what} has no session to attach to — use a Claude or terminal pane` }
   }
   if (deliver === 'pty' && !s.alive) {

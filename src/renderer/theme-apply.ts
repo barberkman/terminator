@@ -2,6 +2,7 @@ import type { Settings } from '../shared/types'
 import { type ThemePalette, resolveTheme, cssVars } from '../shared/themes'
 import * as terminals from './term/registry'
 import * as editors from './editor/registry'
+import * as pdfs from './pdf/registry'
 
 let current: ThemePalette | null = null
 
@@ -13,9 +14,10 @@ export function activePalette(): ThemePalette | null {
 /**
  * Paint a palette: write every token as a CSS custom property on the document
  * root (which is all the app chrome needs — see the `C` tokens in theme.ts),
- * then hand the literal colours to the two surfaces that can't read a `var()`:
- * xterm, which parses colours in JS for its renderer, and CodeMirror, whose
- * `dark` flag is baked into the theme extension at construction.
+ * then hand the literal colours to the surfaces that can't read a `var()`:
+ * xterm, which parses colours in JS for its renderer; CodeMirror, whose `dark`
+ * flag is baked into the theme extension at construction; and the SVG filter
+ * that draws a PDF pane's pages in the theme (pdf/recolor.ts).
  */
 export function applyTheme(palette: ThemePalette): void {
   current = palette
@@ -26,6 +28,7 @@ export function applyTheme(palette: ThemePalette): void {
   root.dataset.theme = palette.id
   terminals.setTheme(palette)
   editors.setTheme(palette)
+  pdfs.setTheme(palette)
   // The one piece of chrome the renderer doesn't draw: Windows' caption buttons,
   // which sit over TitleBar and have to wear its colours.
   if (window.terminator.platform === 'win32') {

@@ -1,4 +1,4 @@
-import { dialog, ipcMain, type BrowserWindow } from 'electron'
+import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
 import { hostFolder, isWsl, sessionFolder } from '../shared/wsl-path'
 import { COLOR_RE, DEFAULT_THEME_ID, isBuiltIn } from '../shared/themes'
@@ -12,6 +12,7 @@ import type {
   CreateSessionInput,
   FolderChoice,
   OpenFileInput,
+  PickFileOptions,
   SendPromptResult,
   SessionMode,
   TaskCommand,
@@ -54,6 +55,17 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     // the distro. A Windows request comes back untouched. Throws a readable reason,
     // which the New Session dialog shows.
     const input = await normalizeCreateInput(raw)
+    // A PDF session reads its document through the same root-scoped file service an
+    // Editor pane does, so it is only made for a file its folder contains — whatever
+    // the renderer says. Checked before the session exists, so a refusal leaves
+    // nothing behind; the dialog shows the reason.
+    if (input.kind === 'pdf') {
+      const file = typeof input.file === 'string' ? input.file.trim() : ''
+      const abs = file ? await fsService.fileInside(hostFolder(input), file) : null
+      if (!abs) throw new Error("the PDF has to be a file inside the session's folder")
+      input.file = abs
+      input.worktree = false
+    }
     const session = state.createSession(input)
     // A Build/Run terminal reuses its project's path; that project is already in
     // recents from its first non-task session, so only remember on real sessions.
@@ -97,6 +109,24 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     if (!s || s.kind !== 'browser') return
     const safe = webUrl(url)
     if (safe) state.updateSession(id, { url: safe })
+  })
+  // Written as a PDF pane's reader moves through it (debounced on that side), so a
+  // restart reopens the document on the page you were reading.
+  ipcMain.handle(Channels.sessionSetPdfPage, (_e, { id, page }: { id: string; page: number }) => {
+    const s = state.getSession(id)
+    if (!s || s.kind !== 'pdf' || !Number.isInteger(page) || page < 1) return
+    if (s.pdfPage !== page) state.updateSession(id, { pdfPage: page })
+  })
+  // The PDF pane's way out, the way a browser pane has "Open in your browser". The
+  // path is the session's own, re-checked against its folder — never one the
+  // renderer names.
+  ipcMain.handle(Channels.pdfOpenOutside, async (_e, id: string) => {
+    const s = state.getSession(id)
+    if (!s || s.kind !== 'pdf' || !s.file) return { ok: false, reason: 'that session has no PDF' }
+    const abs = await fsService.fileInside(hostFolder(s), s.file)
+    if (!abs) return { ok: false, reason: `${s.file} isn't there any more` }
+    const err = await shell.openPath(abs)
+    return err ? { ok: false, reason: err } : { ok: true }
   })
   ipcMain.handle(
     Channels.sessionSetMode,
@@ -316,6 +346,13 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     },
   )
   ipcMain.handle(
+    Channels.fsReadBytes,
+    (_e, { sessionId, path }: { sessionId: string; path: string }) => {
+      const root = editorRoot(sessionId)
+      return root ? fsService.readBytes(root, path) : { ok: false as const, reason: 'missing' as const }
+    },
+  )
+  ipcMain.handle(
     Channels.fsWrite,
     (_e, { sessionId, path, content }: { sessionId: string; path: string; content: string }) => {
       const root = editorRoot(sessionId)
@@ -361,10 +398,20 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     })
     return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
   })
-  ipcMain.handle(Channels.pickFile, async (_e, title?: string) => {
+  // A bare title is the original form (Settings choosing a program); the object
+  // form adds where the dialog opens and which files it lists (a PDF, say).
+  ipcMain.handle(Channels.pickFile, async (_e, opts?: string | PickFileOptions) => {
+    const o: PickFileOptions = typeof opts === 'string' ? { title: opts } : opts && typeof opts === 'object' ? opts : {}
+    const filters = Array.isArray(o.filters)
+      ? o.filters
+          .filter((f) => f && typeof f.name === 'string' && Array.isArray(f.extensions))
+          .map((f) => ({ name: f.name, extensions: f.extensions.filter((x) => typeof x === 'string') }))
+      : undefined
     const r = await dialog.showOpenDialog(getWin(), {
-      title: title || 'Choose a program',
+      title: typeof o.title === 'string' && o.title ? o.title : 'Choose a program',
       properties: ['openFile'],
+      ...(typeof o.defaultPath === 'string' && o.defaultPath ? { defaultPath: o.defaultPath } : {}),
+      ...(filters?.length ? { filters } : {}),
     })
     return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
   })
