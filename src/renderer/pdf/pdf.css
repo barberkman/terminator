@@ -1,0 +1,60 @@
+/* A PDF pane's document, over pdf.js's own pdf_viewer.css (loaded just before this).
+   Every colour is one of the theme's CSS variables, so the pages' surroundings follow
+   a theme change with no help; the pages themselves follow through the SVG filter in
+   recolor.ts. */
+
+/* The desk the pages sit on: the sidebar's shade, a step away from the theme's
+   background, so a themed page — which *is* the background — still has an edge. */
+.tm-pdf {
+  background: var(--c-sidebar);
+  outline: none;
+}
+
+.tm-pdf .pdfViewer {
+  padding: 14px 0 4px;
+}
+
+.tm-pdf .pdfViewer.removePageBorders .page {
+  margin: 0 auto 14px;
+  box-shadow:
+    0 0 0 1px rgba(var(--c-ink-rgb), 0.08),
+    0 2px 10px rgba(var(--c-shadow-rgb), 0.3);
+}
+
+/* Themed: the page is the theme's background before its canvas has painted, so a
+   page scrolled into view doesn't flash white first. */
+.tm-pdf.tm-pdf-recolor .pdfViewer {
+  --page-bg-color: var(--c-bg);
+}
+
+/* Canvases only. The selection layer and the text layer sit above them, unfiltered,
+   so a selection is the theme's colour rather than a recoloured blue. */
+.tm-pdf.tm-pdf-recolor .canvasWrapper canvas {
+  filter: url(#tm-pdf-recolor);
+}
+
+/* pdf.js draws a selection as a box in the canvas wrapper, not with ::selection. */
+.tm-pdf .pdfViewer .canvasWrapper .selection {
+  background: var(--c-selection);
+}
+
+/* Find, in the accent — the same pair of tints the editor's search uses. */
+.tm-pdf .textLayer .highlight {
+  --highlight-bg-color: rgba(var(--c-accent-rgb), 0.24);
+  --highlight-selected-bg-color: rgba(var(--c-accent-rgb), 0.5);
+}
+
+/* Links show themselves under the pointer, in the accent rather than pdf.js's yellow. */
+.tm-pdf .pdfViewer .annotationLayer .linkAnnotation:not(.hasBorder) > a:hover {
+  background: rgba(var(--c-accent-rgb), 0.16);
+  opacity: 1;
+}
+.tm-pdf .pdfViewer .annotationLayer .linkAnnotation.hasBorder:hover {
+  background: rgba(var(--c-accent-rgb), 0.16);
+}
+
+/* pdf.js's loading spinner is a GIF drawn for a white page; a themed page would
+   wear it as a grey smudge. The pane's own status says when a document is loading. */
+.tm-pdf .pdfViewer .page.loadingIcon::after {
+  background: none;
+}

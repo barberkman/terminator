@@ -18,6 +18,8 @@ const KEYS = [
   'worktreePath',
   'runtime',
   'url',
+  'file',
+  'pdfPage',
   'everStarted',
   'createdAt',
   'parentId',
@@ -29,6 +31,7 @@ const KEYS = [
 function restoredActivity(kind: Session['kind']): string {
   if (kind === 'editor') return 'editing'
   if (kind === 'browser') return 'browsing'
+  if (kind === 'pdf') return 'reading'
   return 'not running'
 }
 
@@ -55,7 +58,9 @@ export function loadPersistedSessions(): Session[] {
         // Absent (every session saved before WSL support) or malformed = Windows.
         runtime: validRuntime(p.runtime),
         url: p.url,
-        // Editor and browser sessions have no process — they're immediately usable
+        file: typeof p.file === 'string' ? p.file : undefined,
+        pdfPage: typeof p.pdfPage === 'number' && p.pdfPage >= 1 ? Math.floor(p.pdfPage) : undefined,
+        // Editor, browser and PDF sessions have no process — they're immediately usable
         // on restore, so they come back idle rather than "closed / needs relaunch".
         status: isProcessless(p.kind ?? 'shell') ? 'idle' : 'closed',
         activity: restoredActivity(p.kind ?? 'shell'),

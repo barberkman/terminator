@@ -1,9 +1,56 @@
-import { C, accentA } from '../theme'
-import { Icon } from '../icons'
+import { C, accentA, sz } from '../theme'
+import { Icon, type IconName } from '../icons'
 
 // The form vocabulary the two settings surfaces share. These all began life as
 // private helpers inside SettingsView; they moved here when the theme editor
 // needed the same shapes, and nothing about them changed on the way.
+
+/**
+ * A square icon button in a pane's own toolbar — the browser's back/forward/reload
+ * and the PDF pane's page and zoom controls. `pressed` is for a toggle: it wears the
+ * accent while on, and says so to a screen reader.
+ */
+export function ChromeButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+  pressed,
+}: {
+  icon: IconName
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  pressed?: boolean
+}): React.JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      aria-pressed={pressed}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: sz(26),
+        height: sz(26),
+        flex: 'none',
+        borderRadius: 7,
+        borderWidth: 1,
+        borderStyle: 'solid',
+        borderColor: pressed ? C.accentBorder : 'transparent',
+        background: pressed ? C.accentBg : 'transparent',
+        color: disabled ? C.faint : pressed ? C.accentSoft : C.textSubtle,
+        cursor: disabled ? 'default' : 'pointer',
+        outline: 'none',
+      }}
+    >
+      <Icon name={icon} size={14} />
+    </button>
+  )
+}
 
 export const inputStyle: React.CSSProperties = {
   width: '100%',

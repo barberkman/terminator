@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { Session } from '../../shared/types'
+import { isProcessless, type Session } from '../../shared/types'
 import { useStore } from '../state/store'
 import { C, accentA, bgA, dangerA } from '../theme'
 import { Icon } from '../icons'
@@ -91,7 +91,8 @@ export function useFileDrop(session: Session | undefined, index: number, toCompo
         return
       }
       void attachDrop(sid, e.dataTransfer).then(() => {
-        if (kind !== 'editor') registry.focus(sid)
+        // Only a pane with a terminal has one to give the keyboard back to.
+        if (!isProcessless(kind)) registry.focus(sid)
       })
     },
   }

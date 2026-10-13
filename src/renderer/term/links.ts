@@ -13,6 +13,7 @@ import { useStore } from '../state/store'
 import * as editors from '../editor/registry'
 import { openAttachment } from '../attach'
 import { chipPath, chipRe } from './image-chips'
+import { isPdfPath, openPdf } from '../pdf/open'
 import { C, FONT } from '../theme'
 
 // Clickable links in terminal output.
@@ -564,6 +565,24 @@ export async function openInPane(sessionId: string, token: string, line?: number
   if (line) editors.revealLine(target.id, path, line)
 }
 
+/**
+ * Open a PDF a session printed in a PDF pane, resolved the way `openInPane` resolves
+ * any path: through main, against that session's own folder.
+ */
+export async function openPdfFromOutput(sessionId: string, token: string): Promise<void> {
+  let resolved: string | null = null
+  try {
+    resolved = await window.terminator.resolveOutputPath(sessionId, token)
+  } catch {
+    resolved = null
+  }
+  if (!resolved) {
+    toastError("Couldn't open that file", `${token} isn't inside that session's folder`)
+    return
+  }
+  await openPdf(sessionId, resolved)
+}
+
 /** Hand a file to the configured editor; the main process re-checks the path. */
 export async function openExternally(target: Extract<LinkTarget, { kind: 'file' }>): Promise<void> {
   try {
@@ -579,9 +598,14 @@ export async function openExternally(target: Extract<LinkTarget, { kind: 'file' 
   }
 }
 
-/** What a plain click does: whichever of the two you made the default. */
+/**
+ * What a plain click does: whichever of the two you made the default — except for a
+ * PDF, which always opens in a PDF pane. An external editor is a text editor, and
+ * the right-click menu still offers it for the rare case that is what you meant.
+ */
 export function openFileTarget(target: Extract<LinkTarget, { kind: 'file' }>): void {
-  if (inAppEditorIsDefault()) void openInPane(target.sessionId, target.path, target.line)
+  if (isPdfPath(target.path)) void openPdfFromOutput(target.sessionId, target.path)
+  else if (inAppEditorIsDefault()) void openInPane(target.sessionId, target.path, target.line)
   else void openExternally(target)
 }
 
@@ -604,6 +628,13 @@ function describe(target: LinkTarget): { text: string; sub: string } {
   const click = clickLabel()
   if (target.kind === 'image') {
     return { text: target.label, sub: `${click} to open the image · right-click for more` }
+  }
+  if (target.kind === 'file' && isPdfPath(target.path)) {
+    const editor = externalEditor()
+    return {
+      text: target.label,
+      sub: `${click} to open in a PDF pane · right-click for ${editor || 'more'}`,
+    }
   }
   if (target.kind === 'file') {
     const editor = externalEditor()
@@ -776,6 +807,19 @@ export function openMenuForTarget(ev: MouseEvent, target: LinkTarget): boolean {
     el.appendChild(menuItem('Open image', 'default', () => void openAttachment(target.path)))
     el.appendChild(
       menuItem('Copy path', undefined, () => window.terminator.clipboardWrite(target.path)),
+    )
+  } else if (isPdfPath(target.path)) {
+    el.appendChild(
+      menuItem('Open in PDF pane', 'default', () => void openPdfFromOutput(target.sessionId, target.path)),
+    )
+    const editor = externalEditor()
+    if (editor) {
+      el.appendChild(menuItem(`Open in ${editor}`, undefined, () => void openExternally(target)))
+    }
+    el.appendChild(
+      menuItem('Copy path', undefined, () =>
+        window.terminator.clipboardWrite(parseWslUnc(target.path)?.linux ?? target.path),
+      ),
     )
   } else {
     const editor = externalEditor()

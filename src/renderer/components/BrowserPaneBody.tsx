@@ -4,10 +4,11 @@ import { webUrl } from '../../shared/url'
 import type { FoundInPageResult, WebviewTag } from '../global.d'
 import { modalOpen, useStore } from '../state/store'
 import { NO_HITS, useFindKeys, type FindHits } from '../find'
-import { C, sz } from '../theme'
-import { Icon, type IconName } from '../icons'
+import { C } from '../theme'
+import { Icon } from '../icons'
 import { openOutsideApp } from '../term/links'
 import { FindBar } from './FindBar'
+import { ChromeButton } from './controls'
 
 /**
  * A web page, inside the app.
@@ -63,45 +64,6 @@ function hostOf(url: string): string {
   } catch {
     return url
   }
-}
-
-function ChromeButton({
-  icon,
-  label,
-  onClick,
-  disabled,
-}: {
-  icon: IconName
-  label: string
-  onClick: () => void
-  disabled?: boolean
-}): React.JSX.Element {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      aria-label={label}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: sz(26),
-        height: sz(26),
-        flex: 'none',
-        borderRadius: 7,
-        borderWidth: 1,
-        borderStyle: 'solid',
-        borderColor: 'transparent',
-        background: 'transparent',
-        color: disabled ? C.faint : C.textSubtle,
-        cursor: disabled ? 'default' : 'pointer',
-        outline: 'none',
-      }}
-    >
-      <Icon name={icon} size={14} />
-    </button>
-  )
 }
 
 export function BrowserPaneBody({

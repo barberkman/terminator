@@ -10,6 +10,7 @@ import type {
   FolderChoice,
   FsChange,
   OpenFileInput,
+  PickFileOptions,
   PromptEdit,
   PtyData,
   PtyExit,
@@ -35,6 +36,8 @@ const api: TerminatorApi = {
   removeSession: (id) => ipcRenderer.invoke(Channels.sessionRemove, id),
   renameSession: (id, name) => ipcRenderer.invoke(Channels.sessionRename, { id, name }),
   setSessionUrl: (id, url) => ipcRenderer.invoke(Channels.sessionSetUrl, { id, url }),
+  setSessionPdfPage: (id, page) => ipcRenderer.invoke(Channels.sessionSetPdfPage, { id, page }),
+  openPdfOutside: (id) => ipcRenderer.invoke(Channels.pdfOpenOutside, id),
   setMode: (id, mode: SessionMode) => ipcRenderer.invoke(Channels.sessionSetMode, { id, mode }),
   stopSession: (id) => ipcRenderer.invoke(Channels.sessionStop, id),
   relaunchSession: (id) => ipcRenderer.invoke(Channels.sessionRelaunch, id),
@@ -66,6 +69,7 @@ const api: TerminatorApi = {
   fsList: (sessionId, dir) => ipcRenderer.invoke(Channels.fsList, { sessionId, dir }),
   fsListFiles: (sessionId) => ipcRenderer.invoke(Channels.fsListFiles, { sessionId }),
   fsRead: (sessionId, path) => ipcRenderer.invoke(Channels.fsRead, { sessionId, path }),
+  fsReadBytes: (sessionId, path) => ipcRenderer.invoke(Channels.fsReadBytes, { sessionId, path }),
   fsWrite: (sessionId, path, content) =>
     ipcRenderer.invoke(Channels.fsWrite, { sessionId, path, content }),
   fsWatch: (sessionId, path) => ipcRenderer.send(Channels.fsWatch, { sessionId, path }),
@@ -87,7 +91,7 @@ const api: TerminatorApi = {
     ipcRenderer.invoke(Channels.wslProbe, { distro, force: !!force }),
 
   pickFolder: (defaultPath?: string) => ipcRenderer.invoke(Channels.pickFolder, defaultPath),
-  pickFile: (title?: string) => ipcRenderer.invoke(Channels.pickFile, title),
+  pickFile: (opts?: string | PickFileOptions) => ipcRenderer.invoke(Channels.pickFile, opts),
   getSettings: () => ipcRenderer.invoke(Channels.settingsGet),
   updateSettings: (patch: Partial<Settings>) => ipcRenderer.invoke(Channels.settingsUpdate, patch),
   getGlobalShortcutStatus: () => ipcRenderer.invoke(Channels.globalShortcutStatus),

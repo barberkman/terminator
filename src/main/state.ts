@@ -93,7 +93,13 @@ function initialActivity(kind: CreateSessionInput['kind']): string {
   if (kind === 'shell') return 'idle'
   if (kind === 'editor') return 'editing'
   if (kind === 'browser') return 'browsing'
+  if (kind === 'pdf') return 'reading'
   return 'ready'
+}
+
+/** A path's last segment, whichever separator it uses — a PDF's path may be a WSL share's. */
+function fileName(p: string): string {
+  return p.split(/[\\/]/).filter(Boolean).pop() ?? ''
 }
 
 /**
@@ -120,8 +126,11 @@ function defaultName(
   kind: CreateSessionInput['kind'],
   projectName: string,
   runtime?: SessionRuntime,
+  file?: string,
 ): string {
   if (kind === 'shell') return 'shell'
+  // A PDF is named for its document: the folder only decides which group it lands in.
+  if (kind === 'pdf') return (file && fileName(file)) || 'PDF'
   if (kind !== 'browser') return projectName
   // "The group" is what the sidebar draws, and a WSL project is its own group.
   const key = groupKey({ projectName, runtime })
@@ -181,7 +190,7 @@ export function createSession(input: CreateSessionInput, branch?: BranchMeta): S
     input.projectName?.trim() || (runtime ? posixBasename(projectPath) : basename(projectPath)) || 'project'
   const session: Session = {
     id,
-    name: input.name?.trim() || input.task || defaultName(input.kind, projectName, runtime),
+    name: input.name?.trim() || input.task || defaultName(input.kind, projectName, runtime, input.file),
     kind: input.kind,
     mode: input.kind === 'claude' ? input.mode : 'normal',
     task: input.task,
@@ -191,6 +200,7 @@ export function createSession(input: CreateSessionInput, branch?: BranchMeta): S
     worktreePath: undefined,
     runtime,
     url: input.kind === 'browser' ? input.url : undefined,
+    file: input.kind === 'pdf' ? input.file : undefined,
     status: 'idle',
     activity: initialActivity(input.kind),
     notified: false,

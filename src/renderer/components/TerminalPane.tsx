@@ -5,6 +5,7 @@ import * as registry from '../term/registry'
 import { PaneHeader } from './PaneHeader'
 import { TerminalView } from './TerminalView'
 import { EditorPaneBody } from './EditorPaneBody'
+import { PdfPaneBody } from './PdfPaneBody'
 import { ConversationView } from './ConversationView'
 import { DropVeil, useFileDrop } from './paneDrop'
 
@@ -114,6 +115,37 @@ export function TerminalPane({
         {over && <DropVeil bad label="Editor panes can't take attachments" />}
         <PaneHeader session={session} active={focused} index={index} />
         <EditorPaneBody session={session} />
+      </div>
+    )
+  }
+
+  // A PDF session has no PTY either: the document, read through the same root-scoped
+  // file service an editor pane uses. Keyed by session id because this pane is keyed
+  // by index — another session landing in this split is a different document, not
+  // this one re-rendered.
+  if (session.kind === 'pdf') {
+    return (
+      <div
+        data-pane-index={index}
+        data-pane-focused={focused ? 1 : 0}
+        data-pane-session={session.name}
+        onMouseDownCapture={() => focusPane(index)}
+        {...dropProps}
+        style={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          minWidth: 0,
+          minHeight: 0,
+          background: C.bg,
+          overflow: 'hidden',
+          ...cell,
+          ...frame,
+        }}
+      >
+        {over && <DropVeil bad label="PDF panes can't take attachments" />}
+        <PaneHeader session={session} active={focused} index={index} />
+        <PdfPaneBody key={session.id} session={session} />
       </div>
     )
   }

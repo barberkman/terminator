@@ -34,6 +34,12 @@ export type IconName =
   | 'back'
   | 'forward'
   | 'external'
+  | 'pdf'
+  | 'up'
+  | 'down'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'contrast'
 
 export function Icon({ name, size = 15 }: { name: IconName; size?: number }): React.JSX.Element {
   const common = {
@@ -246,6 +252,47 @@ export function Icon({ name, size = 15 }: { name: IconName; size?: number }): Re
         <svg {...common}>
           <path d="M9 8l-4 4 4 4" />
           <path d="M15 8l4 4-4 4" />
+        </svg>
+      )
+    case 'pdf':
+      // The file icon's page, with a short line of text in it: a document to read,
+      // where the bare page stands for any file at all.
+      return (
+        <svg {...common}>
+          <path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9z" />
+          <path d="M13 3v6h6" />
+          <path d="M8.5 13h7" />
+          <path d="M8.5 16.5h5" />
+        </svg>
+      )
+    case 'up':
+      return (
+        <svg {...common}>
+          <path d="M6 15l6-6 6 6" />
+        </svg>
+      )
+    case 'down':
+      return (
+        <svg {...common}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      )
+    case 'zoom-in':
+    case 'zoom-out':
+      return (
+        <svg {...common}>
+          <circle cx={10.5} cy={10.5} r={6.5} />
+          <path d="M15.5 15.5L20 20" />
+          <path d="M7.5 10.5h6" />
+          {name === 'zoom-in' && <path d="M10.5 7.5v6" />}
+        </svg>
+      )
+    case 'contrast':
+      // Half filled: the page in the theme's colours, or as printed.
+      return (
+        <svg {...common}>
+          <circle cx={12} cy={12} r={8.5} />
+          <path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none" />
         </svg>
       )
     case 'file':
