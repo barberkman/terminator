@@ -551,7 +551,7 @@ export async function openInPane(sessionId: string, token: string, line?: number
     resolved = null
   }
   if (!resolved) {
-    toastError("Couldn't open that file", `${token} isn't inside that session's folder`)
+    toastError("Couldn't open that file", `${token} isn't there`)
     return
   }
   // Bound to a const so the closure below keeps the narrowing.
@@ -567,7 +567,8 @@ export async function openInPane(sessionId: string, token: string, line?: number
 
 /**
  * Open a PDF a session printed in a PDF pane, resolved the way `openInPane` resolves
- * any path: through main, against that session's own folder.
+ * any path: through main, against that session's own folder — though a PDF, unlike
+ * any other file, may be outside it.
  */
 export async function openPdfFromOutput(sessionId: string, token: string): Promise<void> {
   let resolved: string | null = null
@@ -577,7 +578,7 @@ export async function openPdfFromOutput(sessionId: string, token: string): Promi
     resolved = null
   }
   if (!resolved) {
-    toastError("Couldn't open that file", `${token} isn't inside that session's folder`)
+    toastError("Couldn't open that file", `${token} isn't there`)
     return
   }
   await openPdf(sessionId, resolved)

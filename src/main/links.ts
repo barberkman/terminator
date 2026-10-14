@@ -14,8 +14,8 @@
 //
 // A clicked *file path* gets the same treatment: the token is re-resolved against
 // its own session's folder here, so a path on screen can only ever open something
-// that session could already reach, and the editor is launched with the file as
-// its own argv element.
+// that session could already reach — or a PDF, which opens in a pane wherever it
+// is — and the editor is launched with the file as its own argv element.
 
 import { spawn, type SpawnOptions } from 'node:child_process'
 import { webUrl } from '../shared/url'
@@ -37,6 +37,8 @@ import { expandLinuxHome, probe } from './wsl'
 
 /** Same idea as MAX_URL_LENGTH, for a path-like token out of the scrollback. */
 const MAX_PATH_LENGTH = 1024
+/** The one kind of file a printed path may reach outside its session's folder: a PDF pane shows any. */
+const PDF_RE = /\.pdf$/i
 
 // The rule itself moved to shared/url.ts once the in-app browser needed to run it
 // without going through this process. Re-exported here because this file's
@@ -129,8 +131,10 @@ export async function openLink(raw: string, browserId?: string): Promise<OpenLin
  *
  * Relative tokens are resolved against the session's own folder, and the result
  * has to stay inside it — the same boundary the editor's filesystem service
- * enforces, so a path in output can't reach anything the session couldn't.
- * Null for anything that isn't an existing file inside that folder.
+ * enforces, so a path in output can't reach anything the session couldn't. A PDF
+ * is the exception: a PDF pane opens one from anywhere, so a `.pdf` path may
+ * resolve outside the folder. Null for anything else that isn't an existing file
+ * inside that folder.
  */
 export async function resolveOutputPath(sessionId: string, token: string): Promise<string | null> {
   const session = getSession(sessionId)
@@ -151,7 +155,7 @@ export async function resolveOutputPath(sessionId: string, token: string): Promi
       linux = expandLinuxHome(p, raw)
     }
     linux = posixResolve(root, linux)
-    if (!posixWithin(root, linux)) return null
+    if (!posixWithin(root, linux) && !PDF_RE.test(linux)) return null
     const host = linuxToHost(session.runtime.distro, linux)
     try {
       return (await fsp.stat(host)).isFile() ? host : null
@@ -163,7 +167,8 @@ export async function resolveOutputPath(sessionId: string, token: string): Promi
   const root = resolve(expandHome(session.worktreePath || session.projectPath) || session.projectPath)
   const expanded = expandHome(raw) || raw
   const abs = isAbsolute(expanded) ? resolve(expanded) : resolve(root, expanded)
-  if (abs !== root && !abs.startsWith(root.endsWith(sep) ? root : root + sep)) return null
+  const inside = abs === root || abs.startsWith(root.endsWith(sep) ? root : root + sep)
+  if (!inside && !PDF_RE.test(abs)) return null
 
   try {
     return statSync(abs).isFile() ? abs : null

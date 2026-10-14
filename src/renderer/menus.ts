@@ -13,7 +13,7 @@ import type { MenuNode } from './components/ContextMenu'
 import { TYPES, TYPE_MAP, type TypeKey } from './sessionTypes'
 import * as registry from './term/registry'
 import { externalEditor } from './term/links'
-import { createPdfSession, pickedInside } from './pdf/open'
+import { createPdfSession } from './pdf/open'
 import { useStore, type MenuTarget } from './state/store'
 
 // ---- actions ---------------------------------------------------------------
@@ -232,22 +232,16 @@ function joinGroups(groups: MenuNode[][]): MenuNode[] {
 
 /**
  * A PDF session needs a document, so this one row asks first: a file picker opened
- * in the project's folder. The file has to be inside it — that folder is what the
- * pane reads through, and main refuses anything outside — so a pick from elsewhere
- * is turned away with the reason rather than quietly re-homed in another project.
+ * in the project's folder. The file can be anywhere — the pane reads that one file,
+ * wherever it is — and the session lands in this project's group either way.
  */
 async function createPdfIn(project: ProjectRef): Promise<void> {
-  const folder = hostFolder({ projectPath: project.path, runtime: project.runtime })
   const picked = await window.terminator.pickFile({
     title: 'Choose a PDF',
-    defaultPath: folder,
+    defaultPath: hostFolder({ projectPath: project.path, runtime: project.runtime }),
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (!picked) return
-  if (!pickedInside(project, picked)) {
-    useStore.getState().pushToast({ tone: 'error', text: `Pick a PDF inside ${project.name}`, sub: folder })
-    return
-  }
   const s = await createPdfSession(project, picked)
   if (s) useStore.getState().openSession(s.id)
 }

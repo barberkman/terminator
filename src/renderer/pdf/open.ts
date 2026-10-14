@@ -1,5 +1,4 @@
 import type { Session } from '../../shared/types'
-import { hostFolder } from '../../shared/wsl-path'
 import { useStore } from '../state/store'
 
 // Every way into a PDF pane but the New Session dialog: a click in an Editor pane's
@@ -39,9 +38,9 @@ function toastError(sub: string): void {
 }
 
 /**
- * Make a PDF session for `path` in a folder, or say why not. The folder decides the
- * sidebar group it lands in and is the boundary every read of the file is held to;
- * main refuses a file outside it.
+ * Make a PDF session for `path` in a folder, or say why not. The file can be
+ * anywhere: the folder only decides the sidebar group it lands in, and the session
+ * reads that one file and nothing else.
  */
 export async function createPdfSession(
   project: { name: string; path: string; runtime?: Session['runtime'] },
@@ -76,7 +75,7 @@ export async function createPdfSession(
 }
 
 /**
- * Show `path` — absolute, inside `fromSessionId`'s folder — in a PDF pane.
+ * Show `path` — absolute, found through `fromSessionId` — in a PDF pane.
  *
  * Where it lands: `beside` (a click in an Editor pane's tree, or its Quick Open)
  * puts it in a split to the right of that pane, so the tree you're browsing stays
@@ -93,8 +92,8 @@ export async function openPdf(fromSessionId: string, path: string, opts: { besid
       toastError('the session it came from has no folder')
       return
     }
-    // Rooted on the session that asked — its worktree, if it has one, since that is
-    // the folder the path was found in — and labelled with its project's name.
+    // Grouped with the session that asked — under its worktree, if it has one, since
+    // that is the folder the path was found from — and labelled with its project's name.
     target =
       (await createPdfSession(
         { name: from.projectName, path: from.worktreePath || from.projectPath, runtime: from.runtime },
@@ -124,14 +123,4 @@ function place(id: string, fromSessionId: string, beside: boolean): void {
     return
   }
   st.splitPane(id, at, 'right')
-}
-
-/** Whether a picked file is inside `project`'s folder, as main will check before making the session. */
-export function pickedInside(project: { path: string; runtime?: Session['runtime'] }, picked: string): boolean {
-  const root = hostFolder({ projectPath: project.path, runtime: project.runtime }).replace(/[/\\]+$/, '')
-  const a = picked.replace(/\\/g, '/')
-  const r = root.replace(/\\/g, '/')
-  const win = window.terminator.platform === 'win32'
-  const [pa, pr] = win ? [a.toLowerCase(), r.toLowerCase()] : [a, r]
-  return pa.startsWith(`${pr}/`)
 }

@@ -7,7 +7,6 @@ import { errorText } from '../menus'
 import { TYPES, TYPE_MAP, type TypeKey } from '../sessionTypes'
 import { useStore } from '../state/store'
 import { RuntimeChip } from './RuntimeChip'
-import { pickedInside } from '../pdf/open'
 
 function basename(p: string): string {
   return p.split(/[/\\]/).filter(Boolean).pop() ?? ''
@@ -184,10 +183,9 @@ export function NewSessionModal(): React.JSX.Element | null {
 
   /**
    * Choose the document for a PDF session — starting in the folder, if there is one.
-   * The folder has to contain it (it is the boundary every read is held to), so a
-   * file picked from somewhere else brings the folder along: its own directory
-   * becomes the project. That is visible in the folder box, and any parent of it
-   * picked there afterwards still works.
+   * The file can be anywhere: the folder only decides which group the session lands
+   * in, so one already chosen is kept. With none yet, the PDF's own directory fills
+   * it in, since a session needs one — visible in the folder box, and changeable.
    */
   const browsePdf = async () => {
     const typed = folder.trim()
@@ -205,9 +203,7 @@ export function NewSessionModal(): React.JSX.Element | null {
     })
     if (!picked) return
     setPdfFile(picked)
-    if (!typed || !pickedInside({ path: typed, runtime }, picked)) {
-      settleFolder(picked.replace(/[/\\][^/\\]*$/, ''))
-    }
+    if (!typed) settleFolder(picked.replace(/[/\\][^/\\]*$/, ''))
   }
 
   const removeRecent = async (path: string, rt?: SessionRuntime) => {

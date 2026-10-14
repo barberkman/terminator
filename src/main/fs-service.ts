@@ -248,7 +248,8 @@ export async function readFile(root: string, path: string): Promise<FileReadResu
 }
 
 /**
- * A file's raw bytes, for a PDF pane. The same root scoping as `readFile`, but no
+ * A file's raw bytes, for a PDF pane. The same root scoping as `readFile` (a PDF
+ * session's root is its one document, wherever that is), but no
  * binary sniff — a PDF is binary by definition — and a far larger cap. Electron
  * structured-clones the Buffer, so it reaches the renderer as a Uint8Array.
  */
@@ -272,13 +273,15 @@ export async function readBytes(root: string, path: string): Promise<FileBytesRe
 }
 
 /**
- * A regular file inside `root`, as its absolute path — or null. For the checks made
- * before anything is read: a PDF session is only made for a file its own folder
- * contains, the same boundary every later read is held to.
+ * A regular `.pdf` file, as its absolute path — or null. A relative `path` is
+ * resolved against `root`, but not held inside it: a PDF session can show a
+ * document from anywhere. What keeps that narrow is that the session can then read
+ * that one file and nothing else (see `editorRoot` in ipc.ts), and that it has to
+ * be a PDF — which is all any way of opening one offers.
  */
-export async function fileInside(root: string, path: string): Promise<string | null> {
-  const abs = safe(root, path)
-  if (!abs) return null
+export async function pdfFile(root: string, path: string): Promise<string | null> {
+  const abs = resolve(toAbs(root), expandHome(path))
+  if (!/\.pdf$/i.test(abs)) return null
   try {
     return (await fsp.stat(abs)).isFile() ? abs : null
   } catch {

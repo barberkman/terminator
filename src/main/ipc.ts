@@ -55,14 +55,15 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     // the distro. A Windows request comes back untouched. Throws a readable reason,
     // which the New Session dialog shows.
     const input = await normalizeCreateInput(raw)
-    // A PDF session reads its document through the same root-scoped file service an
-    // Editor pane does, so it is only made for a file its folder contains — whatever
-    // the renderer says. Checked before the session exists, so a refusal leaves
-    // nothing behind; the dialog shows the reason.
+    // A PDF session can show a document from anywhere: its folder only decides the
+    // sidebar group it lands in. What it can read is that one file and nothing else
+    // (see `editorRoot` below), so the file is settled here — an existing .pdf, made
+    // absolute — before the session exists, and a refusal leaves nothing behind; the
+    // dialog shows the reason.
     if (input.kind === 'pdf') {
       const file = typeof input.file === 'string' ? input.file.trim() : ''
-      const abs = file ? await fsService.fileInside(hostFolder(input), file) : null
-      if (!abs) throw new Error("the PDF has to be a file inside the session's folder")
+      const abs = file ? await fsService.pdfFile(hostFolder(input), file) : null
+      if (!abs) throw new Error("there's no PDF at that path")
       input.file = abs
       input.worktree = false
     }
@@ -118,12 +119,12 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     if (s.pdfPage !== page) state.updateSession(id, { pdfPage: page })
   })
   // The PDF pane's way out, the way a browser pane has "Open in your browser". The
-  // path is the session's own, re-checked against its folder — never one the
+  // path is the session's own, re-checked to still be there — never one the
   // renderer names.
   ipcMain.handle(Channels.pdfOpenOutside, async (_e, id: string) => {
     const s = state.getSession(id)
     if (!s || s.kind !== 'pdf' || !s.file) return { ok: false, reason: 'that session has no PDF' }
-    const abs = await fsService.fileInside(hostFolder(s), s.file)
+    const abs = await fsService.pdfFile(hostFolder(s), s.file)
     if (!abs) return { ok: false, reason: `${s.file} isn't there any more` }
     const err = await shell.openPath(abs)
     return err ? { ok: false, reason: err } : { ok: true }
@@ -323,9 +324,13 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   // ---- filesystem (editor sessions) ----
   // Root is resolved here from the session id — never trusted from the renderer.
   // A WSL session's files are read through its distro's share (\\wsl.localhost\…).
+  // A PDF session's root is its one document, settled when it was made: it reaches
+  // that file wherever it is, and nothing beside it — not even its folder.
   const editorRoot = (sessionId: string): string | null => {
     const s = state.getSession(sessionId)
-    return s ? hostFolder(s) : null
+    if (!s) return null
+    if (s.kind === 'pdf') return s.file ?? null
+    return hostFolder(s)
   }
   ipcMain.handle(Channels.fsList, (_e, { sessionId, dir }: { sessionId: string; dir: string }) => {
     const root = editorRoot(sessionId)

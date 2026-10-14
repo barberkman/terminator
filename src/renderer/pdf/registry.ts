@@ -16,9 +16,10 @@ import { ensureRecolorFilter, setRecolorTheme } from './recolor'
 // re-reads the file, re-renders a page or loses your place.
 //
 // The document is read through the session's root-scoped file service
-// (`fsReadBytes`), so a PDF pane reaches exactly what an Editor pane on the same
-// folder would, and is watched the same way: a file rewritten underneath it — LaTeX,
-// a build, Claude — reloads in place, on the page you were reading.
+// (`fsReadBytes`), whose root for a PDF session is that one document — wherever it
+// is — and is watched the same way an Editor pane's files are: a file rewritten
+// underneath it — LaTeX, a build, Claude — reloads in place, on the page you were
+// reading.
 
 interface Entry {
   sessionId: string
