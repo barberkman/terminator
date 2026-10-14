@@ -71,9 +71,9 @@ code-signed, so the first launch gets a SmartScreen warning: **More info → Run
     previous-history — and is changed or turned off in Settings → **EDITOR**.
   - **A `.pdf` in the tree or in Quick Open** opens in a **PDF pane** beside it rather than as a
     tab. See **PDF panes** below.
-- **PDF panes** read a PDF from the project in the app's own theme — pages in the theme's
-  colours, with a toggle back to the original — and reload in place when the file is rewritten.
-  See below.
+- **PDF panes** read any PDF on disk, in the project or not, in the app's own theme — pages in
+  the theme's colours, with a toggle back to the original — and reload in place when the file is
+  rewritten. See below.
 - **Status** updates live. Claude sessions report rich states (working / waiting / idle /
   finished / error) via Claude Code hooks; plain terminals show running / idle / exited.
 - **WSL** (Windows): a session can run inside a WSL distro instead — a native Linux shell, or
@@ -537,9 +537,11 @@ rectangle in the middle of a dark window.
   PDF you click takes over that same pane rather than splitting again. Ctrl/Cmd+click a `.pdf`
   path a session printed. Or make one on purpose — the New Session dialog's **PDF** type, or
   **New session here** → **PDF…** in the sidebar — and pick the file.
-- **The file has to be inside the session's folder**, the same rule an Editor pane reads by.
-  Picking one from somewhere else in the New Session dialog moves the folder to the file's own;
-  the sidebar's **PDF…**, which is already committed to a project, says so instead.
+- **The file can be anywhere.** The folder only decides which sidebar group the pane lands in:
+  the sidebar's **PDF…** puts it under that project, and the New Session dialog keeps the folder
+  you chose — or, if you haven't chosen one yet, fills in the file's own. A printed path to a
+  `.pdf` outside the session's folder is clickable too, though every other file stays bounded by
+  it. Whatever the folder, a PDF pane reads its one document and nothing beside it.
 - **They're sessions, so they stay.** Each lands in the sidebar under its project, named after
   the file, and comes back after a restart on the page you were reading. Nothing about one starts
   or stops, so its menu offers no Start or Relaunch. Close the pane and come back — or split, or
