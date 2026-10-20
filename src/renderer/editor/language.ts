@@ -42,3 +42,24 @@ export function languageFor(path: string): LanguageDescription | null {
     (dotfile ? LanguageDescription.matchLanguageName(ALL, dotfile) : null)
   )
 }
+
+/**
+ * Fence tags that say "no language". Only `text` would otherwise match anything
+ * — it's one of LaTeX's extensions — but it's the one Claude writes most.
+ */
+const PLAIN_TAGS = new Set(['text', 'txt', 'plain', 'plaintext'])
+
+/**
+ * Map what a code block says it's written in to a language: a fence's tag
+ * (`cpp`, `bash`, `py`) or the path of the file the code belongs to (a tool
+ * call's edit). Tried as a language name or alias first, then as a filename,
+ * then as a bare extension — `py` and `rs` are nobody's name for anything.
+ */
+export function languageForTag(tag: string): LanguageDescription | null {
+  if (PLAIN_TAGS.has(tag.toLowerCase())) return null
+  return (
+    LanguageDescription.matchLanguageName(ALL, tag, false) ??
+    languageFor(tag) ??
+    languageFor(`x.${tag}`)
+  )
+}
