@@ -21,8 +21,8 @@
 import { existsSync, promises as fsp } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { SessionRuntime, TranscriptPrompt } from '../shared/types'
-import { isWsl, linuxToHost } from '../shared/wsl-path'
+import type { Session, SessionRuntime, TranscriptPrompt } from '../shared/types'
+import { isWsl, linuxToHost, sessionFolder } from '../shared/wsl-path'
 import { expandHome } from './pty-manager'
 import { readyProbe } from './wsl'
 
@@ -57,6 +57,19 @@ export async function transcriptDirFor(
 
 export function transcriptFile(dir: string, sessionId: string): string {
   return join(dir, `${sessionId}.jsonl`)
+}
+
+/**
+ * The transcript a session's conversation is read from — the conversation view's
+ * and `terminator reply`'s both. Resolved from the session alone, never from a
+ * path anyone hands in. Null when a WSL distro can't be reached to say where.
+ */
+export async function conversationFile(s: Session): Promise<string | null> {
+  try {
+    return transcriptFile(await transcriptDirFor(s.runtime, sessionFolder(s)), s.id)
+  } catch {
+    return null
+  }
 }
 
 /**

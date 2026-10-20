@@ -92,6 +92,7 @@ function EmptyState(): React.JSX.Element {
 export function PaneGrid(): React.JSX.Element {
   const tree = useStore((s) => s.tree)
   const panes = useStore((s) => s.panes)
+  const paneKeys = useStore((s) => s.paneKeys)
   const browserLive = useStore((s) => s.browserLive)
   const dragging = useStore((s) => s.draggingSessionId)
   const boxRef = useRef<HTMLDivElement>(null)
@@ -117,7 +118,9 @@ export function PaneGrid(): React.JSX.Element {
         // this one would only cover it. Asked of `browserLive` rather than of the
         // session's kind because that is the list the layer below actually renders
         // from — the two can't disagree and leave a hole.
-        browserLive.includes(id) ? null : <TerminalPane key={i} id={id} index={i} cell={cell(i)} />,
+        // Keyed by who the pane is, not where it sits, so a split opening before it
+        // or one closing never hands this component another session (paneKeys).
+        browserLive.includes(id) ? null : <TerminalPane key={paneKeys[i]} id={id} index={i} cell={cell(i)} />,
       )}
 
       {/* Never reordered — see `browserLive` in the store. A React-driven move of

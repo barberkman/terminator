@@ -1,4 +1,5 @@
 import type { CustomTheme, ThemeOverrides } from './themes'
+import type { BridgeReply, BridgeRequest } from './control'
 
 // Shared types used across main / preload / renderer.
 
@@ -570,6 +571,12 @@ export interface Settings {
    */
   relaunchOnStartup: boolean
   /**
+   * Let the `terminator` command drive the running app (Settings → SCRIPTING).
+   * Off by default: until it's turned on nothing listens for it at all, and the
+   * command only says so.
+   */
+  scripting: boolean
+  /**
    * Where Ctrl+G inside a Claude session opens the prompt. The reserved `in-app`
    * id is an Editor pane; anything else — in practice `''` — leaves the session's
    * environment alone, so Ctrl+G goes on opening whatever `$VISUAL`/`$EDITOR`
@@ -735,6 +742,16 @@ export interface FsChange {
 
 // ---- Renderer-facing API (window.terminator) -------------------------------
 
+/** Settings → SCRIPTING: where `terminator` is, and whether a new terminal will find it. */
+export interface ScriptingInfo {
+  /** The folder holding the command — the one to put on PATH. */
+  dir: string
+  /** Whether that folder is on your user PATH (Windows; elsewhere, the app's own PATH). */
+  onPath: boolean
+  /** Whether the app can add it for you — the Windows user PATH; elsewhere you add it. */
+  canAddToPath: boolean
+}
+
 export interface TerminatorApi {
   ping(): Promise<string>
 
@@ -848,6 +865,19 @@ export interface TerminatorApi {
    * theme you were using has to move the selection as well as the list.
    */
   saveCustomThemes(list: CustomTheme[]): Promise<{ themes: CustomTheme[]; settings: Settings }>
+
+  // scripting: the `terminator` command (Settings → SCRIPTING, renderer/scripting.ts)
+  /** main -> renderer: create a session the New Session dialog's way, for a script. */
+  onControlRequest(cb: (r: BridgeRequest) => void): () => void
+  controlReply(r: BridgeReply): void
+  /** The store is loaded and the request listener is up. */
+  controlReady(): void
+  /** main -> renderer: whatever fills a pane because this session is going was a script's doing. */
+  onControlQuiet(cb: (id: string) => void): () => void
+  /** Where the command lives, and whether that folder is on your PATH. */
+  scriptingInfo(): Promise<ScriptingInfo>
+  /** Put the command's folder on your user PATH (Windows). Says why when it couldn't. */
+  addCommandToPath(): Promise<ScriptingInfo & { error?: string }>
 
   // account-wide rate-limit usage (5-hour / weekly windows)
   /** The last-known snapshot, including one persisted from a previous run. */

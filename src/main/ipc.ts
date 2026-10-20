@@ -18,6 +18,7 @@ import type {
   TaskCommand,
   TranscriptPrompt,
 } from '../shared/types'
+import type { BridgeReply } from '../shared/control'
 import { attachClipboardImage, attachFiles, openAttachment, revealAttachment } from './attachments'
 import { applyBrowserUserAgent, browserCacheSize, clearBrowserData } from './browser'
 import { openInEditor, openLink, resolveOutputPath, webUrl } from './links'
@@ -35,13 +36,16 @@ import { loadSettings, rememberProject, saveSettings } from './settings'
 import { loadCustomThemes, saveCustomThemes } from './theme-store'
 import { loadUsage } from './usage-store'
 import { addWorktree, openGitGui, openInFolder, openProjectEditor, removeWorktree } from './worktree'
-import { forkTranscript, listPrompts, transcriptDirFor, transcriptFile } from './transcript'
+import { conversationFile, forkTranscript, listPrompts, transcriptDirFor } from './transcript'
 import { readConversation } from './conversation'
 import { listDistros, normalizeCreateInput, probe } from './wsl'
 import { sendPrompt } from './send-prompt'
 import { setPendingPrompt } from './prefill'
 import { finishEdit, markEditOpen, promptEditorStatus } from './prompt-edit'
 import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
+import { applyScripting } from './control-server'
+import { bridgeReply, rendererIsReady } from './scripting'
+import { addToPath, scriptingInfo } from './cli-install'
 
 /** Registers every ipcMain handler. The single IPC registry for the main process. */
 export function registerIpc(getWin: () => BrowserWindow): void {
@@ -180,13 +184,8 @@ export function registerIpc(getWin: () => BrowserWindow): void {
       const s = state.getSession(id)
       const empty = { items: [], outputs: {}, nextOffset: 0, reset: false, exists: false }
       if (!s || s.kind !== 'claude') return empty
-      let dir: string
-      try {
-        dir = await transcriptDirFor(s.runtime, sessionFolder(s))
-      } catch {
-        return empty
-      }
-      return readConversation(transcriptFile(dir, s.id), Math.max(0, from | 0))
+      const file = await conversationFile(s)
+      return file ? readConversation(file, Math.max(0, from | 0)) : empty
     },
   )
   // Driving the session from that document: the prompt is typed into the pty,
@@ -425,6 +424,8 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const next = saveSettings(patch)
     // Re-register the global hotkey in case it changed.
     applyGlobalShortcut(getWin)
+    // Start or stop listening for the `terminator` command, in case that changed.
+    applyScripting()
     // And push the user agent, in case that changed — pages already open keep the
     // old one until they navigate, which is the same deal a real browser offers.
     applyBrowserUserAgent()
@@ -455,6 +456,14 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const win = getWin()
     if (win && !win.isDestroyed()) win.setTitleBarOverlay({ color, symbolColor })
   })
+
+  // ---- scripting: the `terminator` command ----
+  // The window says when it's listening, and answers the one request main hands it
+  // (creating a session the New Session dialog's way). See scripting.ts.
+  ipcMain.on(Channels.controlReady, () => rendererIsReady())
+  ipcMain.on(Channels.controlReply, (_e, r: BridgeReply) => bridgeReply(r))
+  ipcMain.handle(Channels.scriptingInfo, () => scriptingInfo())
+  ipcMain.handle(Channels.scriptingAddToPath, () => addToPath())
 
   // ---- account-wide rate-limit usage ----
   // Read-only from here: the values are written by the statusLine reports arriving at

@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import * as pty from '@lydell/node-pty'
 import type { BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
@@ -11,6 +11,8 @@ interface PtyCreateOpts {
   args?: string[]
   cwd?: string
   env?: Record<string, string>
+  /** A folder to put at the front of PATH, ahead of everything the app inherited. */
+  prependPath?: string
   cols?: number
   rows?: number
 }
@@ -92,7 +94,7 @@ export function expandHome(p?: string): string | undefined {
   return p
 }
 
-function cleanEnv(extra?: Record<string, string>): Record<string, string> {
+function cleanEnv(extra?: Record<string, string>, prependPath?: string): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
   // Strip Claude Code's "running inside an agent" markers. If Terminator is itself
@@ -101,6 +103,13 @@ function cleanEnv(extra?: Record<string, string>): Record<string, string> {
   // transcript — breaking mode-switch resume. Remove them so claude is top-level.
   for (const k of Object.keys(env)) {
     if (/^CLAUDECODE$|^CLAUDE_CODE/i.test(k)) delete env[k]
+  }
+  if (prependPath) {
+    // Edit the key the environment already has. Windows spells it `Path`, and a
+    // second `PATH` beside it would make a block with two, where the first — the
+    // untouched one — is the one programs read.
+    const key = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH'
+    env[key] = env[key] ? `${prependPath}${delimiter}${env[key]}` : prependPath
   }
   return { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor', ...(extra ?? {}) }
 }
@@ -114,7 +123,7 @@ export function createPty(win: BrowserWindow, opts: PtyCreateOpts): string {
     cols: opts.cols ?? 80,
     rows: opts.rows ?? 24,
     cwd: expandHome(opts.cwd) || process.env.HOME || process.cwd(),
-    env: cleanEnv(opts.env),
+    env: cleanEnv(opts.env, opts.prependPath),
   })
 
   const term: Term = { proc, buf: '', flush: null }

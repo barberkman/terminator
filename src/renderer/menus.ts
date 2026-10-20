@@ -60,12 +60,15 @@ async function createSessionIn(type: TypeKey, project: ProjectRef): Promise<void
  * getOrCreate parks one in the offscreen holder, which is exactly what it's for.
  *
  * Exported because the startup relaunch prompt starts sessions the same way — off
- * screen, terminal first — and that reason is written down here.
+ * screen, terminal first — and that reason is written down here. A scripted
+ * `terminator new` uses it too, for a session it has just put in a pane: the
+ * terminal is already attached there, so this is the pane's own first start
+ * without waiting for a frame (renderer/scripting.ts).
  */
-export function startFromSidebar(id: string): void {
+export function startFromSidebar(id: string): Promise<void> {
   registry.getOrCreate(id)
   const { cols, rows } = registry.refit(id)
-  void window.terminator.startSession(id, cols, rows)
+  return window.terminator.startSession(id, cols, rows)
 }
 
 /** The message of an IPC rejection, without Electron's "Error invoking remote method" preamble. */

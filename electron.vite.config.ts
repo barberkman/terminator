@@ -53,14 +53,41 @@ function pdfjsAssets(): Plugin {
   }
 }
 
+/**
+ * Fail the build if `entry` imports a chunk it shares with the rest of the bundle.
+ * The `terminator` command (src/cli) is built alongside main but copied out on its
+ * own at run time (src/main/cli-install.ts), so anything it imports besides Node's
+ * builtins would be left behind; it takes only *types* from src/shared.
+ */
+function selfContained(entry: string): Plugin {
+  return {
+    name: 'terminator-self-contained',
+    generateBundle(_opts, bundle) {
+      for (const out of Object.values(bundle)) {
+        if (out.type !== 'chunk' || !out.isEntry || out.name !== entry) continue
+        const shared = [...out.imports, ...out.dynamicImports].filter((f) => f in bundle)
+        if (shared.length) {
+          this.error(`${entry} imports code shared with the app (${shared.join(', ')}); it may use only Node builtins and types`)
+        }
+      }
+    },
+  }
+}
+
 // Main + preload are bundled to CommonJS (no "type":"module" in package.json).
 // externalizeDepsPlugin keeps `dependencies` (notably the native @lydell/node-pty)
-// out of the bundle so they load from node_modules at runtime.
+// out of the bundle so they load from node_modules at runtime. Main's build also
+// carries the `terminator` command as a second entry, out/main/cli.js.
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin(), selfContained('cli')],
     build: {
-      rollupOptions: { input: { index: resolve(__dirname, 'src/main/index.ts') } },
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          cli: resolve(__dirname, 'src/cli/index.ts'),
+        },
+      },
     },
   },
   preload: {

@@ -52,6 +52,8 @@ export function defaultSettings(): Settings {
     sidebarSide: 'left',
     theme: DEFAULT_THEME_ID,
     relaunchOnStartup: false,
+    // Nothing listens for the `terminator` command until this is turned on.
+    scripting: false,
     // Blank leaves a Claude session's environment alone, so Ctrl+G goes on opening
     // whatever $VISUAL/$EDITOR already named. Not validated beyond this: the only
     // read is an `=== IN_APP_EDITOR_ID`, so an unknown value is inert by itself.

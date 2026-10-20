@@ -3,6 +3,15 @@ import * as registry from '../term/registry'
 import { useStore } from '../state/store'
 import { C } from '../theme'
 
+/**
+ * Whether a script put this session on screen and you haven't touched it since —
+ * its pane is focused only because the pane it filled was (see `quiet` in the
+ * store), so it must not take the keyboard from wherever you are typing.
+ */
+function placedQuietly(id: string): boolean {
+  return !!useStore.getState().quiet[id]
+}
+
 /** Mounts a session's persistent xterm into this pane; starts it on first show. */
 export function TerminalView({ id, active }: { id: string; active: boolean }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
@@ -19,7 +28,7 @@ export function TerminalView({ id, active }: { id: string; active: boolean }): R
     const raf = requestAnimationFrame(() => {
       const { cols, rows } = registry.refit(id)
       if (!everStarted) void window.terminator.startSession(id, cols, rows)
-      if (active) registry.focus(id)
+      if (active && !placedQuietly(id)) registry.focus(id)
     })
 
     return () => {
@@ -31,7 +40,7 @@ export function TerminalView({ id, active }: { id: string; active: boolean }): R
   }, [id])
 
   useEffect(() => {
-    if (active) registry.focus(id)
+    if (active && !placedQuietly(id)) registry.focus(id)
   }, [active, id])
 
   return (

@@ -20,6 +20,7 @@ import type {
   TerminatorApi,
   UsageSnapshot,
 } from '../shared/types'
+import type { BridgeReply, BridgeRequest } from '../shared/control'
 
 function on<T>(channel: string, cb: (payload: T) => void): () => void {
   const handler = (_e: unknown, payload: T) => cb(payload)
@@ -97,6 +98,13 @@ const api: TerminatorApi = {
   getGlobalShortcutStatus: () => ipcRenderer.invoke(Channels.globalShortcutStatus),
   getCustomThemes: () => ipcRenderer.invoke(Channels.themesGet),
   saveCustomThemes: (list: CustomTheme[]) => ipcRenderer.invoke(Channels.themesSave, list),
+
+  onControlRequest: (cb: (r: BridgeRequest) => void) => on(Channels.controlRequest, cb),
+  controlReply: (r: BridgeReply) => ipcRenderer.send(Channels.controlReply, r),
+  controlReady: () => ipcRenderer.send(Channels.controlReady),
+  onControlQuiet: (cb: (id: string) => void) => on(Channels.controlQuiet, cb),
+  scriptingInfo: () => ipcRenderer.invoke(Channels.scriptingInfo),
+  addCommandToPath: () => ipcRenderer.invoke(Channels.scriptingAddToPath),
 
   getUsage: () => ipcRenderer.invoke(Channels.usageGet),
   onUsageUpdated: (cb: (u: UsageSnapshot) => void) => on(Channels.usageUpdated, cb),

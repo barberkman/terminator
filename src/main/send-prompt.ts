@@ -12,7 +12,7 @@
 // Enter, so whatever the escape hatch left behind gets submitted — or read as
 // menu keystrokes by whatever the TUI shows next. See `sanitise`.
 
-import type { SendPromptResult } from '../shared/types'
+import type { SendPromptResult, Session } from '../shared/types'
 import * as ptyMgr from './pty-manager'
 import { getSession } from './state'
 
@@ -69,7 +69,26 @@ function sanitise(raw: string): string {
  * code path that is always exercised beats a rare one that only runs when
  * someone attaches a PNG.
  */
-const SUBMIT_DELAY_MS = 300
+export const SUBMIT_DELAY_MS = 300
+
+/**
+ * Why a session can't take a prompt right now, or null when it can. Its own
+ * function because a scripted `terminator send` asks it too, before it waits for
+ * a starting Claude — and has to refuse in exactly the composer's words.
+ */
+export function sendRefusal(s: Session | undefined): string | null {
+  if (!s) return 'that session is gone'
+  if (s.kind !== 'claude') return 'only a Claude session takes a prompt'
+  if (!s.alive) return `${s.name} isn't running — relaunch it first`
+  // Re-checked here even though the composer greys itself out for `waiting`: the
+  // status can flip between the render and the keystroke (Claude raises a
+  // permission dialog while you're mid-sentence). Those dialogs read a paste as
+  // menu input, so the renderer's disabled send is the courtesy and this is the
+  // guarantee. `busy` is deliberately allowed — Claude queues what arrives
+  // mid-turn, which is the whole point of being able to type ahead.
+  if (s.status === 'waiting') return `${s.name} is waiting on something in its terminal — answer that first`
+  return null
+}
 
 /**
  * Type a prompt into a Claude session and press Enter.
@@ -87,21 +106,8 @@ const SUBMIT_DELAY_MS = 300
  */
 export function sendPrompt(id: string, raw: string): SendPromptResult {
   const s = getSession(id)
-  if (!s) return { ok: false, reason: 'that session is gone' }
-  if (s.kind !== 'claude') return { ok: false, reason: 'only a Claude session takes a prompt' }
-  if (!s.alive) return { ok: false, reason: `${s.name} isn't running — relaunch it first` }
-  // Re-checked here even though the composer greys itself out for `waiting`: the
-  // status can flip between the render and the keystroke (Claude raises a
-  // permission dialog while you're mid-sentence). Those dialogs read a paste as
-  // menu input, so the renderer's disabled send is the courtesy and this is the
-  // guarantee. `busy` is deliberately allowed — Claude queues what arrives
-  // mid-turn, which is the whole point of being able to type ahead.
-  if (s.status === 'waiting') {
-    return {
-      ok: false,
-      reason: `${s.name} is waiting on something in its terminal — answer that first`,
-    }
-  }
+  const refused = sendRefusal(s)
+  if (refused || !s) return { ok: false, reason: refused ?? 'that session is gone' }
 
   const text = sanitise(raw)
   if (!text) return { ok: false, reason: 'nothing to send' }

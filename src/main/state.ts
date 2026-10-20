@@ -60,8 +60,28 @@ function persist(): void {
   saveTimer = setTimeout(() => savePersistedSessions([...sessions.values()]), 400)
 }
 
+/** Told about every session change the renderer is told about: the session, or undefined once it's removed. */
+type ChangeListener = (id: string, s: Session | undefined) => void
+const changeListeners: ChangeListener[] = []
+
+/**
+ * Hear about session changes inside main. Scripting is the listener: `terminator
+ * wait` has to see a status change the moment the window does, and listening at
+ * `emit` means it hears exactly what the status dot hears, from every path that
+ * moves one — including the exit handler, which writes the fields directly.
+ */
+export function onSessionChange(cb: ChangeListener): void {
+  changeListeners.push(cb)
+}
+
 function emit(channel: string, payload: unknown): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+  if (channel === Channels.sessionUpdated) {
+    const s = payload as Session
+    for (const l of changeListeners) l(s.id, s)
+  } else if (channel === Channels.sessionRemoved) {
+    for (const l of changeListeners) l(payload as string, undefined)
+  }
 }
 
 export function listSessions(): Session[] {
