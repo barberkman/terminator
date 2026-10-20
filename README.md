@@ -230,6 +230,11 @@ go back) swaps the live terminal for the same session read as a document: your p
 replies as rendered markdown, and **a copy button on every fenced code block**. No more
 drag-selecting across wrapped terminal lines and getting the indentation back mangled.
 
+Code is **syntax-highlighted** the way an editor tab would show it — same parsers, same theme
+colours. A fenced block goes by its tag (```` ```cpp ````, ```` ```py ````, ```` ```bash ````); an
+opened tool call goes by what it is: a Bash command as shell, an Edit or Write by its file's
+name. A block with no tag, or tagged `text`, stays plain.
+
 It isn't only for reading. There's a message box at the bottom, so the next prompt goes from here
 too — the session is driven from the same place it's read.
 
@@ -819,7 +824,8 @@ theme is seventy-odd colours and `settings.json` is a file you edit by hand.
   a group. Any individual surface can be pinned to hold still, and unpinned again.
 - **Terminal** — the full ANSI set plus cursor and selection, over a sample of terminal output.
   This is where a published palette goes.
-- **Editor syntax** — the ten token colours, shown against a real code sample.
+- **Editor syntax** — the ten token colours, shown against a real code sample. They colour code in
+  a conversation and the Notes preview too, not only editor tabs.
 - **The finer things**, folded away — the five session status colours, shadows, the icon tint,
   the selected-row and pane-header colours, the interface font weight, and the nine derived
   ramp steps, each pinnable and un-pinnable.
