@@ -417,6 +417,8 @@ async function windowsChecks(page, asker) {
     const s = readSessions().find((x) => x.id === r.out)
     check('Git Bash: --project /c/Windows is C:\\Windows', r.code === 0 && /^C:\\Windows$/i.test(s?.projectPath ?? ''), { ...r, projectPath: s?.projectPath })
     t('remove', r.out)
+    r = shell(gitBash, ['-c', 'export PATH="$(cygpath -u "$BIN"):$PATH"; terminator wait "$ID" closed --timeout 1s; echo "rc=$?"'], { BIN: bin, ID: asker })
+    check('Git Bash: exit codes come through', /rc=2/.test(r.out), r)
   }
 
   // A WSL shell: its sh shim hands over to terminator.exe through interop.
@@ -439,12 +441,12 @@ async function windowsChecks(page, asker) {
       r.code === 0 && s?.runtime?.kind === 'wsl' && s?.projectPath === '/tmp/wproj',
       { ...r, session: s && { runtime: s.runtime, projectPath: s.projectPath } },
     )
-    // Whether this WSL can be entered again while the app has a shell open in it —
-    // nothing of the command involved.
-    note(`WSL while the app has a shell in it: ${JSON.stringify(shell('wsl.exe', ['-d', distro, '--', 'echo', 'still-here'], {}, 30_000))}`)
+    // Removed from Windows: on the runner's WSL 1, the distro can't be entered at all —
+    // `wsl.exe -- echo` hangs too — while the app has a shell open in it.
     check('WSL: remove', t('remove', id).code === 0)
     await sleep(2000)
-    note(`WSL after it's gone: ${JSON.stringify(wsl('terminator list --json | head -c 40; echo', 60_000))}`)
+    r = wsl('terminator list --json')
+    check('WSL: the command works again once that shell is gone', r.code === 0 && !r.out.includes(id) && r.out.includes(asker), r)
   }
 
   // Add to PATH — it edits the user PATH for real, so only on CI.

@@ -91,6 +91,10 @@ function posixShim(exe: string, cli: string, home: string): string {
  *
  * Without a compiled launcher both fall back to the app's exe directly, the way
  * Claude's Ctrl+G shim runs it (wslShimSource).
+ *
+ * WSL runs the Windows program and then exits with its code, rather than `exec`ing
+ * it: a Windows program exec'd from a script through WSL 1's interop hands back 0
+ * whatever it exited with, and `wait`'s timeout is exit code 2.
  */
 function windowsShellShim(exe: string, cli: string, home: string): string {
   return [
@@ -105,13 +109,14 @@ function windowsShellShim(exe: string, cli: string, home: string): string {
     '  TERMINATOR_WSL_DISTRO=$WSL_DISTRO_NAME TERMINATOR_WSL_PWD=$PWD',
     '  WSLENV="TERMINATOR_WSL_DISTRO:TERMINATOR_WSL_PWD${WSLENV:+:$WSLENV}"',
     '  export TERMINATOR_WSL_DISTRO TERMINATOR_WSL_PWD WSLENV',
-    '  if [ -f "$here/terminator.exe" ]; then exec "$here/terminator.exe" "$@"; fi',
+    '  if [ -f "$here/terminator.exe" ]; then "$here/terminator.exe" "$@"; exit $?; fi',
     '  exe=$(wslpath -u "$win_exe" 2>/dev/null)',
     '  ELECTRON_RUN_AS_NODE=1 TERMINATOR_HOME=$win_home',
     '  WSLENV="ELECTRON_RUN_AS_NODE:TERMINATOR_HOME:$WSLENV"',
     '  export ELECTRON_RUN_AS_NODE TERMINATOR_HOME WSLENV',
     `  if [ ! -f "$exe" ]; then echo "Terminator isn't running." >&2; exit 1; fi`,
-    '  exec "$exe" "$win_cli" "$@"',
+    '  "$exe" "$win_cli" "$@"',
+    '  exit $?',
     'fi',
     'MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*"',
     'TERMINATOR_MSYS_ROOT=$(cygpath -w / 2>/dev/null)',
