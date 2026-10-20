@@ -432,6 +432,18 @@ async function windowsChecks(page, asker) {
     check('WSL: list through interop', r.code === 0 && r.out.includes(`"id":"${asker}"`), r)
     r = wsl(`terminator wait ${asker} closed --timeout 1s; echo "rc=$?"`)
     check('WSL: exit codes come through interop', /rc=2/.test(r.out), r)
+    // Where an exit code gets lost on the way back through interop, if it does.
+    const electronExe = fs.readFileSync(path.join(bin, 'terminator.target'), 'utf8').split(/\r?\n/)[0]
+    for (const probe of [
+      'cmd.exe /c exit 3',
+      "powershell.exe -NoProfile -Command 'exit 3'",
+      `"$(wslpath -u '${bin}')/terminator.exe" stop nope/nope`,
+      `ELECTRON_RUN_AS_NODE=1 WSLENV=ELECTRON_RUN_AS_NODE "$(wslpath -u '${electronExe}')" -e "process.exitCode = 3"`,
+      `ELECTRON_RUN_AS_NODE=1 WSLENV=ELECTRON_RUN_AS_NODE "$(wslpath -u '${electronExe}')" -e "process.exit(3)"`,
+    ]) {
+      const p = wsl(`${probe} > /dev/null 2>&1; echo "rc=$?"`, 60_000)
+      note(`WSL exit code of ${probe}: ${p.out || JSON.stringify(p)}`)
+    }
     r = wsl('mkdir -p /tmp/wproj && terminator new shell --project wproj --name wsl1 --split right')
     const id = r.out.split(/\r?\n/).pop()
     await sleep(1000)

@@ -62,17 +62,22 @@ jobs:
           TERMINATOR_TEST_WSL: Ubuntu-24.04
         run: npm run test:scripting
 
+      # The packaged builds are tested even when the development build failed, so
+      # one run reports everything that's wrong rather than the first thing.
       - name: Build installer and portable exe
+        if: ${{ !cancelled() }}
         shell: bash
         run: npm run dist:win -- --publish never
 
       - name: Test (installed layout)
+        if: ${{ !cancelled() }}
         env:
           TERMINATOR_TEST_OUT: ${{ runner.temp }}/scripting
           TERMINATOR_APP: release/win-unpacked/Terminator.exe
         run: node test/scripting/e2e.js --quick
 
       - name: Test (portable exe)
+        if: ${{ !cancelled() }}
         env:
           TERMINATOR_TEST_OUT: ${{ runner.temp }}/scripting
         run: node test/scripting/e2e.js --portable (Get-ChildItem release/Terminator-Portable-*.exe).FullName
