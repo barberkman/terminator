@@ -423,12 +423,16 @@ async function windowsChecks(page, asker) {
   const distro = process.env.TERMINATOR_TEST_WSL
   if (!distro) note('TERMINATOR_TEST_WSL not set: no WSL check')
   else {
-    const script = [
-      `export PATH="$PATH:$(wslpath -u '${bin}')"`,
-      'mkdir -p /tmp/wproj && cd /tmp',
-      'terminator new shell --project wproj --name wsl1 --split right',
-    ].join(' && ')
-    r = shell('wsl.exe', ['-d', distro, '--', 'bash', '-lc', script], {}, 120_000)
+    /** A command line in the distro, with the command's folder on its PATH, from `cwd` there. */
+    const wsl = (cmd, cwd = '/tmp') =>
+      shell('wsl.exe', ['-d', distro, '--', 'bash', '-lc', `export PATH="$PATH:$(wslpath -u '${bin}')" && cd ${cwd} && ${cmd}`], {}, 150_000)
+    /** What is still running of the command, seen from Windows — where a hang is stuck. */
+    const leftovers = () =>
+      pwsh(
+        "Get-CimInstance Win32_Process | ? { $_.CommandLine -match 'terminator' -and $_.Name -match 'terminator|electron' } | % { \"$($_.ProcessId) $($_.Name) $($_.CommandLine)\" }",
+      ).out
+    note(`WSL interop: ${JSON.stringify(wsl('timeout 30 cmd.exe /c echo interop-ok; echo "rc=$?"'))}`)
+    r = wsl('mkdir -p /tmp/wproj && terminator new shell --project wproj --name wsl1 --split right')
     const id = r.out.split(/\r?\n/).pop()
     await sleep(1000)
     const s = readSessions().find((x) => x.id === id)
@@ -437,7 +441,18 @@ async function windowsChecks(page, asker) {
       r.code === 0 && s?.runtime?.kind === 'wsl' && s?.projectPath === '/tmp/wproj',
       { ...r, session: s && { runtime: s.runtime, projectPath: s.projectPath } },
     )
-    r = shell('wsl.exe', ['-d', distro, '--', 'bash', '-lc', `export PATH="$PATH:$(wslpath -u '${bin}')" && terminator list --json`], {}, 120_000)
+    for (const [cmd, cwd] of [
+      ['terminator list --json', '/tmp'],
+      ['terminator list', '/tmp'],
+      ['terminator list --json', '"$(wslpath -u \'' + proj + '\')"'],
+      [`terminator wait ${id} idle working closed --timeout 2s`, '/tmp'],
+    ]) {
+      r = wsl(`timeout 40 ${cmd}; echo "rc=$?"`, cwd)
+      note(`WSL ${cmd} (in ${cwd}): ${JSON.stringify(r)}`)
+      const left = leftovers()
+      if (left) note(`still running after it:\n${left}`)
+    }
+    r = wsl('terminator list --json')
     check('WSL: list through interop', r.code === 0 && r.out.includes(`"id":"${id}"`), r)
     check('WSL: remove', t('remove', id).code === 0)
   }
