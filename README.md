@@ -23,7 +23,12 @@ binaries, so there's no compile/rebuild step.
 npm run build      # production build into out/
 npm start          # run the production build
 npm run typecheck  # tsc, no emit
+npm run test:scripting  # the `terminator` command end to end, against out/ (Linux: under xvfb-run -a)
 ```
+
+The scripting test also runs on GitHub Actions, on Windows and Linux, for every push that touches
+the app ([`.github/workflows/scripting.yml`](.github/workflows/scripting.yml)); see
+[`test/scripting/e2e.js`](test/scripting/e2e.js) for what it covers.
 
 ### Windows builds
 
@@ -802,9 +807,11 @@ What a script can't do:
 A few things worth knowing:
 
 - `send` knows Claude is ready, and `wait` knows a prompt has started its turn, from Claude's own
-  hooks (see **How Claude state detection works**). A question Claude asks without telling its
-  hooks — such as whether to trust a folder it hasn't seen before — is invisible to a script, so
-  open a new project (or a new worktree folder) by hand once before scripting it.
+  hooks (see **How Claude state detection works**). What Claude asks before it's ready — first-run
+  setup, or whether to trust a folder it hasn't seen (a new project, or a new worktree) — comes
+  before those hooks, so `send` holds and never types into it: answer it in the session's
+  terminal and the prompt goes in; left unanswered for two minutes, `send` gives up and says so.
+  Opening a new project by hand once before scripting it saves the wait.
 - A prompt that never becomes a turn of its own — a slash command such as `/clear` — is let go
   after 20 seconds of quiet, and `wait` says so beside its answer.
 - Windows PowerShell 5.1 drops double quotes inside an argument; escape them as `\"` there, or use

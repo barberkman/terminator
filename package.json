@@ -9,6 +9,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test:scripting": "node test/scripting/e2e.js",
     "dist": "electron-vite build && electron-builder",
     "dist:linux": "electron-vite build && electron-builder --linux AppImage",
     "dist:win": "electron-vite build && electron-builder --win"
@@ -76,6 +77,7 @@
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "pdfjs-dist": "6.3.289",
+    "playwright-core": "1.56.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "typescript": "^5.9.0",
