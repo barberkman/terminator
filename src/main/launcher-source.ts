@@ -8,9 +8,12 @@
 // reading a word of it; the CLI's parser sees exactly what PowerShell meant.
 //
 // It is also the console-subsystem program PowerShell waits for, which the app's
-// exe (a GUI program) is not. The handles go across explicitly
-// (STARTF_USESTDHANDLES): a GUI-subsystem child doesn't pick up its parent's pipes
-// on its own, so `$id = terminator new …` would otherwise capture nothing.
+// exe (a GUI program) is not — and the one that owns the output. The child writes
+// into plain pipes, and this copies their bytes on to its own stdout and stderr,
+// whatever those are: a console, a PowerShell pipe, a file, or the handles WSL's
+// interop hands a Windows program, which Node in the GUI-subsystem exe can't open
+// when given them directly. Copied as bytes, so `reply > x.md` gets exactly the
+// UTF-8 the command wrote.
 //
 // Built at runtime with the C# compiler every Windows has in its .NET Framework
 // folder (cli-install.ts), so it needs no toolchain at build time and is rebuilt
@@ -19,35 +22,14 @@
 // rewrites each time it starts, because a portable build moves every launch.
 
 export const LAUNCHER_SOURCE = String.raw`using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 static class Launcher {
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-  struct STARTUPINFO {
-    public int cb; public string lpReserved; public string lpDesktop; public string lpTitle;
-    public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
-    public short wShowWindow, cbReserved2;
-    public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
-  }
-  [StructLayout(LayoutKind.Sequential)]
-  struct PROCESS_INFORMATION { public IntPtr hProcess, hThread; public int dwProcessId, dwThreadId; }
-  delegate bool CtrlHandler(int type);
-
-  [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-  static extern bool CreateProcess(string app, StringBuilder cmd, IntPtr pa, IntPtr ta, bool inherit,
-    uint flags, IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
-  [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
-  [DllImport("kernel32.dll")] static extern bool SetHandleInformation(IntPtr h, int mask, int flags);
-  [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr h, uint ms);
-  [DllImport("kernel32.dll")] static extern bool GetExitCodeProcess(IntPtr h, out uint code);
-  [DllImport("kernel32.dll")] static extern bool TerminateProcess(IntPtr h, uint code);
-  [DllImport("kernel32.dll")] static extern bool SetConsoleCtrlHandler(CtrlHandler h, bool add);
   [DllImport("kernel32.dll")] static extern IntPtr GetCommandLineW();
-
-  static IntPtr child = IntPtr.Zero;
-  static CtrlHandler onCtrl; // held here so the GC can't collect it while Windows holds a pointer
 
   // Everything after the program's own name, exactly as it was typed. Windows ends
   // argv[0] at the closing quote when it starts with one, else at the first blank.
@@ -63,10 +45,23 @@ static class Launcher {
     return line.Substring(i);
   }
 
-  static IntPtr Inheritable(int which) {
-    IntPtr h = GetStdHandle(which);
-    if (h != IntPtr.Zero && h != new IntPtr(-1)) SetHandleInformation(h, 1, 1);
-    return h;
+  // Copy one of the child's pipes onto one of ours, byte for byte, as it arrives.
+  static Thread Pump(Stream from, Stream to) {
+    Thread t = new Thread(delegate () {
+      byte[] buf = new byte[65536];
+      try {
+        int n;
+        while ((n = from.Read(buf, 0, buf.Length)) > 0) {
+          to.Write(buf, 0, n);
+          to.Flush();
+        }
+      } catch (IOException) {
+        // the reader went away: nothing left to deliver
+      }
+    });
+    t.IsBackground = true;
+    t.Start();
+    return t;
   }
 
   static int Main() {
@@ -78,29 +73,37 @@ static class Launcher {
       Console.Error.WriteLine("Terminator isn't running.");
       return 1;
     }
+    // Inherited by the child; set here rather than through StartInfo, whose
+    // environment table lower-cases every name it copies.
     Environment.SetEnvironmentVariable("ELECTRON_RUN_AS_NODE", "1");
     Environment.SetEnvironmentVariable("TERMINATOR_HOME", target[2]);
 
-    STARTUPINFO si = new STARTUPINFO();
-    si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
-    si.dwFlags = 0x100; // STARTF_USESTDHANDLES
-    si.hStdInput = Inheritable(-10);
-    si.hStdOutput = Inheritable(-11);
-    si.hStdError = Inheritable(-12);
-    StringBuilder cmd = new StringBuilder("\"" + target[0] + "\" \"" + target[1] + "\"" + Tail());
-    PROCESS_INFORMATION pi;
-    if (!CreateProcess(target[0], cmd, IntPtr.Zero, IntPtr.Zero, true, 0, IntPtr.Zero, null, ref si, out pi)) {
-      Console.Error.WriteLine("Couldn't start Terminator's command (error " + Marshal.GetLastWin32Error() + ").");
+    // Arguments goes onto the command line as given: the tail, untouched.
+    ProcessStartInfo start = new ProcessStartInfo(target[0], "\"" + target[1] + "\"" + Tail());
+    start.UseShellExecute = false;
+    start.RedirectStandardOutput = true;
+    start.RedirectStandardError = true;
+    Process child;
+    try { child = Process.Start(start); }
+    catch (Exception e) {
+      Console.Error.WriteLine("Couldn't start Terminator's command: " + e.Message);
       return 1;
     }
-    child = pi.hProcess;
+
     // Ctrl+C ends the command, which drops its request — a 'wait' stops waiting.
-    onCtrl = delegate (int type) { TerminateProcess(child, 130); return true; };
-    SetConsoleCtrlHandler(onCtrl, true);
-    WaitForSingleObject(pi.hProcess, 0xFFFFFFFF);
-    uint code;
-    GetExitCodeProcess(pi.hProcess, out code);
-    return (int)code;
+    bool cancelled = false;
+    Console.CancelKeyPress += delegate (object sender, ConsoleCancelEventArgs e) {
+      e.Cancel = true;
+      cancelled = true;
+      try { child.Kill(); } catch { }
+    };
+
+    Thread outPump = Pump(child.StandardOutput.BaseStream, Console.OpenStandardOutput());
+    Thread errPump = Pump(child.StandardError.BaseStream, Console.OpenStandardError());
+    child.WaitForExit();
+    outPump.Join();
+    errPump.Join();
+    return cancelled ? 130 : child.ExitCode;
   }
 }
 `

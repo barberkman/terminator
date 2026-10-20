@@ -94,8 +94,8 @@ function t(...a) {
   return { code: r.status, out: (r.stdout ?? '').trim(), err: (r.stderr ?? '').trim() }
 }
 /** A script in a shell (pwsh, powershell, bash), with the command's folder on PATH. */
-function shell(exe, a, extraEnv = {}) {
-  const r = spawnSync(exe, a, { env: withPath({ ...env, ...extraEnv }, bin), encoding: 'utf8', cwd: proj, timeout: 600_000 })
+function shell(exe, a, extraEnv = {}, timeout = 600_000) {
+  const r = spawnSync(exe, a, { env: withPath({ ...env, ...extraEnv }, bin), encoding: 'utf8', cwd: proj, timeout })
   return { code: r.status, out: (r.stdout ?? '').trim(), err: (r.stderr ?? '').trim() }
 }
 const pwsh = (script, exe = 'pwsh') => shell(exe, ['-NoProfile', '-NonInteractive', '-Command', script])
@@ -428,7 +428,7 @@ async function windowsChecks(page, asker) {
       'mkdir -p /tmp/wproj && cd /tmp',
       'terminator new shell --project wproj --name wsl1 --split right',
     ].join(' && ')
-    r = shell('wsl.exe', ['-d', distro, '--', 'bash', '-lc', script])
+    r = shell('wsl.exe', ['-d', distro, '--', 'bash', '-lc', script], {}, 120_000)
     const id = r.out.split(/\r?\n/).pop()
     await sleep(1000)
     const s = readSessions().find((x) => x.id === id)
@@ -437,7 +437,7 @@ async function windowsChecks(page, asker) {
       r.code === 0 && s?.runtime?.kind === 'wsl' && s?.projectPath === '/tmp/wproj',
       { ...r, session: s && { runtime: s.runtime, projectPath: s.projectPath } },
     )
-    r = shell('wsl.exe', ['-d', distro, '--', 'bash', '-lc', `export PATH="$PATH:$(wslpath -u '${bin}')" && terminator list --json`])
+    r = shell('wsl.exe', ['-d', distro, '--', 'bash', '-lc', `export PATH="$PATH:$(wslpath -u '${bin}')" && terminator list --json`], {}, 120_000)
     check('WSL: list through interop', r.code === 0 && r.out.includes(`"id":"${id}"`), r)
     check('WSL: remove', t('remove', id).code === 0)
   }
