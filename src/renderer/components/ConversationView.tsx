@@ -3,6 +3,7 @@ import type { ConversationItem, Session, SessionStatus, ToolOutput } from '../..
 import { C, accentA, dotStyle, ink, sz } from '../theme'
 import { Icon } from '../icons'
 import { CodeBlock, renderMarkdown } from '../markdown'
+import { languageForTag } from '../editor/language'
 import { quotePaths } from '../../shared/prompt-path'
 import { PENDING_UNSURE_MS, reconcile, replyText, toTurns, type Turn } from '../../shared/conversation-turns'
 import * as registry from '../term/registry'
@@ -228,7 +229,7 @@ const ToolRow = memo(function ToolRow({
                 {f.label.toUpperCase()}
               </div>
               {f.code ? (
-                <CodeBlock text={f.text} />
+                <CodeBlock text={f.text} lang={f.lang ? languageForTag(f.lang) : null} />
               ) : (
                 <div style={{ fontSize: 12, color: C.body, wordBreak: 'break-all' }}>{f.text}</div>
               )}

@@ -62,7 +62,10 @@ const S = {
   invalid: 'var(--c-syn-invalid)',
 }
 
-const highlight = HighlightStyle.define([
+// Exported because it's also what colours code outside an editor — a fenced
+// block in a conversation or the Notes preview (editor/highlight.tsx) — so the
+// same file reads the same in a tab and in a reply.
+export const syntaxStyle = HighlightStyle.define([
   { tag: t.keyword, color: S.keyword },
   { tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName], color: S.name },
   { tag: [t.function(t.variableName), t.labelName], color: S.func },
@@ -97,5 +100,5 @@ const highlight = HighlightStyle.define([
 ])
 
 export function editorTheme(dark: boolean): Extension {
-  return [chrome(dark), syntaxHighlighting(highlight)]
+  return [chrome(dark), syntaxHighlighting(syntaxStyle)]
 }

@@ -216,6 +216,11 @@ export interface ToolField {
   text: string
   /** Render as a code block (monospace, copy button) rather than a plain line. */
   code: boolean
+  /**
+   * What a code field is written in, to highlight it: a fence-style tag (`bash`,
+   * `json`) or the path of the file the code belongs to. Absent means plain text.
+   */
+  lang?: string
   /** True when `text` was cut to keep the payload sane — say so next to it. */
   clipped: boolean
 }

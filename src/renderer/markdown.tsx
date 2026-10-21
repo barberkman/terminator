@@ -6,11 +6,18 @@
 //
 // Structural styling lives in styles.css under `.md-body` / `.md-pre` /
 // `.md-inline-code`, so a caller only has to put `.md-body` on its container.
+//
+// A fence's language tag (```cpp) picks the parser its block is highlighted with;
+// the colours are the editor's own (editor/highlight.tsx), so code in a reply
+// looks like the same code open in a tab.
 
 import { useState } from 'react'
+import type { LanguageDescription } from '@codemirror/language'
 import { webUrl, webUrlRe } from '../shared/url'
 import { C, FONT } from './theme'
 import { clickLabel, clickOpens, openMenuForTarget, openWeb, trimUrl } from './term/links'
+import { languageForTag } from './editor/language'
+import { useHighlighted } from './editor/highlight'
 
 /**
  * A link in rendered markdown. Never a plain anchor.
@@ -61,9 +68,19 @@ function MdLink({ href, children }: { href: string; children: React.ReactNode })
  * The button floats inside the `<pre>` rather than sitting on top of it: lines
  * wrap, so a long first line would otherwise run underneath it. Floated, the first
  * line wraps short of the button and every line after it gets the full width.
+ *
+ * `lang` is the language to highlight it in; without one (or until its parser
+ * has loaded) it's plain text. Copy always copies `text` as given.
  */
-export function CodeBlock({ text }: { text: string }): React.JSX.Element {
+export function CodeBlock({
+  text,
+  lang,
+}: {
+  text: string
+  lang?: LanguageDescription | null
+}): React.JSX.Element {
   const [copied, setCopied] = useState(false)
+  const code = useHighlighted(text, lang)
   const copy = () => {
     window.terminator.clipboardWrite(text)
     setCopied(true)
@@ -94,7 +111,7 @@ export function CodeBlock({ text }: { text: string }): React.JSX.Element {
         >
           {copied ? 'Copied' : 'Copy'}
         </button>
-        <code>{text}</code>
+        <code>{code}</code>
       </pre>
     </div>
   )
@@ -214,11 +231,13 @@ export function renderMarkdown(src: string): React.ReactNode[] {
 
     // Fenced code block
     if (/^```/.test(line)) {
+      // The info string's first word is the language: ```cpp, ```py title="x".
+      const tag = /^```\s*([^\s`]*)/.exec(line)![1]
       const buf: string[] = []
       i++
       while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++])
       i++ // closing fence
-      blocks.push(<CodeBlock key={key()} text={buf.join('\n')} />)
+      blocks.push(<CodeBlock key={key()} text={buf.join('\n')} lang={tag ? languageForTag(tag) : null} />)
       continue
     }
 

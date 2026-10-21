@@ -100,24 +100,24 @@ function safeJson(v: unknown): string {
  */
 function toolFields(name: string, input: Record<string, unknown>): ToolField[] {
   const fields: ToolField[] = []
-  const add = (label: string, text: string, code: boolean) => {
+  const add = (label: string, text: string, code: boolean, lang?: string) => {
     if (!text.trim()) return
-    fields.push({ label, code, ...clip(text) })
+    fields.push({ label, code, lang, ...clip(text) })
   }
 
   switch (name) {
     case 'Bash':
-      add('Command', str(input.command), true)
+      add('Command', str(input.command), true, 'bash')
       add('Description', str(input.description), false)
       break
     case 'Edit':
       add('File', str(input.file_path), false)
-      add('Replaced', str(input.old_string), true)
-      add('With', str(input.new_string), true)
+      add('Replaced', str(input.old_string), true, str(input.file_path))
+      add('With', str(input.new_string), true, str(input.file_path))
       break
     case 'Write':
       add('File', str(input.file_path), false)
-      add('Contents', str(input.content), true)
+      add('Contents', str(input.content), true, str(input.file_path))
       break
     case 'Read':
       add('File', str(input.file_path), false)
@@ -137,10 +137,10 @@ function toolFields(name: string, input: Record<string, unknown>): ToolField[] {
       add('Prompt', str(input.prompt), false)
       break
     default:
-      add('Input', safeJson(input), true)
+      add('Input', safeJson(input), true, 'json')
   }
   // A known tool called with something unexpected would otherwise show nothing.
-  if (!fields.length) add('Input', safeJson(input), true)
+  if (!fields.length) add('Input', safeJson(input), true, 'json')
   return fields
 }
 
