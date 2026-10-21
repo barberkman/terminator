@@ -98,6 +98,18 @@ export const Channels = {
   windowTitleBar: 'window:titleBar',
   globalShortcutStatus: 'globalShortcut:status',
 
+  // scripting: the `terminator` command (control-server.ts, scripting.ts). The
+  // request/reply pair carries the one command main needs the window for —
+  // creating a session the New Session dialog's way — and `controlReady` says the
+  // window is listening. `controlQuiet` (main -> renderer) marks a session that a
+  // script's action put on screen, so it doesn't take the keyboard.
+  controlRequest: 'control:request',
+  controlReply: 'control:reply',
+  controlReady: 'control:ready',
+  controlQuiet: 'control:quiet',
+  scriptingInfo: 'scripting:info',
+  scriptingAddToPath: 'scripting:addToPath',
+
   // account-wide rate-limit usage (usage.json). `usageUpdated` is a main -> renderer
   // event; it lives with its feature rather than in the events block above, the same
   // way `fsChanged` does.

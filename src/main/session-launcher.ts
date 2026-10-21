@@ -19,6 +19,7 @@ import { finishEditsForSession, promptEditorCommand, promptEditorCommandFor } fr
 import { reportPort, reportToken } from './report-server'
 import { shellRunArgs, quoteFor, shquote } from './shell'
 import { readyProbe, reap, reapDetached, winToLinux, wslExe } from './wsl'
+import { commandDir } from './cli-install'
 
 export interface StartOpts {
   cols?: number
@@ -57,11 +58,21 @@ function startWindows(win: BrowserWindow, s: Session, opts: StartOpts): void {
     // Plain interactive shell. Build/Run dedicated terminals (s.task set) use this
     // same persistent shell; their command is typed in via runTaskCommand so the
     // prompt stays alive after it finishes.
-    ptyMgr.createPty(win, { id, file: settings.defaultShell, args: settings.shellArgs, cwd, cols, rows })
+    ptyMgr.createPty(win, {
+      id,
+      file: settings.defaultShell,
+      args: settings.shellArgs,
+      cwd,
+      cols,
+      rows,
+      // `terminator` is on hand in a shell you opened here (see cli-install.ts).
+      prependPath: commandDir(),
+    })
     markStarted(id)
     setStatus(id, 'idle', 'idle')
     return
   }
+  muted.delete(id)
 
   // Claude session: inject hooks + statusLine via a per-session --settings file,
   // force --session-id so hook/statusLine payloads map back to this session, and
@@ -128,6 +139,21 @@ function startWindows(win: BrowserWindow, s: Session, opts: StartOpts): void {
 
 /** Starts in flight. A second Start while the first is still asking its distro is dropped. */
 const starting = new Map<string, { cancelled: boolean }>()
+/** Claude sessions launched where no hook can report back (WSL with interop off). */
+const muted = new Set<string>()
+
+/** A start still asking its distro: not running yet, but on its way (and stoppable). */
+export function isStarting(id: string): boolean {
+  return starting.has(id)
+}
+
+/**
+ * Whether a Claude session's hooks can reach the app. Without them its status
+ * never moves past "ready", so nothing can tell when it is up or done.
+ */
+export function reportsStatus(id: string): boolean {
+  return !muted.has(id)
+}
 /** The distro and kind of each running WSL pty, captured at spawn: a removed session is gone before its exit arrives. */
 const liveWsl = new Map<string, { distro: string; kind: Session['kind'] }>()
 /** Reaps still running for an exited WSL Claude. Its next start waits on one. */
@@ -176,6 +202,9 @@ async function startWsl(win: BrowserWindow, id: string, opts: StartOpts): Promis
         cols,
         rows,
         env: wslEnv({ COLORTERM: 'truecolor' }),
+        // WSL appends the Windows PATH it was started with, so this is how the
+        // distro's shell finds `terminator` too — last, after its own commands.
+        prependPath: commandDir(),
       })
       liveWsl.set(id, { distro: p.distro, kind: s.kind })
       markStarted(id)
@@ -228,6 +257,8 @@ async function startWsl(win: BrowserWindow, id: string, opts: StartOpts): Promis
       env: wslEnv({ TERMINATOR_LAUNCH: launch }),
     })
     liveWsl.set(id, { distro: p.distro, kind: s.kind })
+    if (p.interop && p.exeReachable) muted.delete(id)
+    else muted.add(id)
     markStarted(id)
     // Status comes back through interop. Without it the session still runs, it just
     // can't say what it's doing — so say that, rather than sit on "ready" forever.

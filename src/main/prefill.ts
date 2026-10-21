@@ -9,6 +9,13 @@ import * as ptyMgr from './pty-manager'
 
 const pending = new Map<string, string>()
 
+/**
+ * How long after SessionStart Claude's input box can take typing. The hook fires
+ * before the box has painted; this is the beat both a branch's draft and a
+ * scripted `terminator send` wait out before typing into it.
+ */
+export const READY_BEAT_MS = 500
+
 export function setPendingPrompt(id: string, text: string): void {
   if (text.trim()) pending.set(id, text)
 }
@@ -27,5 +34,5 @@ export function flushPendingPrompt(id: string): void {
   if (text === undefined) return
   pending.delete(id)
   // SessionStart fires before the input box has painted; give it a beat.
-  setTimeout(() => ptyMgr.writePty(id, `\x1b[200~${text}\x1b[201~`), 500)
+  setTimeout(() => ptyMgr.writePty(id, `\x1b[200~${text}\x1b[201~`), READY_BEAT_MS)
 }

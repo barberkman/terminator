@@ -7,6 +7,7 @@ import { beginEdit, finishEditsForSession, installPromptEditor } from './prompt-
 import { REPORTER_SOURCE } from './reporter-source'
 import { getSession, notify, setStatus, updateSession } from './state'
 import { flushPendingPrompt } from './prefill'
+import { claudeReady, promptSubmitted } from './claude-turns'
 import { recordUsage } from './usage-store'
 import type { SessionMetrics, SessionStatus, UsageWindow } from '../shared/types'
 
@@ -197,6 +198,12 @@ function handleHook(p: Record<string, unknown>, at: number): void {
     turns.delete(id)
     return
   }
+
+  // What `terminator send` and `wait` go by (claude-turns.ts), taken ahead of the
+  // ordering checks below: a submit that lands after its own Stop is late, not
+  // stale — it is still the only receipt that a typed prompt became a turn.
+  if (event === 'UserPromptSubmit') promptSubmitted(id, str(p.prompt) ?? '')
+  else if (event === 'SessionStart' && str(p.source) !== 'compact') claudeReady(id)
 
   const promptId = str(p.prompt_id)
   const t = turnOf(id)

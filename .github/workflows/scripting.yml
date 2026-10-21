@@ -1,0 +1,120 @@
+name: Scripting test
+
+# The `terminator` command (README → Scripting) against the real app:
+# test/scripting/e2e.js starts Terminator with a throwaway profile and drives it
+# with the command the app installs, the way a script would.
+#
+# Windows is where most of it can go wrong — the compiled launcher, PowerShell's
+# quoting, the .cmd fallback, Git Bash, a WSL shell, Add to PATH, the installed and
+# portable builds — so that job is the long one. Linux runs the same test under a
+# virtual display.
+#
+# Runs on every push that touches the app, on any branch: a PR's branch is tested
+# before the PR is opened, and not a second time once it is.
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'test/scripting/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'electron.vite.config.ts'
+      - '.github/workflows/scripting.yml'
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes an older run moot.
+concurrency:
+  group: scripting-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      # Hosted runners have no nested virtualisation, so WSL 2 can't run there;
+      # WSL 1 has the interop the command's WSL shim relies on.
+      - uses: Vampire/setup-wsl@v7
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: 1
+
+      - name: Test (development build)
+        env:
+          TERMINATOR_TEST_OUT: ${{ runner.temp }}/scripting
+          TERMINATOR_TEST_WSL: Ubuntu-24.04
+        run: npm run test:scripting
+
+      # The packaged builds are tested even when the development build failed, so
+      # one run reports everything that's wrong rather than the first thing.
+      - name: Build installer and portable exe
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: npm run dist:win -- --publish never
+
+      - name: Test (installed layout)
+        if: ${{ !cancelled() }}
+        env:
+          TERMINATOR_TEST_OUT: ${{ runner.temp }}/scripting
+          TERMINATOR_APP: release/win-unpacked/Terminator.exe
+        run: node test/scripting/e2e.js --quick
+
+      - name: Test (portable exe)
+        if: ${{ !cancelled() }}
+        env:
+          TERMINATOR_TEST_OUT: ${{ runner.temp }}/scripting
+        run: node test/scripting/e2e.js --portable (Get-ChildItem release/Terminator-Portable-*.exe).FullName
+
+      - name: Upload the test's work folder
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scripting-windows
+          path: ${{ runner.temp }}/scripting
+          retention-days: 7
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Test
+        env:
+          TERMINATOR_TEST_OUT: ${{ runner.temp }}/scripting
+        run: xvfb-run -a npm run test:scripting
+
+      - name: Upload the test's work folder
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scripting-linux
+          path: ${{ runner.temp }}/scripting
+          retention-days: 7

@@ -23,7 +23,12 @@ binaries, so there's no compile/rebuild step.
 npm run build      # production build into out/
 npm start          # run the production build
 npm run typecheck  # tsc, no emit
+npm run test:scripting  # the `terminator` command end to end, against out/ (Linux: under xvfb-run -a)
 ```
+
+The scripting test also runs on GitHub Actions, on Windows and Linux, for every push that touches
+the app ([`.github/workflows/scripting.yml`](.github/workflows/scripting.yml)); see
+[`test/scripting/e2e.js`](test/scripting/e2e.js) for what it covers.
 
 ### Windows builds
 
@@ -96,6 +101,10 @@ code-signed, so the first launch gets a SmartScreen warning: **More info → Run
 - **Write a prompt in an editor**: Claude's **Ctrl+G** can open the prompt you're typing in an
   in-app Editor tab instead of a terminal editor — the session waits, and a button hands it back.
   Off by default. See below.
+- **Script it**: the `terminator` command drives the running app the way you do — opens a
+  session in a pane, sends it a prompt, waits for the turn, reads the reply, stops and removes
+  it — so every run is a real session you can watch and step into. Off by default. See
+  **Scripting** below.
 - **Open in git GUI**: launches your configured git tool on the session's folder for manual
   merging. The app never merges; after you close a worktree session it offers to remove the
   worktree.
@@ -731,6 +740,93 @@ The dialog is skipped entirely when the setting is off, or when nothing is left 
 Every box starts ticked every time: last run's choices say nothing about what you want back
 today.
 
+## Scripting
+
+The `terminator` command controls the running app from a script — a PowerShell window, or a
+shell inside the app itself. It isn't headless: every session it makes is a real one, in a pane,
+that you can watch, read as a conversation and type into. It does what you would do by hand,
+through the same code the buttons use, and nothing you couldn't.
+
+Turn it on in Settings → **SCRIPTING** → *On*. Until then nothing listens for it, and the
+command says so. The same section shows the folder the command lives in, rewritten each time
+the app starts:
+
+- Shells you open in the app already find it — a WSL distro's shell too, through the Windows
+  PATH it appends.
+- Any other terminal needs the folder on its PATH. On Windows, **Add to PATH** puts it on your
+  user PATH; terminals opened afterwards pick it up. On Linux and macOS add it yourself (GNOME's
+  terminal emulator is also called `terminator`, so mind which comes first).
+
+```powershell
+1..3 | % {
+  $id = terminator new claude --project C:\path\to\project --name "try-$_" --split right
+  terminator send $id "List the files in this folder and say which one is largest"
+  terminator wait $id idle error --timeout 10m
+  terminator reply $id > "results\try-$_.md"
+  terminator stop $id
+  terminator remove $id
+}
+```
+
+The commands:
+
+- `list` — the sessions the sidebar shows, in its order: id, name, kind, project, branch and
+  status.
+- `new <claude|shell> --project <folder> [--name <name>] [--worktree [--branch <branch>]]
+  [--split left|right|up|down]` — the New Session dialog with its fields filled in: the same
+  defaults, the same project list, the same worktree (`--branch` is its branch box, `work` when
+  left out). The session starts at once and opens beside the pane you're in — `--split` picks
+  the edge, as dropping it there would; *right* if you don't say — or fills that pane if it's
+  empty. Prints the new session's id. A relative folder is taken from where you run the command;
+  a `\\wsl.localhost` folder makes a WSL session, as does any folder named from a WSL shell.
+- `send <session> <text>` — what **Send** does in the conversation view: types the prompt into
+  Claude's input box and presses Enter. Refused, with the reason, while the session is waiting on
+  something in its terminal. Straight after `new` it waits for Claude to finish starting rather
+  than typing into nothing.
+- `wait <session> <status>... [--timeout <time>]` — returns when the session's status dot reads
+  one of `idle`, `working`, `waiting`, `error` or `closed`, and prints which. Straight after a
+  `send` it waits for *that prompt's* turn: the idle it was in before the prompt arrived doesn't
+  count. `--timeout` takes `30s`, `10m`, `1h` or `500ms`; without one it waits as long as it
+  takes.
+- `reply <session>` — the latest finished reply as markdown: exactly what **Copy reply** copies.
+  A turn still running doesn't count.
+- `stop <session>` — **Stop** from the session menu: ends the process, keeps the row.
+- `remove <session> [--remove-worktree]` — **Remove session**, with nothing asked. Its worktree
+  stays unless you add `--remove-worktree`; if git won't delete it, nothing is removed.
+
+A session is named by its id, or as `project/name` the way the sidebar shows it. A name that
+matches more than one session is an error that lists their ids — never a guess. Output is text
+by default, and one JSON value with `--json` (failures included). Exit codes: **0** done,
+**1** failed, **2** `wait` timed out.
+
+What a script can't do:
+
+- **Take your keyboard.** A new pane opens beside yours and your pane stays the focused one;
+  whatever you were typing in — a terminal, an editor, a reply, a rename — keeps the keyboard.
+  The new session's pane takes focus only when you click into it.
+- **Answer anything.** When a session asks a question in its terminal it waits for you with the
+  usual **needs me** signal, `wait` reports `waiting`, and `send` is refused until you've answered.
+- **Be used by anyone else.** It listens only on 127.0.0.1, and the key it needs is in a file only
+  your user account can read. No other user and no other machine can reach it.
+
+A few things worth knowing:
+
+- `send` knows Claude is ready, and `wait` knows a prompt has started its turn, from Claude's own
+  hooks (see **How Claude state detection works**). What Claude asks before it's ready — first-run
+  setup, or whether to trust a folder it hasn't seen (a new project, or a new worktree) — comes
+  before those hooks, so `send` holds and never types into it: answer it in the session's
+  terminal and the prompt goes in; left unanswered for two minutes, `send` gives up and says so.
+  Opening a new project by hand once before scripting it saves the wait.
+- A prompt that never becomes a turn of its own — a slash command such as `/clear` — is let go
+  after 20 seconds of quiet, and `wait` says so beside its answer.
+- Windows PowerShell 5.1 drops double quotes inside an argument; escape them as `\"` there, or use
+  PowerShell 7, which passes them through. It also reads a command's output in the console's code
+  page, so before redirecting `reply` to a file set
+  `[Console]::OutputEncoding = [Text.Encoding]::UTF8`; PowerShell 7.4 and later write the bytes as
+  they are.
+- On Windows, stop a session before removing its worktree — git can't delete a folder a running
+  process is sitting in.
+
 ## Settings
 
 Settings live in a JSON file in the app's user-data directory (editable in-app via the gear
@@ -750,6 +846,8 @@ set to — and which ones you left open is remembered:
   Themes of your own live in their own file, `themes.json`, alongside this one.
 - `relaunchOnStartup` — offer to relaunch last time's sessions when the app starts (default
   `false`). See **Relaunching at startup** above.
+- `scripting` — let the `terminator` command control the app (default `false`). See
+  **Scripting** above.
 - `usageRefreshSeconds` — how often the footer's usage meter re-reads the clock
   (default 30, range 5–300). A display tick only; it never asks Claude for anything.
 - `settingsOpen` — which Settings sections are expanded. Absent means collapsed.
@@ -886,6 +984,9 @@ PTYs, the hook/statusLine server, settings, and persistence; the renderer mirror
 metadata and owns the keep-alive xterm instances.
 That split is why the startup relaunch prompt lives in the renderer: a session's terminal has to
 exist before its PTY starts or its first output has nowhere to land, and only the renderer can
-make one.
+make one. It is also why a scripted `terminator new` is the one command main hands to the window:
+the panes, and the New Session dialog's steps, are the renderer's. The command itself is a second
+entry in main's build (`src/cli`), copied beside its launchers at startup and run by the app's own
+executable in Node mode, the way the hook reporter is.
 The visual design lives in [`design/reference.html`](design/reference.html) — a static mockup of
 the default theme, not wired into the build.

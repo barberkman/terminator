@@ -20,6 +20,10 @@ import { resolveTheme, setCustomThemes } from '../shared/themes'
 import { TITLE_BAR_HEIGHT } from '../shared/types'
 import { loadCustomThemes } from './theme-store'
 import { flushUsage, setWindow as setUsageWindow } from './usage-store'
+import { installCommand } from './cli-install'
+import { wireClaudeTurns } from './claude-turns'
+import { applyScripting, stopControlServer } from './control-server'
+import { setScriptingWindow, wireScripting } from './scripting'
 
 let win: BrowserWindow | null = null
 
@@ -101,6 +105,7 @@ function createWindow(): void {
   setFsWindow(win)
   setUsageWindow(win)
   setPromptEditWindow(win)
+  setScriptingWindow(win)
   // On macOS the app outlives its window, and `before-quit` won't run — so this is
   // the only thing standing between a closed window and a Claude session still
   // blocked on a tab that no longer exists.
@@ -117,6 +122,10 @@ app.whenReady().then(async () => {
   pruneAttachments()
   wireProcessEvents()
   wireLauncher()
+  wireClaudeTurns()
+  wireScripting()
+  // Before any shell session can start: they get its folder on their PATH.
+  installCommand()
   registerIpc(() => win as BrowserWindow)
   // No menu bar on Windows and Linux, where a bare Alt is what summons one — and
   // Alt is a session shortcut here (Alt+1..9 switches sessions), so the summoning
@@ -130,6 +139,8 @@ app.whenReady().then(async () => {
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
   createWindow()
   applyGlobalShortcut(() => win)
+  // Settings → SCRIPTING: listen for the `terminator` command only while it's on.
+  applyScripting()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -151,5 +162,6 @@ app.on('before-quit', () => {
   closeFsWatchers()
   disposePromptEditor()
   stopReportServer()
+  stopControlServer()
   disposeGlobalShortcut()
 })

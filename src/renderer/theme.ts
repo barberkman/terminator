@@ -78,13 +78,8 @@ export const STATUS_COLORS: Record<SessionStatus, string> = {
   closed: 'var(--c-status-closed)',
 }
 
-export const STATUS_LABELS: Record<SessionStatus, string> = {
-  busy: 'Working',
-  waiting: 'Waiting',
-  idle: 'Idle',
-  error: 'Error',
-  closed: 'Closed',
-}
+// Shared with `terminator list`, which prints the same words the dots carry.
+export { STATUS_LABELS } from '../shared/sidebar'
 
 export const FONT = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
 

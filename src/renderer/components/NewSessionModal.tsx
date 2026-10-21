@@ -4,7 +4,7 @@ import { linuxToHost, parseWslUnc, runtimeKey, sameRuntime } from '../../shared/
 import { C, accentA, ink, sz } from '../theme'
 import { Icon } from '../icons'
 import { errorText } from '../menus'
-import { TYPES, TYPE_MAP, type TypeKey } from '../sessionTypes'
+import { TYPES, newSessionInput, settleFolder, type TypeKey } from '../sessionTypes'
 import { useStore } from '../state/store'
 import { RuntimeChip } from './RuntimeChip'
 
@@ -136,28 +136,14 @@ export function NewSessionModal(): React.JSX.Element | null {
     setPdfFile('')
   }
 
-  /** The registered spelling of a distro named in a path, which may be any case. */
-  const distroNamed = (n: string): string =>
-    distros.find((d) => d.name.toLowerCase() === n.toLowerCase())?.name ?? n
-  const defaultDistro = (): string => distros.find((d) => d.isDefault)?.name ?? distros[0]?.name ?? ''
-
   /**
-   * A folder as the user gave it, settled into what will be sent: a \\wsl.localhost
-   * path picks its distro and becomes the Linux path it stands for, and a bare
-   * `/…` path — which means nothing on Windows — goes to the default distro. Anything
-   * else keeps the runtime already chosen.
+   * A folder as the user gave it, settled into what will be sent (see
+   * `settleFolder`): the runtime it names, if any, and the path it stands for.
    */
-  const settleFolder = (raw: string): void => {
-    const unc = parseWslUnc(raw)
-    if (unc) {
-      setRuntime({ kind: 'wsl', distro: distroNamed(unc.distro) })
-      setFolder(unc.linux)
-      return
-    }
-    setFolder(raw)
-    if (!runtime && distros.length && raw.startsWith('/') && !raw.startsWith('//')) {
-      setRuntime({ kind: 'wsl', distro: defaultDistro() })
-    }
+  const settle = (raw: string): void => {
+    const next = settleFolder(raw, runtime, distros)
+    setFolder(next.folder)
+    if (next.runtime !== runtime) setRuntime(next.runtime)
   }
   const close = () => {
     setShowNew(false)
@@ -173,7 +159,7 @@ export function NewSessionModal(): React.JSX.Element | null {
     }
     const picked = await window.terminator.pickFolder(start)
     if (picked) {
-      settleFolder(picked)
+      settle(picked)
       // Not for a browser session: the folder only decides which group it lands
       // in, and naming it after one would take it out of the Web / Web 2 run. Nor
       // for a PDF, which is named for its document.
@@ -203,7 +189,7 @@ export function NewSessionModal(): React.JSX.Element | null {
     })
     if (!picked) return
     setPdfFile(picked)
-    if (!typed) settleFolder(picked.replace(/[/\\][^/\\]*$/, ''))
+    if (!typed) settle(picked.replace(/[/\\][^/\\]*$/, ''))
   }
 
   const removeRecent = async (path: string, rt?: SessionRuntime) => {
@@ -218,15 +204,9 @@ export function NewSessionModal(): React.JSX.Element | null {
     if (!folder.trim() || busy || (kind === 'pdf' && !pdfFile)) return
     setBusy(true)
     try {
-      const session = await window.terminator.createSession({
-        ...TYPE_MAP[kind],
-        name: name.trim() || undefined,
-        projectPath: folder.trim(),
-        worktree,
-        branch: worktree ? branch.trim() || undefined : undefined,
-        ...(runtime ? { runtime } : {}),
-        ...(kind === 'pdf' ? { file: pdfFile } : {}),
-      })
+      const session = await window.terminator.createSession(
+        newSessionInput({ type: kind, name, folder, worktree, branch, runtime, pdfFile }),
+      )
       useStore.getState().upsert(session)
       useStore.getState().openSession(session.id)
       close()
@@ -359,12 +339,12 @@ export function NewSessionModal(): React.JSX.Element | null {
                 onChange={(e) => setFolder(e.target.value)}
                 // Settled when you leave the box rather than on every keystroke, so a
                 // half-typed \\wsl.localhost path isn't rewritten out from under you.
-                onBlur={(e) => settleFolder(e.target.value.trim())}
+                onBlur={(e) => settle(e.target.value.trim())}
                 onPaste={(e) => {
                   const text = e.clipboardData.getData('text').trim()
                   if (!parseWslUnc(text)) return
                   e.preventDefault()
-                  settleFolder(text)
+                  settle(text)
                 }}
                 placeholder={distro ? `${probe?.home || '~'}/code/my-project` : '~/code/my-project'}
                 style={{ ...inputStyle, flex: 1, minWidth: 0 }}

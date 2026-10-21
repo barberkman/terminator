@@ -5,6 +5,7 @@ import { Icon } from '../icons'
 import { CodeBlock, renderMarkdown } from '../markdown'
 import { languageForTag } from '../editor/language'
 import { quotePaths } from '../../shared/prompt-path'
+import { PENDING_UNSURE_MS, reconcile, replyText, toTurns, type Turn } from '../../shared/conversation-turns'
 import * as registry from '../term/registry'
 import { useStore, type PendingPrompt } from '../state/store'
 import { useDomFind, useFindKeys } from '../find'
@@ -22,85 +23,13 @@ const POLL_MS = 700
 /** How much of a tool's output is shown before "show all" — copying takes it all. */
 const OUTPUT_PREVIEW_LINES = 14
 
-/**
- * How long a sent prompt may go unseen in the transcript before the view stops
- * claiming it's on its way. Only *quiet* time counts (see `PendingPrompt`), so
- * this is 20 seconds of a session with nothing to do — a long way past the
- * second or so a send normally takes, and unreachable while Claude is working.
- */
-const PENDING_UNSURE_MS = 20_000
+/** How often a pending prompt's quiet clock advances (see `PENDING_UNSURE_MS`). */
 const PENDING_TICK_MS = 2_000
-
-/** Clock slop between this process stamping a send and Claude stamping the record. */
-const TS_SLACK_MS = 5_000
 
 /** A stable empty list: a fresh array out of a selector would loop the store. */
 const NO_PENDING: PendingPrompt[] = []
 
 let nextPendingKey = 1
-
-/**
- * How a sent prompt and a transcript record are compared. Whitespace is
- * collapsed because the TUI re-flows what it is given (tabs become its own tab
- * stops), so insisting on the bytes would leave a prompt pending forever.
- */
-function norm(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
-}
-
-/**
- * Retire the pendings whose prompts have turned up.
- *
- * Matching is by text, because a prompt has no id until Claude writes one. Two
- * guards keep that honest: only records stamped at or after the send can match
- * (so an identical prompt from an hour ago can't retire a fresh one), and each
- * record is claimed once (so two identical messages sent back to back resolve
- * against two records rather than both against the first).
- *
- * Three sweeps, strictest first:
- *   1. exact — the ordinary case.
- *   2. prefix — `promptText` joins every text block of a user record, so our text
- *      can legitimately be a prefix. Taken after exact so "go" can't eat the
- *      record belonging to "go on".
- *   3. contains, message only — the TUI rewrites an image path it recognises into
- *      `[Image #1]`, so a prompt sent with an attachment is *not* what lands in
- *      the transcript. The typed words survive; the path doesn't. Loose enough to
- *      need the two guards above, which is why it runs last and only for pendings
- *      that actually carried an attachment.
- *
- * Returns the same array when nothing matched, so an idle tick writes nothing.
- */
-function reconcile(arrived: ConversationItem[], pendings: PendingPrompt[]): PendingPrompt[] {
-  const prompts = arrived.filter((i) => i.kind === 'prompt')
-  if (!prompts.length) return pendings
-  const claimed = new Set<string>()
-  const retired = new Set<string>()
-
-  const sweep = (how: 'exact' | 'prefix' | 'message'): void => {
-    for (const p of pendings) {
-      if (retired.has(p.key)) continue
-      const want = norm(how === 'message' ? (p.message ?? '') : p.text)
-      if (!want) continue
-      const hit = prompts.find((c) => {
-        if (claimed.has(c.id)) return false
-        const at = Date.parse(c.ts)
-        if (!Number.isNaN(at) && at < p.sentAt - TS_SLACK_MS) return false
-        const got = norm(c.text)
-        if (how === 'exact') return got === want
-        if (how === 'prefix') return got.startsWith(want)
-        return got.includes(want)
-      })
-      if (!hit) continue
-      claimed.add(hit.id)
-      retired.add(p.key)
-    }
-  }
-  sweep('exact')
-  sweep('prefix')
-  sweep('message')
-
-  return retired.size ? pendings.filter((p) => !retired.has(p.key)) : pendings
-}
 
 function clock(iso: string): string {
   if (!iso) return ''
@@ -509,41 +438,6 @@ const MessageText = memo(function MessageText({
 }): React.JSX.Element {
   return <div className="md-body">{renderMarkdown(item.text)}</div>
 })
-
-/** One exchange: a prompt (when there is one) and everything Claude did after it. */
-interface Turn {
-  key: string
-  prompt?: Extract<ConversationItem, { kind: 'prompt' }>
-  body: ConversationItem[]
-}
-
-function toTurns(items: ConversationItem[]): Turn[] {
-  const turns: Turn[] = []
-  let current: Turn | null = null
-  for (const item of items) {
-    if (item.kind === 'prompt') {
-      current = { key: item.id, prompt: item, body: [] }
-      turns.push(current)
-      continue
-    }
-    // A resumed or branched session opens mid-conversation: hold the replies that
-    // arrive before the first prompt rather than dropping them.
-    if (!current) {
-      current = { key: `pre-${item.id}`, body: [] }
-      turns.push(current)
-    }
-    current.body.push(item)
-  }
-  return turns
-}
-
-/** Everything Claude said in prose in this turn — the "copy the whole answer" text. */
-function replyText(turn: Turn): string {
-  return turn.body
-    .filter((i) => i.kind === 'text')
-    .map((i) => i.text)
-    .join('\n\n')
-}
 
 /**
  * What a turn actually shows. The filtering happens here rather than before

@@ -10,10 +10,16 @@ import {
   type WslDistro,
 } from '../../shared/types'
 import { groupKey } from '../../shared/wsl-path'
+import { buildGroups, type ProjectGroup } from '../../shared/sidebar'
 import { type CustomTheme, setCustomThemes as publishThemes } from '../../shared/themes'
 import type { IconName } from '../icons'
 import * as editor from '../editor/registry'
+import { listenForScripts } from '../scripting'
 import { type PaneNode, type Side, removeAt, resetSizesAt, resizeAt, splitAt } from './paneTree'
+
+// The sidebar's grouping lives in shared/ so `terminator list` reads it too; kept
+// importable from here, where everything else about the sidebar's rows lives.
+export { buildGroups, type ProjectGroup }
 
 /**
  * What a context menu was opened on. Sessions are a *list* from the start, even
@@ -164,21 +170,6 @@ export interface ToastItem {
   action?: { path: string; kind: AttachedItem['kind'] }
 }
 
-export interface ProjectGroup {
-  /** What the header says. */
-  name: string
-  /**
-   * What the group *is* (see `groupKey`): the name for a Windows project, the name
-   * and distro for a WSL one. Collapse state and "the sessions in this group" go by it.
-   */
-  key: string
-  /** Set when the group's project lives inside WSL. */
-  runtime?: SessionRuntime
-  sessions: Session[]
-  /** Nesting depth per session id — a branch sits one level under its parent. */
-  depth: Record<string, number>
-}
-
 /** One sidebar line: a session plus what the branch tree adds around it. */
 export interface SidebarRow {
   session: Session
@@ -206,6 +197,20 @@ interface StoreState {
    */
   tree: PaneNode
   panes: string[]
+  /**
+   * Who each pane *is*, index-aligned with `panes`: a number handed out when the
+   * pane comes into being and kept until it goes, however its index moves. PaneGrid
+   * keys the panes by it, so opening a split before yours, or closing one, never
+   * hands your pane's component a different session — the terminal, editor or half
+   * typed reply you have the keyboard in stays exactly where it is.
+   */
+  paneKeys: number[]
+  /**
+   * Sessions put on screen by a script rather than by you (see renderer/scripting.ts).
+   * Their panes don't pull the keyboard to themselves the way one you opened does;
+   * the mark goes the first time you open, focus or click into one.
+   */
+  quiet: Record<string, boolean>
   /**
    * The session being dragged out of the sidebar right now, or null.
    *
@@ -305,8 +310,10 @@ interface StoreState {
   upsert(s: Session): void
   remove(id: string): void
   openSession(id: string): void
-  openInPane(id: string, index: number): void
-  splitPane(id: string, index: number, side: Side): void
+  openInPane(id: string, index: number, opts?: PlaceOpts): void
+  splitPane(id: string, index: number, side: Side, opts?: PlaceOpts): void
+  /** A script is about to remove `id`: whatever takes its place on screen arrives quietly. */
+  quietWhenRemoved(id: string): void
   closePane(index: number): void
   resizeSplit(path: number[], i: number, fraction: number, min?: number): void
   resetSplit(path: number[]): void
@@ -337,6 +344,37 @@ interface StoreState {
   pushToast(t: Omit<ToastItem, 'id'>): void
   dismissToast(id: number): void
   loadWslDistros(force?: boolean): Promise<WslDistro[]>
+}
+
+/**
+ * How a session is put in a pane. `quiet` is a script's placement: the pane you
+ * have focused stays the focused one, a rename you're typing is left alone, and
+ * the new session is marked so its pane doesn't take the keyboard (see `quiet`).
+ */
+export interface PlaceOpts {
+  quiet?: boolean
+}
+
+let nextPaneKey = 1
+/** Sessions a script is removing, whose pane's next occupant should arrive quietly. */
+const quietRemovals = new Set<string>()
+
+/**
+ * Where the focused pane is after a quiet placement: the same pane — by key, not
+ * index — that was focused before, wherever the new one landed around it. Falls
+ * back to `placed` only when that pane is the one the placement replaced.
+ */
+function stillFocused(st: { paneKeys: number[]; focused: number }, paneKeys: number[], placed: number): number {
+  const at = paneKeys.indexOf(st.paneKeys[st.focused])
+  return at >= 0 ? at : placed
+}
+
+/** `quiet` without `id`, or the same object when it wasn't marked — a user action on it. */
+function unquiet(quiet: Record<string, boolean>, id: string): Record<string, boolean> {
+  if (!quiet[id]) return quiet
+  const next = { ...quiet }
+  delete next[id]
+  return next
 }
 
 /**
@@ -416,6 +454,8 @@ export const useStore = create<StoreState>((set, get) => ({
   order: [],
   tree: { kind: 'leaf' },
   panes: [''],
+  paneKeys: [0],
+  quiet: {},
   draggingSessionId: null,
   browserLive: [],
   focused: 0,
@@ -486,6 +526,9 @@ export const useStore = create<StoreState>((set, get) => ({
     window.terminator.onSessionRemoved((id) => get().remove(id))
     window.terminator.onNavJump((id) => get().openSession(id))
     window.terminator.onUsageUpdated((u) => get().setUsage(u))
+    // Last, once the sessions are in: a script's `terminator new` lands in this
+    // layout, so main holds its requests until the window says it's listening.
+    listenForScripts()
   },
 
   upsert(s) {
@@ -523,6 +566,7 @@ export const useStore = create<StoreState>((set, get) => ({
       // what keeps this from being the old backfill. It empties only once the
       // project has nothing left.
       let panes = st.panes.slice()
+      const paneKeys = st.paneKeys.slice()
       let tree = st.tree
       let focused = st.focused
       for (let i = panes.length - 1; i >= 0; i--) {
@@ -539,9 +583,18 @@ export const useStore = create<StoreState>((set, get) => ({
           }
         } else {
           panes.splice(i, 1)
+          paneKeys.splice(i, 1)
           tree = removeAt(tree, i)
           if (focused > i) focused -= 1
         }
+      }
+      focused = Math.min(focused, Math.max(0, panes.length - 1))
+      // A script removed it: whatever now sits in the focused pane got there on
+      // the script's account, and mustn't pull the keyboard to itself.
+      let quiet = unquiet(st.quiet, id)
+      if (quietRemovals.delete(id)) {
+        const now = panes[focused]
+        if (now && now !== st.panes[st.focused]) quiet = { ...quiet, [now]: true }
       }
       const transcripts = { ...st.transcripts }
       delete transcripts[id]
@@ -557,11 +610,13 @@ export const useStore = create<StoreState>((set, get) => ({
         browserLive: keepBrowsersAlive(stillLive, panes, sessions),
         tree,
         panes,
+        paneKeys,
+        quiet,
         transcripts,
         drafts,
         pendings,
         attachments,
-        focused: Math.min(focused, Math.max(0, panes.length - 1)),
+        focused,
         confirm: retireConfirm(st.confirm, id),
         contextMenu:
           st.contextMenu?.target.kind === 'sessions' && st.contextMenu.target.ids.includes(id)
@@ -598,6 +653,7 @@ export const useStore = create<StoreState>((set, get) => ({
         browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
         focused,
         sessions,
+        quiet: unquiet(st.quiet, id),
         editingId: null,
       }
     })
@@ -609,10 +665,11 @@ export const useStore = create<StoreState>((set, get) => ({
    * session appears in `panes` at most once, and one xterm host element can only
    * live in one pane anyway.
    */
-  openInPane(id, index) {
+  openInPane(id, index, opts) {
     set((st) => {
       if (index < 0 || index >= st.panes.length) return {}
       const panes = st.panes.slice()
+      const paneKeys = st.paneKeys.slice()
       let tree = st.tree
       let target = index
       const prev = panes.indexOf(id)
@@ -623,6 +680,7 @@ export const useStore = create<StoreState>((set, get) => ({
       // no way to close.
       if (prev >= 0 && prev !== index && panes.length > 1) {
         panes.splice(prev, 1)
+        paneKeys.splice(prev, 1)
         tree = removeAt(tree, prev)
         if (prev < target) target -= 1
       }
@@ -634,10 +692,12 @@ export const useStore = create<StoreState>((set, get) => ({
       return {
         tree,
         panes,
+        paneKeys,
         browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
-        focused: target,
         sessions,
-        editingId: null,
+        ...(opts?.quiet
+          ? { focused: stillFocused(st, paneKeys, target), quiet: { ...st.quiet, [id]: true } }
+          : { focused: target, quiet: unquiet(st.quiet, id), editingId: null }),
       }
     })
   },
@@ -652,19 +712,20 @@ export const useStore = create<StoreState>((set, get) => ({
    * ordinal after it down by one, including possibly the one being split — hence
    * the adjustment rather than splitting first and tidying up after.
    */
-  splitPane(id, index, side) {
+  splitPane(id, index, side, opts) {
     const now = get()
     if (index < 0 || index >= now.panes.length) return
     // There is nothing to split: halving an empty pane would leave one half
     // still empty. The only empty pane there can be is the one that stands in
     // for "no sessions open at all", and dropping onto it means fill it.
     if (!now.panes[index]) {
-      get().openInPane(id, index)
+      get().openInPane(id, index, opts)
       return
     }
     set((st) => {
       if (index < 0 || index >= st.panes.length) return {}
       let panes = st.panes.slice()
+      const paneKeys = st.paneKeys.slice()
       let tree = st.tree
       let at = index
 
@@ -674,12 +735,14 @@ export const useStore = create<StoreState>((set, get) => ({
         // from: closing that pane and splitting it are the same pane.
         if (prev === index) return {}
         panes.splice(prev, 1)
+        paneKeys.splice(prev, 1)
         tree = removeAt(tree, prev)
         if (prev < at) at -= 1
       }
 
       const split = splitAt(tree, at, side)
       panes.splice(split.at, 0, id)
+      paneKeys.splice(split.at, 0, nextPaneKey++)
       tree = split.tree
 
       const cur = st.sessions[id]
@@ -689,12 +752,18 @@ export const useStore = create<StoreState>((set, get) => ({
       return {
         tree,
         panes,
+        paneKeys,
         browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
-        focused: split.at,
         sessions,
-        editingId: null,
+        ...(opts?.quiet
+          ? { focused: stillFocused(st, paneKeys, split.at), quiet: { ...st.quiet, [id]: true } }
+          : { focused: split.at, quiet: unquiet(st.quiet, id), editingId: null }),
       }
     })
+  },
+
+  quietWhenRemoved(id) {
+    quietRemovals.add(id)
   },
 
   /**
@@ -714,6 +783,8 @@ export const useStore = create<StoreState>((set, get) => ({
       }
       const panes = st.panes.slice()
       panes.splice(index, 1)
+      const paneKeys = st.paneKeys.slice()
+      paneKeys.splice(index, 1)
       const tree = removeAt(st.tree, index)
       // Focus follows the pane that took the space: the one now at this index,
       // or the new last pane when the closed one was at the end.
@@ -721,6 +792,7 @@ export const useStore = create<StoreState>((set, get) => ({
       return {
         tree,
         panes,
+        paneKeys,
         browserLive: keepBrowsersAlive(st.browserLive, panes, st.sessions),
         focused: Math.max(0, focused),
         editingId: null,
@@ -764,7 +836,12 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   focusPane(i) {
-    set((st) => (i === st.focused ? {} : { focused: i, editingId: null }))
+    set((st) => {
+      // Clicking into a pane a script put there makes it yours, focused or not.
+      const quiet = unquiet(st.quiet, st.panes[i] ?? '')
+      if (i === st.focused) return quiet === st.quiet ? {} : { quiet }
+      return { focused: i, editingId: null, quiet }
+    })
   },
 
   toggleGroup(name) {
@@ -946,33 +1023,6 @@ function nearestInProject(order: string[], sessions: Record<string, Session>, id
 export function canReorderOnto(dragged: Session, target: Session): boolean {
   if (groupKey(dragged) !== groupKey(target)) return false
   return (dragged.parentId ?? null) === (target.parentId ?? null)
-}
-
-/**
- * Sessions grouped by project, preserving creation order. Takes the stable
- * `order` and `sessions` slices so callers can wrap it in useMemo — returning a
- * fresh array straight from a zustand selector would loop useSyncExternalStore.
- */
-export function buildGroups(order: string[], sessions: Record<string, Session>): ProjectGroup[] {
-  const groups: ProjectGroup[] = []
-  const byKey = new Map<string, ProjectGroup>()
-  for (const id of order) {
-    const s = sessions[id]
-    if (!s) continue
-    const key = groupKey(s)
-    let g = byKey.get(key)
-    if (!g) {
-      g = { name: s.projectName, key, runtime: s.runtime, sessions: [], depth: {} }
-      byKey.set(key, g)
-      groups.push(g)
-    }
-    g.sessions.push(s)
-    // Branches follow their parent in `order`, so one forward pass is enough.
-    // Depth is capped so a long chain can't indent a row off the sidebar.
-    const parentDepth = s.parentId ? g.depth[s.parentId] : undefined
-    g.depth[s.id] = parentDepth === undefined ? 0 : Math.min(parentDepth + 1, 4)
-  }
-  return groups
 }
 
 /** How many sessions the switch shortcut can reach: Alt+1 through Alt+9. */

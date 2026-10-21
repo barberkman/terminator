@@ -10,6 +10,7 @@ import {
   type EditorOption,
   type NotifType,
   type PromptEditorStatus,
+  type ScriptingInfo,
   type Settings,
 } from '../../shared/types'
 import { formatArgs, parseArgs } from '../../shared/args'
@@ -38,7 +39,7 @@ const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'projectEditor', 'worktreesRoot', 'notifications',
   'terminalFont', 'fontSize', 'iconScale', 'sidebarSide', 'relaunchOnStartup', 'globalToggleShortcut',
   'notesShortcut', 'attachments', 'links', 'browser', 'settingsOpen', 'usageRefreshSeconds',
-  'promptEditorId', 'wsl', 'quickOpenShortcut', 'editorPreviewTabs',
+  'promptEditorId', 'wsl', 'quickOpenShortcut', 'editorPreviewTabs', 'scripting',
 ] as const satisfies readonly (keyof Settings)[]
 
 /** Cache size, at the resolution anyone reads it: "is that a lot?" */
@@ -344,6 +345,10 @@ export function SettingsView(): React.JSX.Element | null {
   const [importText, setImportText] = useState<string | null>(null)
   const [importError, setImportError] = useState('')
   const [cacheSize, setCacheSize] = useState<number | null>(null)
+  // Where the `terminator` command lives and whether a new terminal will find it.
+  const [command, setCommand] = useState<ScriptingInfo | null>(null)
+  const [pathError, setPathError] = useState('')
+  const [addingPath, setAddingPath] = useState(false)
   const setConfirm = useStore((s) => s.setConfirm)
   const confirm = useStore((s) => s.confirm)
 
@@ -358,6 +363,8 @@ export function SettingsView(): React.JSX.Element | null {
       setImportError('')
       void window.terminator.getGlobalShortcutStatus().then(setShortcutStatus)
       void window.terminator.promptEditorStatus().then(setPromptEditor)
+      setPathError('')
+      void window.terminator.scriptingInfo().then(setCommand)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show])
@@ -740,6 +747,65 @@ export function SettingsView(): React.JSX.Element | null {
                   ]}
                 />
               </Field>
+            ),
+          )}
+
+          {section(
+            'scripting',
+            'SCRIPTING',
+            draft.scripting ? 'the terminator command can drive the app' : 'off',
+            (
+              <>
+                <Field
+                  label="LET SCRIPTS CONTROL THIS APP"
+                  hint="The terminator command opens, prompts, waits on, reads, stops and removes sessions in this window — the same things you do here, done the same way, in panes you can watch. It never takes the keyboard from you and never answers a question a session asks. Only your own user account on this computer can use it. Off, nothing listens for it, and the command says so."
+                >
+                  <Choice
+                    value={draft.scripting ?? false}
+                    onPick={(scripting) => patch({ scripting })}
+                    options={[
+                      { value: true, label: 'On' },
+                      { value: false, label: 'Off' },
+                    ]}
+                  />
+                </Field>
+                {command && (
+                  <Field
+                    label="THE COMMAND"
+                    hint={
+                      command.canAddToPath
+                        ? 'Shells opened in this app already find it. For any other terminal the folder has to be on your PATH; new terminals pick it up once it is.'
+                        : `Shells opened in this app already find it. For any other terminal, put the folder on your PATH, e.g. export PATH="${command.dir}:$PATH". On Linux, mind that GNOME's terminal emulator is also called terminator.`
+                    }
+                  >
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <code style={{ ...inputStyle, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {command.dir}
+                      </code>
+                      {command.onPath ? (
+                        <span style={{ fontSize: 11, color: C.muted, flex: 'none' }}>On your PATH</span>
+                      ) : (
+                        command.canAddToPath && (
+                          <button
+                            disabled={addingPath}
+                            onClick={async () => {
+                              setAddingPath(true)
+                              const r = await window.terminator.addCommandToPath()
+                              setAddingPath(false)
+                              setCommand(r)
+                              setPathError(r.error ?? '')
+                            }}
+                            style={smallBtn}
+                          >
+                            {addingPath ? 'Adding…' : 'Add to PATH'}
+                          </button>
+                        )
+                      )}
+                    </div>
+                    {pathError && <div style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>{pathError}</div>}
+                  </Field>
+                )}
+              </>
             ),
           )}
 
