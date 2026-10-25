@@ -253,8 +253,12 @@ const create: Handler<'new'> = async (a) => {
   if (a.kind !== 'claude' && a.kind !== 'shell') return fail('new makes a claude or a shell session')
   const project = typeof a.project === 'string' ? a.project.trim() : ''
   if (!project) return fail('--project is required: the folder the session works in')
-  const split = a.split ?? 'right'
-  if (!SIDES.includes(split)) return fail(`--split takes left, right, up or down, not ${String(split)}`)
+  // No pane unless one is asked for: the session runs in the sidebar, where a
+  // click opens it, the way Start from the sidebar leaves one.
+  const split = a.split
+  if (split !== undefined && !SIDES.includes(split)) {
+    return fail(`--split takes left, right, up or down, not ${String(split)}`)
+  }
   const branch = typeof a.branch === 'string' ? a.branch.trim() : ''
   // The dialog's branch box only shows — and is only read — with the worktree on.
   if (branch && !a.worktree) return fail("--branch names the worktree's branch, so it needs --worktree")
@@ -269,7 +273,7 @@ const create: Handler<'new'> = async (a) => {
     worktree: !!a.worktree,
     branch,
     runtime,
-    split,
+    ...(split ? { split } : {}),
   })
   if (!r.ok) return fail(r.error)
   const s = state.getSession(r.id)

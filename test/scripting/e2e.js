@@ -165,11 +165,23 @@ async function main() {
   check('list on an empty app', r.code === 0 && r.out.startsWith('ID'), r)
 
   // ---- shells, panes and focus ------------------------------------------------
-  r = t('new', 'shell', '--project', '.', '--name', 'base')
+  // Without --split a session runs in the sidebar only: no pane, the layout untouched.
+  r = t('new', 'shell', '--project', '.', '--name', 'bg')
+  const bg = r.out
+  check('new shell, no --split', r.code === 0 && /^[0-9a-f-]{36}$/.test(bg), r)
+  await sleep(1500)
+  let p = await probe()
+  check('... opens no pane', p.panes.length === 1 && p.panes[0] === '', p)
+  r = t('wait', bg, 'idle', 'working', '--timeout', '10s')
+  check('... and runs in the sidebar', r.code === 0, r)
+  t('stop', bg)
+  t('remove', bg)
+
+  r = t('new', 'shell', '--project', '.', '--name', 'base', '--split', 'right')
   const base = r.out
   check('new shell into the empty pane', r.code === 0 && /^[0-9a-f-]{36}$/.test(base), r)
   await sleep(1500)
-  let p = await probe()
+  p = await probe()
   check('it fills the empty pane', p.panes.length === 1 && p.panes[0] === 'base', p)
   check('a script-filled pane does not take the keyboard', p.active !== 'base', p)
 

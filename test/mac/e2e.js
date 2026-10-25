@@ -273,7 +273,7 @@ async function suite(app, page, cdp) {
   const status = (name) => byName(name)?.status
   /** A shell session in its own pane, focused, with its prompt up. */
   async function shell(name, project = proj) {
-    const r = t('new', 'shell', '--project', project, '--name', name)
+    const r = t('new', 'shell', '--project', project, '--name', name, '--split', 'right')
     if (r.code !== 0) throw new Error(`new shell ${name}: ${r.err}`)
     await page.waitForSelector(`[data-pane-session="${name}"] .xterm`)
     await waitFor(async () => (await screen(name)).trim().length > 0, 10_000)

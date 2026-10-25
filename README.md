@@ -789,8 +789,8 @@ today.
 ## Scripting
 
 The `terminator` command controls the running app from a script — a PowerShell window, or a
-shell inside the app itself. It isn't headless: every session it makes is a real one, in a pane,
-that you can watch, read as a conversation and type into. It does what you would do by hand,
+shell inside the app itself. It isn't headless: every session it makes is a real one, in the
+sidebar, that you can open, watch, read as a conversation and type into. It does what you would do by hand,
 through the same code the buttons use, and nothing you couldn't.
 
 Turn it on in Settings → **SCRIPTING** → *On*. Until then nothing listens for it, and the
@@ -805,7 +805,7 @@ the app starts:
 
 ```powershell
 1..3 | % {
-  $id = terminator new claude --project C:\path\to\project --name "try-$_" --split right
+  $id = terminator new claude --project C:\path\to\project --name "try-$_"
   terminator send $id "List the files in this folder and say which one is largest"
   terminator wait $id idle error --timeout 10m
   terminator reply $id > "results\try-$_.md"
@@ -821,9 +821,10 @@ The commands:
 - `new <claude|shell> --project <folder> [--name <name>] [--worktree [--branch <branch>]]
   [--split left|right|up|down]` — the New Session dialog with its fields filled in: the same
   defaults, the same project list, the same worktree (`--branch` is its branch box, `work` when
-  left out). The session starts at once and opens beside the pane you're in — `--split` picks
-  the edge, as dropping it there would; *right* if you don't say — or fills that pane if it's
-  empty. Prints the new session's id. A relative folder is taken from where you run the command;
+  left out). The session starts at once, off screen, the way **Start** in the sidebar leaves one:
+  it's in the sidebar, and a click there opens it. With `--split` it opens in a pane too, beside
+  the one you're in, at that edge — as dropping it there would — or in that pane if it's empty.
+  Prints the new session's id. A relative folder is taken from where you run the command;
   a `\\wsl.localhost` folder makes a WSL session, as does any folder named from a WSL shell.
 - `send <session> <text>` — what **Send** does in the conversation view: types the prompt into
   Claude's input box and presses Enter. Refused, with the reason, while the session is waiting on
@@ -847,9 +848,10 @@ by default, and one JSON value with `--json` (failures included). Exit codes: **
 
 What a script can't do:
 
-- **Take your keyboard.** A new pane opens beside yours and your pane stays the focused one;
-  whatever you were typing in — a terminal, an editor, a reply, a rename — keeps the keyboard.
-  The new session's pane takes focus only when you click into it.
+- **Take your keyboard.** A new session leaves your panes as they are — and with `--split` its
+  pane opens beside yours while yours stays the focused one; whatever you were typing in — a
+  terminal, an editor, a reply, a rename — keeps the keyboard. The new session's pane takes focus
+  only when you click into it.
 - **Answer anything.** When a session asks a question in its terminal it waits for you with the
   usual **needs me** signal, `wait` reports `waiting`, and `send` is refused until you've answered.
 - **Be used by anyone else.** It listens only on 127.0.0.1, and the key it needs is in a file only

@@ -93,7 +93,8 @@ export interface BridgeNewArgs {
   worktree: boolean
   branch: string
   runtime?: SessionRuntime
-  split: SplitSide
+  /** The edge of your pane to open it at. Absent: no pane — it runs in the sidebar. */
+  split?: SplitSide
 }
 
 export type BridgeRequest = { reqId: number; cmd: 'new'; args: BridgeNewArgs }
