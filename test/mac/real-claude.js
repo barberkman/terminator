@@ -88,7 +88,7 @@ async function run(page) {
   const status = (id) => JSON.parse(t('list', '--json').out || '{"sessions":[]}').sessions.find((s) => s.id === id)?.status
 
   // ---- a shell, as a Dock-launched app starts it ----------------------------------
-  let r = t('new', 'shell', '--project', proj, '--name', 'sh')
+  let r = t('new', 'shell', '--project', proj, '--name', 'sh', '--split', 'right')
   await page.waitForSelector('[data-pane-session="sh"] .xterm')
   await sleep(2500)
   await page.click('[data-pane-session="sh"] .xterm')
@@ -100,7 +100,7 @@ async function run(page) {
   check('... and has a UTF-8 LANG', /L=\S+\.UTF-8/.test(line ?? ''), line)
 
   // ---- a real Claude session -----------------------------------------------------
-  r = t('new', 'claude', '--project', proj, '--name', 'real')
+  r = t('new', 'claude', '--project', proj, '--name', 'real', '--split', 'right')
   const id = r.out
   check('new claude', r.code === 0, r)
   await page.waitForSelector('[data-pane-session="real"] .xterm')

@@ -35,9 +35,9 @@ const USAGE = `Usage: terminator <command> [options]
 Drive the running Terminator. Turn it on in Settings > SCRIPTING.
 
   list                                      the sessions the sidebar shows
-  new <claude|shell> --project <folder>     create a session, start it, show it beside
-      [--name <name>] [--worktree [--branch <branch>]]       your pane; prints its id
-      [--split left|right|up|down]
+  new <claude|shell> --project <folder>     create a session and start it, in the
+      [--name <name>] [--worktree [--branch <branch>]]       sidebar; prints its id
+      [--split left|right|up|down]          also open it in a pane beside yours
   send <session> <text>                     type a prompt and press Enter, as Send does
   wait <session> <status>... [--timeout <time>]
                                             until it's idle, working, waiting, error or

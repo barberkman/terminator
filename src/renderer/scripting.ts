@@ -5,8 +5,10 @@
 // the request is built the way the dialog builds it (`newSessionInput`), and the
 // session is created through the same IPC. Where it differs is where it lands. The
 // dialog puts a session in the pane you are in and hands it the keyboard; a script
-// splits that pane and leaves the keyboard alone — your pane stays the focused
-// one, and the new session is marked quiet so its own pane doesn't take focus.
+// leaves the layout alone — the session starts off screen, in the sidebar, the way
+// Start there leaves one — unless it asks for a pane with `--split`. Then it
+// splits your pane and still leaves the keyboard alone: your pane stays the
+// focused one, and the new session is marked quiet so its own pane doesn't take focus.
 
 import type { BridgeNewArgs, BridgeReply, BridgeRequest } from '../shared/control'
 import type { Side } from './state/paneTree'
@@ -14,7 +16,7 @@ import { errorText, startFromSidebar } from './menus'
 import { newSessionInput, settleFolder } from './sessionTypes'
 import { useStore } from './state/store'
 
-const SIDE: Record<BridgeNewArgs['split'], Side> = { left: 'left', right: 'right', up: 'top', down: 'bottom' }
+const SIDE: Record<NonNullable<BridgeNewArgs['split']>, Side> = { left: 'left', right: 'right', up: 'top', down: 'bottom' }
 
 async function createForScript(args: BridgeNewArgs): Promise<Omit<Extract<BridgeReply, { ok: true }>, 'reqId'>> {
   // The dialog refreshes the distro list whenever it opens; a bare `/…` folder
@@ -33,7 +35,7 @@ async function createForScript(args: BridgeNewArgs): Promise<Omit<Extract<Bridge
   )
   const st = useStore.getState()
   st.upsert(session)
-  st.splitPane(session.id, st.focused, SIDE[args.split], { quiet: true })
+  if (args.split) st.splitPane(session.id, st.focused, SIDE[args.split], { quiet: true })
   // One turn of the event loop, so the pane has rendered and its terminal is
   // attached there before it is measured; a size taken too early is corrected
   // by the pane's own ResizeObserver anyway.
