@@ -16,7 +16,7 @@ import { ThemeEditorView } from './components/ThemeEditorView'
 import { NotesView } from './components/NotesView'
 import { Toasts } from './components/Toasts'
 import { wirePromptEdits } from './promptEdit'
-import { matchesAccelerator } from './shortcuts'
+import { IS_MAC, matchesAccelerator, primaryMod, sessionDigitMod } from './shortcuts'
 import { C } from './theme'
 import { applyThemeFromSettings } from './theme-apply'
 
@@ -25,6 +25,7 @@ export function App(): React.JSX.Element {
   const setShowNew = useStore((s) => s.setShowNew)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const termFont = useStore((s) => s.settings?.terminalFont)
+  const optionAsMeta = useStore((s) => s.settings?.optionAsMeta)
   const fontSize = useStore((s) => s.settings?.fontSize)
   const iconScale = useStore((s) => s.settings?.iconScale)
   const sidebarSide = useStore((s) => s.settings?.sidebarSide)
@@ -44,6 +45,11 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (termFont) registry.setFontFamily(termFont)
   }, [termFont])
+
+  // Option key as Meta → xterm panes (macOS).
+  useEffect(() => {
+    registry.setOptionAsMeta(!!optionAsMeta)
+  }, [optionAsMeta])
 
   // Link behaviour → the terminal panes' link provider (browsers, on/off).
   useEffect(() => {
@@ -101,14 +107,18 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey && !e.ctrlKey) return
+      if (!primaryMod(e)) return
       // Don't hijack keys while typing in a terminal (let Ctrl+B/N reach the shell).
+      // On macOS these are Cmd+N/B, which never reach a shell anyway.
       const active = document.activeElement as HTMLElement | null
-      if (active && active.closest('.xterm')) return
+      if (!IS_MAC && active && active.closest('.xterm')) return
       const k = e.key.toLowerCase()
       if (k === 'n') {
         e.preventDefault()
         useStore.getState().closeContextMenu()
+        // Pressed in a terminal (macOS): the dialog takes no focus of its own, so
+        // the keyboard — Esc included — would stay with the program behind it.
+        if (active?.closest('.xterm')) active.blur()
         setShowNew(true)
       } else if (k === 'b') {
         e.preventDefault()
@@ -151,8 +161,9 @@ export function App(): React.JSX.Element {
       return true
     }
     const onAltKey = (e: KeyboardEvent) => {
-      if (!e.altKey || e.ctrlKey || e.metaKey) return
-      if (e.shiftKey && (e.code === 'ArrowDown' || e.code === 'ArrowUp')) return
+      // The digits take Cmd on macOS, where Option types characters (sessionDigitMod).
+      const arrow = e.code === 'ArrowDown' || e.code === 'ArrowUp'
+      if (arrow ? !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey : !sessionDigitMod(e)) return
       if (!switchByCode(e.code)) return
       e.preventDefault()
       e.stopPropagation()
@@ -233,7 +244,7 @@ export function App(): React.JSX.Element {
         background: C.bg,
       }}
     >
-      {window.terminator.platform === 'win32' && <TitleBar />}
+      {(window.terminator.platform === 'win32' || window.terminator.platform === 'darwin') && <TitleBar />}
       <div
         style={{
           display: 'flex',

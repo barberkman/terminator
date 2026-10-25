@@ -18,7 +18,7 @@
 // defensive: unknown record types are copied through untouched, unparseable lines
 // are skipped (the parent may be mid-write), and the parent file is never modified.
 
-import { existsSync, promises as fsp } from 'node:fs'
+import { existsSync, promises as fsp, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Session, SessionRuntime, TranscriptPrompt } from '../shared/types'
@@ -37,7 +37,23 @@ export function encodeCwd(cwd: string): string {
 /** Where a Windows session's transcripts live: the Windows user's ~/.claude. */
 export function windowsTranscriptDir(cwd: string): string {
   const abs = expandHome(cwd) || cwd
-  return join(homedir(), '.claude', 'projects', encodeCwd(abs))
+  return join(homedir(), '.claude', 'projects', encodeCwd(realCwd(abs)))
+}
+
+/**
+ * The folder as Claude's own process.cwd() names it. On macOS and Linux that is
+ * the real path — symlinks followed, and on a case-insensitive disk the case it
+ * was created with — so `/tmp/x` is filed under `/private/tmp/x`, and a project
+ * typed as `~/code/App` under `~/code/app`. (`.native`: the JS realpath leaves the
+ * case alone.) Windows keeps the path as typed, so it's left as it is there.
+ */
+function realCwd(abs: string): string {
+  if (process.platform === 'win32') return abs
+  try {
+    return realpathSync.native(abs)
+  } catch {
+    return abs // gone, or not ours to read — the path as given is the best guess
+  }
 }
 
 /**

@@ -496,11 +496,27 @@ function onClick(e: Entry, ev: MouseEvent): void {
   if (/^https?:/i.test(a.href) && clickOpens(ev)) void openWeb(a.href, undefined, e.sessionId)
 }
 
+/**
+ * How much wheel makes one zoom step. A mouse wheel's notch is about 100, so it
+ * still steps once a notch; a trackpad pinch arrives as Ctrl+wheel too, but as a
+ * stream of small deltas, and stepping on each of them would zoom right past.
+ */
+const WHEEL_PER_STEP = 50
+/** A pause this long ends a gesture: what's left of it doesn't carry into the next. */
+const WHEEL_GESTURE_MS = 300
+let wheelSum = 0
+let wheelAt = 0
+
 /** Ctrl/Cmd+wheel zooms around the pointer, as it does in every other PDF reader. */
 function onWheel(e: Entry, ev: WheelEvent): void {
   if (!(ev.ctrlKey || ev.metaKey) || !e.doc) return
   ev.preventDefault()
-  zoom(e.sessionId, ev.deltaY < 0 ? 1 : -1, [ev.clientX, ev.clientY])
+  if (ev.timeStamp - wheelAt > WHEEL_GESTURE_MS) wheelSum = 0
+  wheelAt = ev.timeStamp
+  wheelSum += ev.deltaY
+  if (Math.abs(wheelSum) < WHEEL_PER_STEP) return
+  zoom(e.sessionId, wheelSum < 0 ? 1 : -1, [ev.clientX, ev.clientY])
+  wheelSum = 0
 }
 
 // ---- theme ------------------------------------------------------------------

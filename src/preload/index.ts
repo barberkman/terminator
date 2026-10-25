@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { clipboard, contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import { Channels } from '../shared/channels'
 import type { CustomTheme } from '../shared/themes'
@@ -119,6 +121,10 @@ const api: TerminatorApi = {
   // Synchronous on purpose: the Ctrl/Cmd+V handler has to decide between an image
   // attachment and the plain text paste before it returns.
   clipboardHasImage: () => !clipboard.readImage().isEmpty(),
+  // Asked before either of those on macOS, where a file copied in Finder comes with
+  // its icon as an image and its name as text — pasting it should hand over the
+  // file, the way dropping it does, not a picture of its icon.
+  clipboardFilePaths: () => (process.platform === 'darwin' ? finderFiles() : []),
 
   openLink: (url: string, browserId?: string) =>
     ipcRenderer.invoke(Channels.linkOpen, { url, browserId }),
@@ -150,6 +156,28 @@ const api: TerminatorApi = {
   // No IPC: the platform never changes under a running window, and the renderer
   // only needs it to name the file manager (Explorer / Finder) correctly.
   platform: process.platform,
+}
+
+/**
+ * The files on the macOS clipboard, as Finder puts them there: every one in the
+ * `NSFilenamesPboardType` list (an XML plist of paths), or failing that the single
+ * `public.file-url`. Only paths that exist — a reference URL (`file:///.file/id=…`)
+ * names nothing on disk.
+ */
+function finderFiles(): string[] {
+  try {
+    const xml = clipboard.read('NSFilenamesPboardType')
+    const unescape = (t: string): string =>
+      t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
+    let paths = [...xml.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) => unescape(m[1]))
+    if (!paths.length) {
+      const url = clipboard.read('public.file-url')
+      if (url.startsWith('file://')) paths = [fileURLToPath(url)]
+    }
+    return paths.filter((p) => existsSync(p))
+  } catch {
+    return []
+  }
 }
 
 contextBridge.exposeInMainWorld('terminator', api)

@@ -14,7 +14,8 @@
 // never got the tab up, the app quitting. A missed release is a Claude session
 // stuck on a blank alternate screen with no way out but Ctrl+C.
 
-import { chmodSync, lstatSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { chmodSync, existsSync, lstatSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -80,7 +81,10 @@ function guiEditorNameIn(argv0: string): string {
  * than trusted — a symlink sitting there would otherwise have us write through it.
  */
 function shimHome(): string {
-  const name = `terminator-${process.getuid?.() ?? 0}`
+  // Per profile too: a development build, the installed app and a test run each
+  // write their own executable and helper into the shim.
+  const profile = createHash('sha256').update(app.getPath('userData')).digest('hex').slice(0, 8)
+  const name = `terminator-${process.getuid?.() ?? 0}-${profile}`
   for (const base of [tmpdir(), '/tmp']) {
     if (!base || /\s/.test(base)) continue
     const dir = join(base, name)
@@ -162,6 +166,24 @@ export function installPromptEditor(): void {
 }
 
 /**
+ * Put the shim back if it has gone. It lives in the temp folder, which macOS
+ * clears of anything left untouched for three days — and this app is one people
+ * leave running for longer than that. Checked as each Claude session starts,
+ * which is when $VISUAL is handed out.
+ */
+function ensureShim(): void {
+  if (process.platform === 'win32' || !command || existsSync(command)) return
+  try {
+    // Remade with the same checks as the first time: in /tmp anyone could have got there first.
+    if (shimHome() !== shimDir) return
+    writeFileSync(command, posixShimSource(process.execPath, helperFile), 'utf8')
+    chmodSync(command, 0o700)
+  } catch {
+    // Ctrl+G will say it couldn't start its editor; nothing else is affected.
+  }
+}
+
+/**
  * Let go of every live edit, so nothing is left blocked on a window that is going
  * away. The shim itself stays on disk: it is a stable per-user path the next run
  * reuses, and a leftover one can only ever exit immediately — the port it was told
@@ -180,6 +202,7 @@ export function disposePromptEditor(): void {
  */
 export function promptEditorCommand(): string {
   if (loadSettings().promptEditorId !== IN_APP_EDITOR_ID) return ''
+  ensureShim()
   return command
 }
 

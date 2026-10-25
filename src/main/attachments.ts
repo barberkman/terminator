@@ -413,7 +413,7 @@ export async function openAttachment(path: string): Promise<AttachOpenResult> {
   if (!command) return openWithOs(path)
 
   const exe = ptyMgr.expandHome(command) || command
-  const name = editorName(command)
+  const name = editorName(command, editor.args)
   const error = await launchDetached(exe, editorArgv(editor.args ?? [], path))
   if (error) return { ok: false, reason: `${name} wouldn't start: ${error.slice(0, 140)}` }
   return { ok: true }

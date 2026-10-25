@@ -23,6 +23,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { modalOpen } from './state/store'
+import { primaryMod } from './shortcuts'
 
 /** A find bar's counter. `index` is 1-based; both are 0 when nothing matched. */
 export interface FindHits {
@@ -54,7 +55,7 @@ export function useFindKeys(active: boolean, onOpen: () => void): void {
       // `code`, not `key`, so a non-US layout still finds the F — the same
       // layout-independence `codeToAccel` is built on.
       if (e.code !== 'KeyF' || e.altKey || e.shiftKey) return
-      if (!(e.ctrlKey || e.metaKey)) return
+      if (!primaryMod(e)) return
       if (modalOpen()) return
       e.preventDefault()
       e.stopPropagation()

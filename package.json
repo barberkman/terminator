@@ -10,9 +10,11 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test:scripting": "node test/scripting/e2e.js",
+    "test:mac": "node test/mac/e2e.js",
     "dist": "electron-vite build && electron-builder",
     "dist:linux": "electron-vite build && electron-builder --linux AppImage",
-    "dist:win": "electron-vite build && electron-builder --win"
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:mac": "electron-vite build && electron-builder --mac"
   },
   "build": {
     "appId": "com.terminator.desktop",
@@ -47,6 +49,28 @@
         "portable"
       ],
       "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSDocumentsFolderUsageDescription": "Sessions run, and the editor and file tree read, in the project folders you open — some of which live in Documents.",
+        "NSDesktopFolderUsageDescription": "Sessions run, and the editor and file tree read, in the project folders you open — some of which live on the Desktop.",
+        "NSDownloadsFolderUsageDescription": "Sessions run, and the editor and file tree read, in the project folders you open — some of which live in Downloads.",
+        "NSRemovableVolumesUsageDescription": "Sessions can run in project folders on removable drives.",
+        "NSNetworkVolumesUsageDescription": "Sessions can run in project folders on network drives.",
+        "NSAppleEventsUsageDescription": "Programs run in a session — Claude, scripts, osascript — may control other apps when you ask them to.",
+        "NSLocalNetworkUsageDescription": "Browser panes and programs run in a session can reach servers on your local network."
+      }
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {
       "artifactName": "${productName}-Setup-${version}.${ext}"

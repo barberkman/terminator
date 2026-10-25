@@ -14,6 +14,7 @@ import {
   type Settings,
 } from '../../shared/types'
 import { formatArgs, parseArgs } from '../../shared/args'
+import { programName } from '../../shared/editor-name'
 import { importTheme, newThemeId, resolveTheme, snapshotSeed } from '../../shared/themes'
 import { C, STATUS_COLORS, accentA, sz } from '../theme'
 import { Icon } from '../icons'
@@ -39,7 +40,7 @@ const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'projectEditor', 'worktreesRoot', 'notifications',
   'terminalFont', 'fontSize', 'iconScale', 'sidebarSide', 'relaunchOnStartup', 'globalToggleShortcut',
   'notesShortcut', 'attachments', 'links', 'browser', 'settingsOpen', 'usageRefreshSeconds',
-  'promptEditorId', 'wsl', 'quickOpenShortcut', 'editorPreviewTabs', 'scripting',
+  'promptEditorId', 'wsl', 'quickOpenShortcut', 'editorPreviewTabs', 'scripting', 'optionAsMeta',
 ] as const satisfies readonly (keyof Settings)[]
 
 /** Cache size, at the resolution anyone reads it: "is that a lot?" */
@@ -230,7 +231,11 @@ function BrowserRow({
       <div style={{ display: 'flex', gap: 8 }}>
         <input
           style={{ ...inputStyle, flex: 1 }}
-          placeholder="/usr/bin/google-chrome   or   C:\Program Files\Google\Chrome\Application\chrome.exe"
+          placeholder={
+            window.terminator.platform === 'darwin'
+              ? '/Applications/Google Chrome.app'
+              : '/usr/bin/google-chrome   or   C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+          }
           value={browser.command}
           onChange={(e) => onChange({ ...browser, command: e.target.value })}
         />
@@ -292,7 +297,11 @@ function EditorRow({
       <div style={{ display: 'flex', gap: 8 }}>
         <input
           style={{ ...inputStyle, flex: 1 }}
-          placeholder="/usr/bin/code   or   C:\Program Files\Microsoft VS Code\Code.exe"
+          placeholder={
+            window.terminator.platform === 'darwin'
+              ? '/Applications/Visual Studio Code.app'
+              : '/usr/bin/code   or   C:\\Program Files\\Microsoft VS Code\\Code.exe'
+          }
           value={editor.command}
           onChange={(e) => onChange({ ...editor, command: e.target.value })}
         />
@@ -404,12 +413,7 @@ export function SettingsView(): React.JSX.Element | null {
     ? IN_APP_BROWSER_NAME
     : draft.links?.browsers.find((b) => b.id === draft.links.defaultBrowserId)?.name
   // Same name the tooltip and the right-click menu show: the executable's basename.
-  const editorLabel = (draft.links?.editor?.command ?? '')
-    .trim()
-    .split(/[/\\]/)
-    .filter(Boolean)
-    .pop()
-    ?.replace(/\.(exe|cmd|bat|com)$/i, '')
+  const editorLabel = programName(draft.links?.editor?.command ?? '', draft.links?.editor?.args) || undefined
   // Same rule the renderer's link module applies: chosen, or the only one left.
   const inAppEditor = draft.links?.defaultEditorId === IN_APP_EDITOR_ID || !editorLabel
 
@@ -829,6 +833,21 @@ export function SettingsView(): React.JSX.Element | null {
                   <option value="monospace" />
                 </datalist>
               </Field>
+              {window.terminator.platform === 'darwin' && (
+                <Field
+                  label="OPTION KEY IN TERMINALS"
+                  hint="As Meta, Option+key sends what Alt+key does on Windows: Option+B and Option+F move by word, and Claude's own Alt shortcuts work. As typing, Option types characters the way it does everywhere else on the Mac — on a Turkish or German layout that's how # $ { [ ] } are typed."
+                >
+                  <Choice
+                    value={draft.optionAsMeta ?? false}
+                    onPick={(optionAsMeta) => patch({ optionAsMeta })}
+                    options={[
+                      { value: false, label: 'Types characters' },
+                      { value: true, label: 'Acts as Meta' },
+                    ]}
+                  />
+                </Field>
+              )}
               <Field label="FONT SIZE" hint="Scales the whole interface — sidebar, tabs, and terminals. 14 = default.">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <input

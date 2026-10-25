@@ -31,6 +31,15 @@ const dir = path.join(os.homedir(), '.claude', 'projects', cwd.replace(/[^a-zA-Z
 fs.mkdirSync(dir, { recursive: true })
 const file = path.join(dir, id + '.jsonl')
 const log = (s) => fs.appendFileSync(path.join(os.homedir(), 'fake-claude.log'), `${new Date().toISOString()} ${id.slice(0, 8)} ${s}\n`)
+// How it was started and what it inherited, for the tests that check the launch itself.
+const pick = (...names) => Object.fromEntries(names.map((n) => [n, process.env[n] ?? null]))
+log(
+  `start ${JSON.stringify({
+    resume: argv.includes('--resume'),
+    cwd,
+    env: pick('PATH', 'LANG', 'TERM_PROGRAM', 'ELECTRON_RUN_AS_NODE', 'VISUAL', 'FROM_ZPROFILE', 'FROM_ZSHRC'),
+  })}`,
+)
 
 function fire(event, extra) {
   for (const g of settings.hooks[event] || []) {

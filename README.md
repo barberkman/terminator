@@ -24,6 +24,7 @@ npm run build      # production build into out/
 npm start          # run the production build
 npm run typecheck  # tsc, no emit
 npm run test:scripting  # the `terminator` command end to end, against out/ (Linux: under xvfb-run -a)
+npm run test:mac        # what's particular to macOS, against out/ (see test/mac/e2e.js)
 ```
 
 The scripting test also runs on GitHub Actions, on Windows and Linux, for every push that touches
@@ -46,6 +47,37 @@ build shows up before it merges; the exes are attached to the workflow run for a
 
 To build locally on Windows: `npm run dist:win` (output in `release/`). The exes aren't
 code-signed, so the first launch gets a SmartScreen warning: **More info → Run anyway**.
+
+### macOS builds
+
+On a Mac, `npm run dist:mac` builds `Terminator.app` for that Mac's processor, as a `.dmg` and a
+`.zip` in `release/`. The app is signed ad hoc, not with a developer certificate, which is all a
+Mac needs to run something built on it. A copy downloaded from somewhere else is quarantined by
+Gatekeeper; clear that once with `xattr -dr com.apple.quarantine /Applications/Terminator.app`.
+The first time a session works in Documents, Desktop or Downloads, macOS asks whether Terminator
+may — say yes, or the session gets "Operation not permitted" there.
+
+What's different on a Mac:
+
+- **The environment of your shell.** An app opened from the Dock gets launchd's bare PATH, with
+  none of what `~/.zprofile` or `~/.zshrc` adds — Homebrew, nvm, and so `claude`. So terminal
+  panes and Claude sessions start as **login shells**, the way Terminal.app's do, and the app
+  reads your login shell's environment once at startup for the programs it starts itself
+  (browsers, editors, the git tool, the notification command). A `.zshrc` can test
+  `$TERMINATOR_RESOLVING_ENVIRONMENT` to skip anything slow during that read. Panes also get a
+  UTF-8 `LANG` from your region settings, so ç, ş and ğ stay letters.
+- **Closing the window hides it.** Your sessions keep running, and clicking the Dock icon brings
+  the window back with everything in it. **Cmd+Q** quits. The menu bar has no Reload or zoom, so
+  Cmd+R can't wipe the terminals; Settings → FONT SIZE is the zoom.
+- **Cmd, not Ctrl.** Cmd+C/V copy and paste in a terminal, and **Ctrl+C is always the
+  interrupt**, Ctrl+V always the program's. Sessions switch with **Cmd+1..9**, because Option is
+  how a Mac types characters (on a Turkish layout, Option+3 is `#`). See **Keyboard & mouse**.
+- **Copying a file in Finder and pasting it** into a pane hands over the file, as dropping it
+  does — not the picture of its icon that Finder also puts on the clipboard.
+- **Picking an app** for a browser or editor in Settings (**Browse…** → `/Applications/…app`)
+  works: with only a link or a file to hand it, it opens through Launch Services, in the copy
+  already running; with arguments of its own (`--incognito`, `-g {path}:{line}`) the app's own
+  program is run with them.
 
 ## What it does
 
@@ -314,10 +346,11 @@ Two ways to hand a session something to look at, and both end the same way: the 
 is typed into the session — into Claude's prompt box, which reads it from there, or at a shell's
 prompt, which is what dropping a file on any other terminal does.
 
-- **Paste** — take a screenshot (`Win+Shift+S` on Windows), click a pane, **Ctrl/Cmd+V**. The
-  bitmap is written out as a PNG and referenced. With no image on the clipboard, Ctrl/Cmd+V
-  pastes text exactly as it always did; when the clipboard holds *both*, the image wins and
-  **Ctrl/Cmd+Shift+V** is the way to the text.
+- **Paste** — take a screenshot (`Win+Shift+S` on Windows, `Cmd+Ctrl+Shift+4` on a Mac), click a
+  pane, **Ctrl/Cmd+V**. The bitmap is written out as a PNG and referenced. With no image on the
+  clipboard, Ctrl/Cmd+V pastes text exactly as it always did; when the clipboard holds *both*,
+  the image wins and **Ctrl/Cmd+Shift+V** is the way to the text. A file copied in Finder is
+  pasted as that file, the way dropping it would hand it over.
 - **Drag and drop** — drop one file, several at once, or a folder onto a pane; the pane outlines
   itself while you drag over it. **Dropped files stay where they are** — referenced in place,
   never copied, moved or duplicated — and a folder is referenced as a path rather than expanded.
@@ -656,10 +689,17 @@ In a terminal pane:
   other terminals send. Plain **Enter** still submits. Shell panes are untouched, so there
   Shift+Enter still runs the command.
 - **Right-click** — copies the selection and clears the highlight. With nothing selected the
-  click passes through to the program in the pane (no context menu either way).
-- **Ctrl/Cmd+C** — copies the selection; with nothing selected it sends `^C` (interrupt).
-- **Ctrl/Cmd+V** — pastes: an image if the clipboard holds one, otherwise text.
+  click passes through to the program in the pane (no context menu either way). On a Mac,
+  **Ctrl+click** is a right-click here too.
+- **Ctrl/Cmd+C** — copies the selection; with nothing selected it sends `^C` (interrupt). On a
+  Mac it's **Cmd+C** that copies, and **Ctrl+C** is always the interrupt.
+- **Ctrl/Cmd+V** — pastes: an image if the clipboard holds one, otherwise text. On a Mac, Cmd+V;
+  Ctrl+V goes to the program in the pane (vim's block select, Claude's own image paste).
 - **Ctrl/Cmd+Shift+V** — pastes text, never the image. The way out when the clipboard holds both.
+- **Option** (macOS) — types characters, as everywhere else on a Mac. Settings → APPEARANCE →
+  **OPTION KEY IN TERMINALS** makes it Meta instead, sending what Alt does on Windows (Option+B
+  and Option+F move by word) — at the cost of the characters your layout types with it.
+  **Option+click** selects text even while a program in the pane has the mouse (vim, htop).
 - **Ctrl/Cmd+click a link** — opens it in your configured browser; **right-click a link** for the
   other browsers and Copy link. A plain click opens nothing unless Settings → **OPENING A LINK**
   says so. See **Links** above for what stops a selection from opening one.
@@ -713,6 +753,12 @@ jump to a session, **Alt+↓ / Alt+↑** step to the next / previous session in 
 The Alt shortcuts work from any pane, a browser page included — in an editor pane they take
 the place of move-line-up/down. The global show/hide hotkey (default `F12`), the notes hotkey
 (default `Ctrl/Cmd+Shift+N`) and Quick Open (default `Ctrl/Cmd+P`) are configurable in Settings.
+
+On a Mac every one of those is Cmd, never Ctrl, so Ctrl+N, Ctrl+B and Ctrl+P keep moving the
+cursor in text fields and the editor; Cmd+N and Cmd+B work with a terminal focused too. Sessions
+switch with **Cmd+1..9** — Option+digit is left to type its character — and **Option+↓ / ↑**
+step through them as Alt does elsewhere. In a browser pane **Cmd+R** reloads the page as well as
+F5. `F12` on most Mac keyboards is **fn+F12**.
 
 ## Relaunching at startup
 
@@ -836,7 +882,9 @@ set to — and which ones you left open is remembered:
 - `modes.normal.command` / `modes.readonly.command` — the Claude commands (defaults `claude`,
   `claude-readonly`). The app appends `--session-id` / `--resume` / `--settings`, so a custom
   read-only command must forward appended args (e.g. `exec claude --permission-mode plan "$@"`).
-- `defaultShell`, `gitGuiCommand`, `worktreesRoot`, `projects`.
+- `defaultShell`, `shellArgs`, `gitGuiCommand`, `worktreesRoot`, `projects`. Empty `shellArgs`
+  means the platform's default: none, or `-l` on macOS, where a terminal's shell is a login shell.
+- `optionAsMeta` — macOS: the Option key acts as Meta in terminal panes (default `false`).
 - `projectEditor` (`{ command, args }`) — what the pane header's editor button opens a session's
   folder in. Default `code` (VS Code); on macOS `open -a "Visual Studio Code"`, since an app
   started from the Dock doesn't see the `code` shim on PATH. The folder replaces `{path}` in the
@@ -894,8 +942,9 @@ it doesn't wait for **Save settings**, and **Cancel** doesn't take it back.
   grey list selection and its darker strip above each pane.
 
 On Windows the app draws its own title bar, in the theme's sidebar colour, and recolours the
-native minimise / maximise / close buttons to match, so the whole window follows the theme.
-macOS and Linux keep their system title bars.
+native minimise / maximise / close buttons to match, so the whole window follows the theme. On
+macOS it draws the same strip, with the traffic lights inset into it; they keep the system's
+colours, as in every Mac app. Linux keeps its system title bar.
 
 The built-ins live in [`src/shared/themes.ts`](src/shared/themes.ts). Each is a compact seed — a
 background, two text anchors, a few accents, and the terminal/editor palettes — from which the
@@ -968,7 +1017,7 @@ command** that the app runs on each notification, through your shell. It receive
 - `TERMINATOR_NOTIF_TYPE` ∈ `waiting | finished | error | exited | idle`
 - `TERMINATOR_SESSION_NAME`, `TERMINATOR_PROJECT`, `TERMINATOR_BRANCH`, `TERMINATOR_STATUS`,
   `TERMINATOR_KIND`, `TERMINATOR_MODE`, `TERMINATOR_CWD`, `TERMINATOR_MESSAGE`
-- `TERMINATOR_RUNTIME` ∈ `windows | wsl`, and `TERMINATOR_WSL_DISTRO`. For a WSL session
+- `TERMINATOR_RUNTIME` ∈ `windows | macos | linux | wsl`, and `TERMINATOR_WSL_DISTRO`. For a WSL session
   `TERMINATOR_CWD` is its Linux path; the command itself still runs on Windows, in the folder's
   `\\wsl.localhost` share.
 

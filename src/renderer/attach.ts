@@ -182,6 +182,18 @@ export async function attachDrop(sessionId: string, dt: DataTransfer): Promise<v
   }
 }
 
+/** Attach files by path — the ones a Finder copy put on the clipboard (macOS). */
+export async function attachPaths(sessionId: string, paths: string[]): Promise<void> {
+  try {
+    const floor = chipFloor(sessionId)
+    const result = await window.terminator.attachFiles(sessionId, paths.map((path) => ({ path })))
+    watchChips(sessionId, floor, result)
+    report(result)
+  } catch (e) {
+    fail(String(e).slice(0, 200))
+  }
+}
+
 /** Attach the clipboard's image (the caller has already checked there is one). */
 export async function attachClipboardImage(sessionId: string): Promise<void> {
   try {

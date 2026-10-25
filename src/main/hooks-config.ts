@@ -83,6 +83,13 @@ function readJson(file: string): Record<string, unknown> | null {
 
 function reporterCommand(kind: 'hook' | 'status', wsl?: Probe): string {
   if (wsl) return wslReporterCommand(kind, wsl)
+  if (process.platform !== 'win32') {
+    // Node mode set inline, as below for WSL, rather than in the session's
+    // environment, where every program Claude runs would inherit it — and an
+    // Electron app among them would start as plain Node.
+    const args = [process.execPath, reporterPath()].map(shquote).join(' ')
+    return `ELECTRON_RUN_AS_NODE=1 ${args} ${kind} ${reportPort()} ${reportToken()}`
+  }
   const q = (s: string) => `"${s}"`
   return `${q(process.execPath)} ${q(reporterPath())} ${kind} ${reportPort()} ${reportToken()}`
 }

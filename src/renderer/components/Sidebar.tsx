@@ -17,6 +17,7 @@ import {
   shortcutSlots,
   useStore,
 } from '../state/store'
+import { SESSION_DIGIT_LABEL, sessionDigitMod } from '../shortcuts'
 
 const HEADER_BTN_HOVER = ink(0.06)
 
@@ -82,9 +83,9 @@ function menuOpener(target: MenuTarget) {
 function useAltHeld(): boolean {
   const [held, setHeld] = useState(false)
   useEffect(() => {
-    // Alt alone, matching the handler's own guard — Ctrl+Alt+3 switches nothing,
-    // so it has no business lighting the numbers up.
-    const onKey = (e: KeyboardEvent) => setHeld(e.altKey && !e.ctrlKey && !e.metaKey)
+    // The handler's own modifier alone (Alt, or Cmd on macOS) — Ctrl+Alt+3 switches
+    // nothing, so it has no business lighting the numbers up.
+    const onKey = (e: KeyboardEvent) => setHeld(sessionDigitMod(e))
     const clear = () => setHeld(false)
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('keyup', onKey, true)
@@ -110,7 +111,7 @@ function useAltHeld(): boolean {
 function ShortcutSlot({ slot, altHeld }: { slot?: number; altHeld: boolean }): React.JSX.Element {
   return (
     <span
-      title={slot ? `Alt+${slot}` : undefined}
+      title={slot ? `${SESSION_DIGIT_LABEL}${slot}` : undefined}
       style={{
         width: sz(10),
         flex: 'none',
@@ -451,7 +452,7 @@ function RailTab({
   const active = focusedId === session.id
   const notified = session.notified && !active
   const armed = altHeld && slot !== undefined
-  const hint = slot ? `  (Alt+${slot})` : ''
+  const hint = slot ? `  (${SESSION_DIGIT_LABEL}${slot})` : ''
 
   return (
     <button

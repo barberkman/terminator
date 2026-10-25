@@ -13,12 +13,14 @@ export function isPdfPath(p: string): boolean {
 
 /**
  * A path in the form two spellings of the same file agree on: the tree joins with
- * `/` onto a root main wrote with `\`, and Windows doesn't care about case.
+ * `/` onto a root main wrote with `\`, and neither Windows nor macOS (as its disks
+ * are formatted out of the box) cares about case.
  */
 function samePath(a: string, b: string): boolean {
   const norm = (p: string): string => {
     const s = p.replace(/\\/g, '/').replace(/\/{2,}/g, '/')
-    return window.terminator.platform === 'win32' ? s.toLowerCase() : s
+    const platform = window.terminator.platform
+    return platform === 'win32' || platform === 'darwin' ? s.toLowerCase() : s
   }
   // A UNC path's leading `//` is part of it; collapsing it on both sides keeps them equal.
   return norm(a) === norm(b)

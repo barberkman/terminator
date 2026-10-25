@@ -9,6 +9,7 @@ import { Icon } from '../icons'
 import { openOutsideApp } from '../term/links'
 import { FindBar } from './FindBar'
 import { ChromeButton } from './controls'
+import { IS_MAC } from '../shortcuts'
 
 /**
  * A web page, inside the app.
@@ -346,7 +347,9 @@ export function BrowserPaneBody({
   useEffect(() => {
     if (!focusedHere) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'F5') return
+      // And Cmd+R on macOS, as main does for the page itself (browser.ts).
+      const cmdR = IS_MAC && e.code === 'KeyR' && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+      if (e.key !== 'F5' && !cmdR) return
       // Don't act underneath a modal.
       if (modalOpen()) return
       const wv = ref.current
