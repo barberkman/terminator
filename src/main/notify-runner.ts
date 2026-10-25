@@ -8,6 +8,8 @@ import { loadSettings } from './settings'
 import { expandHome } from './pty-manager'
 import { shellRunArgs } from './shell'
 
+const HOST_RUNTIME = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'
+
 // Runs the user's configurable notification command, fire-and-forget. The command
 // receives the full event as JSON on stdin plus TERMINATOR_* env vars, and runs
 // through the user's shell so it resolves in their environment. Type-aware:
@@ -32,9 +34,9 @@ export function runNotifyCommand(e: NotificationEvent): void {
     TERMINATOR_MODE: e.mode,
     TERMINATOR_CWD: e.cwd,
     TERMINATOR_MESSAGE: e.message,
-    // Where the session runs: `windows`, or `wsl` — and then TERMINATOR_CWD is a
-    // Linux path inside TERMINATOR_WSL_DISTRO.
-    TERMINATOR_RUNTIME: isWsl(e) ? 'wsl' : 'windows',
+    // Where the session runs: `windows` (`macos`, `linux` off Windows), or `wsl` —
+    // and then TERMINATOR_CWD is a Linux path inside TERMINATOR_WSL_DISTRO.
+    TERMINATOR_RUNTIME: isWsl(e) ? 'wsl' : HOST_RUNTIME,
     TERMINATOR_WSL_DISTRO: isWsl(e) ? e.runtime.distro : '',
   })
 

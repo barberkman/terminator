@@ -24,8 +24,15 @@ import { installCommand } from './cli-install'
 import { wireClaudeTurns } from './claude-turns'
 import { applyScripting, stopControlServer } from './control-server'
 import { setScriptingWindow, wireScripting } from './scripting'
+import { startShellEnv } from './shell-env'
+import { macMenu } from './mac-menu'
+
+// macOS: read the login shell's PATH in the background while the app starts up.
+startShellEnv()
 
 let win: BrowserWindow | null = null
+/** Set as quitting begins, so the window's close goes ahead instead of hiding it (macOS). */
+let quitting = false
 
 function createWindow(): void {
   // Packaged: copied next to the app via electron-builder extraResources.
@@ -53,10 +60,17 @@ function createWindow(): void {
     // Windows paints its own frame in its own colours, which no theme can reach, so
     // the app draws the title bar itself (TitleBar.tsx) and keeps only the native
     // caption buttons, recoloured to match. The renderer repaints them on every
-    // theme change; this is just the first frame. macOS and Linux keep their frames.
+    // theme change; this is just the first frame. macOS gets the same strip, with
+    // the traffic lights inset into it — they wear the system's colours, not the
+    // theme's, as they do in every Mac app. Linux keeps its frame.
     ...(process.platform === 'win32' && {
       titleBarStyle: 'hidden' as const,
       titleBarOverlay: { color: theme.sidebar, symbolColor: theme.text, height: TITLE_BAR_HEIGHT },
+    }),
+    ...(process.platform === 'darwin' && {
+      titleBarStyle: 'hidden' as const,
+      // Centred in the strip: the buttons are 14 DIPs tall.
+      trafficLightPosition: { x: 13, y: Math.round((TITLE_BAR_HEIGHT - 14) / 2) },
     }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -106,9 +120,24 @@ function createWindow(): void {
   setUsageWindow(win)
   setPromptEditWindow(win)
   setScriptingWindow(win)
-  // On macOS the app outlives its window, and `before-quit` won't run — so this is
-  // the only thing standing between a closed window and a Claude session still
-  // blocked on a tab that no longer exists.
+  // On macOS closing the window hides it. The sessions are still running, and
+  // their terminals and scrollback live in this window's page, so it has to
+  // survive to show them again: the Dock icon brings it back (`activate` below).
+  // Quitting is the only way it really closes.
+  if (process.platform === 'darwin') {
+    const w = win
+    w.on('close', (e) => {
+      if (quitting) return
+      e.preventDefault()
+      // Hiding a full-screen window would leave its empty Space behind.
+      if (w.isFullScreen()) {
+        w.once('leave-full-screen', () => w.hide())
+        w.setFullScreen(false)
+      } else w.hide()
+    })
+  }
+  // The last word for a Claude session still blocked on a Ctrl+G tab, should the
+  // window go without `before-quit` having run.
   win.on('closed', finishAllEdits)
 }
 
@@ -133,17 +162,23 @@ app.whenReady().then(async () => {
   // the window options above, only hides the bar until Alt asks for it. Nothing in the
   // default menu was the app's: Chromium handles clipboard, undo and select-all in
   // web content natively on both platforms, and every shortcut the app defines
-  // lives in the renderer. macOS keeps its menu, where the bar belongs to the
+  // lives in the renderer. macOS keeps a menu, where the bar belongs to the
   // system rather than the window, Alt never opens it, and dropping it would cost
-  // Cmd+C/V/Q the standard roles that carry them.
-  if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
+  // Cmd+C/V/Q the standard roles that carry them — but its own (see mac-menu.ts).
+  Menu.setApplicationMenu(process.platform === 'darwin' ? macMenu() : null)
   createWindow()
   applyGlobalShortcut(() => win)
   // Settings → SCRIPTING: listen for the `terminator` command only while it's on.
   applyScripting()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (!win || win.isDestroyed()) {
+      createWindow()
+      return
+    }
+    // A click on the Dock icon: bring back the window closing hid.
+    if (win.isMinimized()) win.restore()
+    win.show()
   })
 })
 
@@ -153,6 +188,7 @@ app.on('window-all-closed', () => {
 
 // Make sure no shell/claude PTYs are orphaned when the app quits.
 app.on('before-quit', () => {
+  quitting = true
   // Surviving the restart is the whole point of the usage snapshot, so its debounced
   // save gets written out rather than dropped.
   flushUsage()

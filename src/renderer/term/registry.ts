@@ -4,9 +4,10 @@ import '@xterm/xterm/css/xterm.css'
 import { FONT } from '../theme'
 import { type ThemePalette, themeById } from '../../shared/themes'
 import { useStore } from '../state/store'
-import { attachClipboardImage } from '../attach'
+import { attachClipboardImage, attachPaths } from '../attach'
 import * as links from './links'
 import * as chips from './image-chips'
+import { IS_MAC, primaryMod } from '../shortcuts'
 
 // One persistent xterm Terminal per session, alive for the session's lifetime
 // regardless of which pane (if any) currently shows it. Hidden terminals are
@@ -59,6 +60,14 @@ export function setTheme(p: ThemePalette): void {
 
 /** Link behaviour comes from Settings; the provider reads it on every hover. */
 export const setLinkSettings = links.setLinkSettings
+
+let curOptionAsMeta = false
+
+/** Settings → Option key as Meta (macOS only; xterm ignores it elsewhere). */
+export function setOptionAsMeta(on: boolean): void {
+  curOptionAsMeta = on
+  for (const e of entries.values()) e.term.options.macOptionIsMeta = on
+}
 
 export function setFontFamily(family: string): void {
   curFontFamily = family || FONT
@@ -129,6 +138,13 @@ export function getOrCreate(id: string): Entry {
     scrollback: 8000,
     allowProposedApi: true,
     theme: curTheme,
+    // macOS. Option+click selects even while a program has mouse reporting on
+    // (vim, htop, tmux) — Shift+click does that elsewhere, but not on a Mac.
+    macOptionIsMeta: curOptionAsMeta,
+    macOptionClickForcesSelection: true,
+    // Right-click is the copy gesture here (below); xterm's own Mac default would
+    // select the word under the pointer straight after the copy cleared it.
+    rightClickSelectsWord: false,
   })
   // OSC 8 hyperlinks — text a program explicitly marked as a link. Detection of
   // plain URLs in output is a link provider, registered in attachLinks below.
@@ -185,16 +201,27 @@ export function getOrCreate(id: string): Entry {
       window.terminator.writePty(id, '\x1b\r')
       return false
     }
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return true
+    // Cmd alone on macOS: Ctrl+C there is always the interrupt, Ctrl+V the program's.
+    if (!primaryMod(e) || e.altKey) return true
     const k = e.key.toLowerCase()
     if (k === 'c') {
-      if (copySelection()) return false
+      if (copySelection()) {
+        // So macOS's Edit menu doesn't copy again after the selection is cleared.
+        e.preventDefault()
+        return false
+      }
       return true // no selection → let ^C reach the shell (interrupt)
     }
     if (k === 'v') {
       // preventDefault stops the browser's native paste into xterm's textarea;
       // without it both that and the manual paste below fire (pasting twice).
       e.preventDefault()
+      // Files copied in Finder go in as files, the way a drop does (macOS).
+      const files = e.shiftKey ? [] : window.terminator.clipboardFilePaths()
+      if (files.length) {
+        void attachPaths(id, files)
+        return false
+      }
       if (!e.shiftKey && window.terminator.clipboardHasImage()) {
         void attachClipboardImage(id)
         return false
@@ -223,7 +250,10 @@ export function getOrCreate(id: string): Entry {
   host.addEventListener(
     'mousedown',
     (e) => {
-      if (e.button !== 2) return
+      // Ctrl+click is the right-click on a Mac — the one a trackpad without a
+      // second button has — and arrives as a left button with Ctrl held.
+      const right = e.button === 2 || (IS_MAC && e.button === 0 && e.ctrlKey)
+      if (!right) return
       if (copySelection()) {
         e.preventDefault()
         e.stopPropagation()

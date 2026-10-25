@@ -1,4 +1,4 @@
-import { globalShortcut, type BrowserWindow } from 'electron'
+import { app, globalShortcut, type BrowserWindow } from 'electron'
 import { loadSettings } from './settings'
 
 // Yakuake-style global show/hide hotkey: a system-wide shortcut that summons or
@@ -39,20 +39,31 @@ function fade(win: BrowserWindow, from: number, to: number, done?: () => void): 
   }, 16)
 }
 
-/** Summon / dismiss: restore+focus if minimized, raise if visible-but-behind, else minimize. */
+/**
+ * Summon / dismiss: restore+focus if minimized, raise if visible-but-behind, else
+ * minimize. On macOS dismissing hides the app instead — the window doesn't fly
+ * into the Dock, and the app you were in before gets the keyboard back — and
+ * summoning has to make the app the active one, which focusing a window alone
+ * doesn't do there while another app is in front.
+ */
 export function toggleWindow(win: BrowserWindow | null): void {
   if (!win || win.isDestroyed()) return
+  const mac = process.platform === 'darwin'
   if (win.isMinimized()) {
     win.setOpacity(0)
     win.restore()
     win.focus()
+    if (mac) app.focus({ steal: true })
     fade(win, 0, 1)
   } else if (!win.isFocused()) {
+    if (mac) app.show()
     win.show()
     win.focus()
+    if (mac) app.focus({ steal: true })
   } else {
     fade(win, 1, 0, () => {
-      win.minimize()
+      if (mac) app.hide()
+      else win.minimize()
       // Reset so a later taskbar restore (not via the hotkey) isn't transparent.
       win.setOpacity(1)
     })

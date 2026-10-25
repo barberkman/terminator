@@ -17,10 +17,12 @@
 // that session could already reach — or a PDF, which opens in a pane wherever it
 // is — and the editor is launched with the file as its own argv element.
 
-import { spawn, type SpawnOptions } from 'node:child_process'
+import { execFile, spawn, type SpawnOptions } from 'node:child_process'
+import { promisify } from 'node:util'
 import { webUrl } from '../shared/url'
-import { promises as fsp, statSync } from 'node:fs'
-import { isAbsolute, resolve, sep } from 'node:path'
+import { programName } from '../shared/editor-name'
+import { existsSync, promises as fsp, realpathSync, statSync } from 'node:fs'
+import { basename, isAbsolute, join, resolve, sep } from 'node:path'
 import { shell } from 'electron'
 import {
   IN_APP_BROWSER_ID,
@@ -34,6 +36,9 @@ import { loadSettings } from './settings'
 import { expandHome } from './pty-manager'
 import { getSession } from './state'
 import { expandLinuxHome, probe } from './wsl'
+import { whenShellEnv } from './shell-env'
+
+const pExecFile = promisify(execFile)
 
 /** Same idea as MAX_URL_LENGTH, for a path-like token out of the scrollback. */
 const MAX_PATH_LENGTH = 1024
@@ -54,15 +59,23 @@ export { webUrl } from '../shared/url'
  * `opts` exists for the one caller that has to go through cmd.exe on Windows (see
  * `launchEditor` in worktree.ts) and quotes the command line itself.
  */
-export function launchDetached(
+export async function launchDetached(
   exe: string,
   args: string[],
   opts: Pick<SpawnOptions, 'windowsHide' | 'windowsVerbatimArguments'> = {},
 ): Promise<string | null> {
+  // A bare command name is looked up on PATH, which on macOS has to be the login
+  // shell's before it can find anything (see shell-env.ts).
+  await whenShellEnv()
+  const app = await macApp(exe, args)
+  if ('error' in app) return app.error
+  if (app.exe === '/usr/bin/open' || (process.platform === 'darwin' && exe === 'open')) {
+    return runOpen(app.exe, app.args)
+  }
   return new Promise((done) => {
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn(exe, args, { ...opts, detached: true, stdio: 'ignore', shell: false })
+      child = spawn(app.exe, app.args, { ...opts, detached: true, stdio: 'ignore', shell: false })
     } catch (e) {
       done(String(e).slice(0, 160))
       return
@@ -72,6 +85,65 @@ export function launchDetached(
       // Unref so quitting Terminator never takes the browser with it.
       child.unref()
       done(null)
+    })
+  })
+}
+
+/**
+ * What to run for a program that is a macOS app bundle — which is what the file
+ * picker in Settings hands back for anything in /Applications. A bundle is a
+ * folder, so it can't be spawned as it is:
+ *
+ *   • With nothing but a URL or a file to hand it, it goes through `open -a`, so
+ *     Launch Services delivers it to the copy already running, as clicking a link
+ *     elsewhere would.
+ *   • With flags (`--incognito`, `-g {path}:{line}`), `open` would only pass them
+ *     on to a copy it starts fresh, so the bundle's own executable is run instead,
+ *     the way its command-line launcher would.
+ *
+ * Anything else, and every other platform, is run as it is.
+ */
+async function macApp(exe: string, args: string[]): Promise<{ exe: string; args: string[] } | { error: string }> {
+  const bundle = exe.replace(/\/+$/, '')
+  if (process.platform !== 'darwin' || !/\.app$/i.test(bundle)) return { exe, args }
+  if (!existsSync(bundle)) return { error: `there's no app at ${bundle}` }
+  const documents = args.every((a) => webUrl(a) || (isAbsolute(a) && existsSync(a)))
+  if (documents) return { exe: '/usr/bin/open', args: ['-a', bundle, ...args] }
+  try {
+    const plist = join(bundle, 'Contents', 'Info.plist')
+    const { stdout } = await pExecFile('/usr/bin/plutil', ['-extract', 'CFBundleExecutable', 'raw', '-o', '-', plist])
+    const program = join(bundle, 'Contents', 'MacOS', basename(stdout.trim()))
+    if (!stdout.trim() || !existsSync(program)) return { error: `${basename(bundle)} has no program to run` }
+    return { exe: program, args }
+  } catch {
+    return { error: `${basename(bundle)} doesn't look like an app` }
+  }
+}
+
+/**
+ * `open` hands the launch to Launch Services and exits, with an error when there
+ * was nothing to open — so unlike a program spawned directly, it's worth waiting
+ * for: otherwise an app that isn't installed would be reported as opened.
+ */
+function runOpen(exe: string, args: string[]): Promise<string | null> {
+  return new Promise((done) => {
+    let child: ReturnType<typeof spawn>
+    try {
+      child = spawn(exe, args, { stdio: ['ignore', 'ignore', 'pipe'], shell: false })
+    } catch (e) {
+      done(String(e).slice(0, 160))
+      return
+    }
+    let err = ''
+    child.stderr?.on('data', (d) => (err += d))
+    const timer = setTimeout(() => done(null), 10_000)
+    child.once('error', (e) => {
+      clearTimeout(timer)
+      done(e.message || String(e))
+    })
+    child.once('exit', (code) => {
+      clearTimeout(timer)
+      done(code ? err.trim().split('\n')[0] || `open exited with ${code}` : null)
     })
   })
 }
@@ -167,8 +239,7 @@ export async function resolveOutputPath(sessionId: string, token: string): Promi
   const root = resolve(expandHome(session.worktreePath || session.projectPath) || session.projectPath)
   const expanded = expandHome(raw) || raw
   const abs = isAbsolute(expanded) ? resolve(expanded) : resolve(root, expanded)
-  const inside = abs === root || abs.startsWith(root.endsWith(sep) ? root : root + sep)
-  if (!inside && !PDF_RE.test(abs)) return null
+  if (!within(root, abs) && !withinReal(root, abs) && !PDF_RE.test(abs)) return null
 
   try {
     return statSync(abs).isFile() ? abs : null
@@ -177,10 +248,27 @@ export async function resolveOutputPath(sessionId: string, token: string): Promi
   }
 }
 
+function within(root: string, p: string): boolean {
+  return p === root || p.startsWith(root.endsWith(sep) ? root : root + sep)
+}
+
+/**
+ * The same test on the real paths, off Windows: Claude prints the folder it runs
+ * in as its process.cwd() names it, so a project opened as `/tmp/x` shows up in its
+ * output as `/private/tmp/x/…`, and one typed in the wrong case in its real case.
+ */
+function withinReal(root: string, p: string): boolean {
+  if (process.platform === 'win32') return false
+  try {
+    return within(realpathSync.native(root), realpathSync.native(p))
+  } catch {
+    return false
+  }
+}
+
 /** A configured editor's display name: the executable's basename, no extension. */
-export function editorName(command: string): string {
-  const base = command.trim().split(/[/\\]/).filter(Boolean).pop() ?? ''
-  return base.replace(/\.(exe|cmd|bat|com)$/i, '') || 'your editor'
+export function editorName(command: string, args?: string[]): string {
+  return programName(command, args) || 'your editor'
 }
 
 /**
@@ -222,7 +310,7 @@ export async function openInEditor(input: OpenFileInput): Promise<OpenFileResult
   if (!command) return { ok: false, reason: 'no external editor is set in Settings' }
 
   const exe = expandHome(command) || command
-  const name = editorName(command)
+  const name = editorName(command, editor.args)
   const error = await launchDetached(
     exe,
     editorArgv(editor.args ?? [], abs, input.line, input.column),

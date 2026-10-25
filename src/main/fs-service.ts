@@ -56,6 +56,8 @@ const GIT_LIST_MS = 15_000
 const WALK_MS = 10_000
 /** Directories the walk never enters: version-control internals and installed dependencies. */
 const WALK_SKIP = new Set(['.git', '.hg', '.svn', 'node_modules'])
+/** Finder's folder-view state, which it leaves in every folder it opens: never a file anyone means. */
+const isFinderLitter = (name: string): boolean => name === '.DS_Store'
 /**
  * Tracked files plus untracked ones `.gitignore` doesn't exclude, NUL-separated.
  * `core.fsmonitor` off because it names a program for git to run, and a project's
@@ -147,7 +149,9 @@ export async function listDir(root: string, dir: string): Promise<DirEntry[]> {
   } catch {
     return []
   }
-  const out: DirEntry[] = ents.map((e) => ({ name: e.name, isDir: e.isDirectory() }))
+  const out: DirEntry[] = ents
+    .filter((e) => !isFinderLitter(e.name))
+    .map((e) => ({ name: e.name, isDir: e.isDirectory() }))
   out.sort((a, b) => {
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
@@ -172,7 +176,7 @@ export async function listFiles(
   const seen = new Set<string>()
   // A conflicted file is listed once per stage.
   for (const f of out.split('\0')) {
-    if (!f || seen.has(f)) continue
+    if (!f || seen.has(f) || isFinderLitter(f.slice(f.lastIndexOf('/') + 1))) continue
     if (seen.size >= MAX_LISTED) return { files: [...seen], truncated: true }
     seen.add(f)
   }
@@ -221,7 +225,7 @@ async function walkFiles(root: string): Promise<FileListResult> {
       const r = rel ? `${rel}/${e.name}` : e.name
       if (e.isDirectory()) {
         if (!WALK_SKIP.has(e.name)) dirs.push(r)
-      } else if (!TMP_RE.test(e.name)) {
+      } else if (!TMP_RE.test(e.name) && !isFinderLitter(e.name)) {
         if (files.length >= MAX_LISTED) return { files, truncated: true }
         files.push(r)
       }

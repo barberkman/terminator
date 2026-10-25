@@ -47,6 +47,7 @@ export function defaultSettings(): Settings {
       perType: {},
     },
     terminalFont: "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+    optionAsMeta: false,
     fontSize: 14,
     iconScale: 100,
     sidebarSide: 'left',

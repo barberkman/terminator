@@ -553,6 +553,13 @@ export interface Settings {
   notifications: NotificationSettings
   /** CSS font-family applied to the terminal (xterm) panes. */
   terminalFont: string
+  /**
+   * macOS: the Option key acts as Meta in terminal panes, sending ESC+key the way
+   * Alt does on Windows and Linux — Option+B/F move by word, Claude's own Alt
+   * shortcuts work. Off by default, because Option is also how a Mac types half
+   * its punctuation (# $ { [ ] } on a Turkish or German layout). Ignored elsewhere.
+   */
+  optionAsMeta: boolean
   /** Global UI size — scales the whole interface via zoom (14 = 100%). */
   fontSize: number
   /** Extra scale applied to icons and their button boxes only (100 = default). Multiplies on top of the global zoom. */
@@ -904,6 +911,8 @@ export interface TerminatorApi {
   clipboardRead(): string
   /** True when the clipboard holds a bitmap (checked before every Ctrl/Cmd+V). */
   clipboardHasImage(): boolean
+  /** macOS: the files a Finder copy left on the clipboard (checked before the bitmap). Empty elsewhere. */
+  clipboardFilePaths(): string[]
 
   // links (clickable URLs / paths in terminal output)
   /**

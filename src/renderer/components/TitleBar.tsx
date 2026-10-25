@@ -7,12 +7,14 @@ import { useStore } from '../state/store'
 const drag = { WebkitAppRegion: 'drag' } as React.CSSProperties
 
 /**
- * The window's title bar on Windows, where the native one can't take a theme's
- * colours. Main hides the OS frame and leaves only the caption buttons, laid over
- * the right-hand end of this strip and recoloured by applyTheme(); everything
+ * The window's title bar on Windows and macOS, where the native one can't take a
+ * theme's colours. Main hides the OS frame and leaves only the caption buttons —
+ * on Windows laid over the right-hand end of this strip and recoloured by
+ * applyTheme(), on macOS the traffic lights inset at its left — and everything
  * else — the fill, the hairline, the title — is drawn here, in the sidebar's
  * colour, the way VS Code draws its own. Nothing in it is clickable, so the whole
- * strip drags, double-click maximises and it snaps like any title bar.
+ * strip drags, double-click maximises (zooms, on a Mac) and it snaps like any
+ * title bar.
  *
  * The caption buttons are sized in window pixels and ignore the UI zoom, so the
  * strip divides the zoom back out to stay exactly as tall as they are.

@@ -23,6 +23,7 @@ import { useStore } from '../state/store'
 import { startFromSidebar } from '../menus'
 import * as registry from '../term/registry'
 import { attachClipboardToComposer, attachFilesToComposer, openAttachment } from '../attach'
+import { IS_MAC } from '../shortcuts'
 
 /** How tall the box grows before it starts scrolling instead (~9 lines). */
 const MAX_HEIGHT = 180
@@ -264,6 +265,13 @@ export function Composer({
     const plain = forceText.current
     forceText.current = false
     if (plain) return
+    // Files copied in Finder (macOS), asked first: the event may carry their icon.
+    const copied = window.terminator.clipboardFilePaths()
+    if (copied.length) {
+      e.preventDefault()
+      void attachFilesToComposer(sessionId, copied.map((path) => ({ path })))
+      return
+    }
     const files = Array.from(e.clipboardData?.files ?? [])
     if (files.length) {
       e.preventDefault()
@@ -386,6 +394,14 @@ export function Composer({
             onChange={(e) => setDraft(sessionId, e.target.value)}
             onPaste={paste}
             onKeyDown={(e) => {
+              // macOS binds nothing to Cmd+Shift+V, so no paste event would follow
+              // it there: the text side of the paste is done here instead.
+              if (IS_MAC && e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === 'v') {
+                e.preventDefault()
+                const text = window.terminator.clipboardRead()
+                if (text) document.execCommand('insertText', false, text)
+                return
+              }
               // Shift+V is "paste as text" — remembered here because the paste
               // event that follows can't see the modifier itself. Cleared on any
               // other key so a combo that never produced a paste can't leave the

@@ -4,6 +4,7 @@ import * as pty from '@lydell/node-pty'
 import type { BrowserWindow } from 'electron'
 import { Channels } from '../shared/channels'
 import { defaultShell } from './shell'
+import { originalEnv, terminalLang, withoutTerminalIdentity } from './shell-env'
 
 interface PtyCreateOpts {
   id: string
@@ -13,6 +14,12 @@ interface PtyCreateOpts {
   env?: Record<string, string>
   /** A folder to put at the front of PATH, ahead of everything the app inherited. */
   prependPath?: string
+  /**
+   * The shell is a login shell (macOS): start it from the environment the app was
+   * launched with, so its profile builds PATH once rather than on top of the one
+   * read from a login shell at startup. See shell-env.ts.
+   */
+  login?: boolean
   cols?: number
   rows?: number
 }
@@ -94,9 +101,11 @@ export function expandHome(p?: string): string | undefined {
   return p
 }
 
-function cleanEnv(extra?: Record<string, string>, prependPath?: string): Record<string, string> {
-  const env: Record<string, string> = {}
+function cleanEnv(extra?: Record<string, string>, prependPath?: string, login?: boolean): Record<string, string> {
+  let env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+  // The terminal the app was started from isn't the one this pty runs in.
+  env = login && process.platform === 'darwin' ? originalEnv() : withoutTerminalIdentity(env)
   // Strip Claude Code's "running inside an agent" markers. If Terminator is itself
   // launched from a Claude Code session, these would be inherited by the `claude`
   // we spawn, which then runs as a nested session and does NOT persist its
@@ -111,6 +120,8 @@ function cleanEnv(extra?: Record<string, string>, prependPath?: string): Record<
     const key = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH'
     env[key] = env[key] ? `${prependPath}${delimiter}${env[key]}` : prependPath
   }
+  // An app opened from the Dock has no locale at all; see terminalLang.
+  if (process.platform === 'darwin' && !env.LANG && !env.LC_ALL && !env.LC_CTYPE) env.LANG = terminalLang()
   return { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor', ...(extra ?? {}) }
 }
 
@@ -123,7 +134,7 @@ export function createPty(win: BrowserWindow, opts: PtyCreateOpts): string {
     cols: opts.cols ?? 80,
     rows: opts.rows ?? 24,
     cwd: expandHome(opts.cwd) || process.env.HOME || process.cwd(),
-    env: cleanEnv(opts.env, opts.prependPath),
+    env: cleanEnv(opts.env, opts.prependPath, opts.login),
   })
 
   const term: Term = { proc, buf: '', flush: null }

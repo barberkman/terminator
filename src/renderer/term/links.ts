@@ -15,6 +15,8 @@ import { openAttachment } from '../attach'
 import { chipPath, chipRe } from './image-chips'
 import { isPdfPath, openPdf } from '../pdf/open'
 import { C, FONT } from '../theme'
+import { IS_MAC } from '../shortcuts'
+import { programName } from '../../shared/editor-name'
 
 // Clickable links in terminal output.
 //
@@ -119,8 +121,7 @@ function defaultTarget(): { id: string; name: string } | undefined {
 export function externalEditor(): string {
   const command = settings.editor?.command?.trim() ?? ''
   if (!command) return ''
-  const base = command.split(/[/\\]/).filter(Boolean).pop() ?? ''
-  return base.replace(/\.(exe|cmd|bat|com)$/i, '') || 'your editor'
+  return programName(command, settings.editor?.args) || 'your editor'
 }
 
 /**
@@ -335,7 +336,8 @@ function cancelPendingOpen(): void {
  * the rule is the same wherever a link is.
  */
 export function clickOpens(ev: { ctrlKey: boolean; metaKey: boolean }): boolean {
-  return !settings.requireCtrlClick || ev.ctrlKey || ev.metaKey
+  // Cmd alone on macOS, where Ctrl+click is the right-click that opens the link menu.
+  return !settings.requireCtrlClick || (IS_MAC ? ev.metaKey : ev.ctrlKey || ev.metaKey)
 }
 
 /** The gesture that opens a link, as the hover text and Settings name it. */

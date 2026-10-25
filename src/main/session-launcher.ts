@@ -17,7 +17,7 @@ import { buildSettingsFile } from './hooks-config'
 import { hasTranscript, transcriptDirFor, transcriptExists, windowsTranscriptDir } from './transcript'
 import { finishEditsForSession, promptEditorCommand, promptEditorCommandFor } from './prompt-edit'
 import { reportPort, reportToken } from './report-server'
-import { shellRunArgs, quoteFor, shquote } from './shell'
+import { shellArgsFor, shellRunArgs, quoteFor, shquote, startsAsLogin } from './shell'
 import { readyProbe, reap, reapDetached, winToLinux, wslExe } from './wsl'
 import { commandDir } from './cli-install'
 
@@ -58,16 +58,21 @@ function startWindows(win: BrowserWindow, s: Session, opts: StartOpts): void {
     // Plain interactive shell. Build/Run dedicated terminals (s.task set) use this
     // same persistent shell; their command is typed in via runTaskCommand so the
     // prompt stays alive after it finishes.
-    ptyMgr.createPty(win, {
-      id,
-      file: settings.defaultShell,
-      args: settings.shellArgs,
-      cwd,
-      cols,
-      rows,
-      // `terminator` is on hand in a shell you opened here (see cli-install.ts).
-      prependPath: commandDir(),
-    })
+    const args = shellArgsFor(settings.defaultShell, settings.shellArgs)
+    const launched = spawned(id, () =>
+      ptyMgr.createPty(win, {
+        id,
+        file: settings.defaultShell,
+        args,
+        login: args.includes('-l') || args.includes('--login'),
+        cwd,
+        cols,
+        rows,
+        // `terminator` is on hand in a shell you opened here (see cli-install.ts).
+        prependPath: commandDir(),
+      }),
+    )
+    if (!launched) return
     markStarted(id)
     setStatus(id, 'idle', 'idle')
     return
@@ -91,32 +96,54 @@ function startWindows(win: BrowserWindow, s: Session, opts: StartOpts): void {
   parts.push('--settings', quoteFor(settings.defaultShell, settingsFile))
   const command = parts.join(' ')
 
-  ptyMgr.createPty(win, {
-    id,
-    file: settings.defaultShell,
-    // Interactive shell so `.bashrc` aliases/functions (e.g. claude-readonly) resolve.
-    args: shellRunArgs(settings.defaultShell, command, true),
-    cwd,
-    cols,
-    rows,
-    env: {
-      // The reporter runs via our Electron binary in Node mode; Claude itself
-      // ignores this var. Port/token are also passed as reporter argv.
-      ELECTRON_RUN_AS_NODE: '1',
-      TERMINATOR_PORT: String(reportPort()),
-      TERMINATOR_TOKEN: reportToken(),
-      TERMINATOR_SESSION_ID: s.id,
-      // Ctrl+G's editor, but only when Settings asks for an Editor pane. Spread
-      // rather than set, because pty-manager merges this over the real
-      // environment: a `VISUAL: ''` would *clear* the user's own $VISUAL and
-      // quietly move their Ctrl+G, which is the one thing this feature promises
-      // not to do. Read here rather than at the keypress, which is why the
-      // setting reaches a session only when that session starts.
-      ...(promptEditor ? { VISUAL: promptEditor } : {}),
-    },
-  })
+  const launched = spawned(id, () =>
+    ptyMgr.createPty(win, {
+      id,
+      file: settings.defaultShell,
+      // Interactive shell so `.bashrc` aliases/functions (e.g. claude-readonly) resolve.
+      args: shellRunArgs(settings.defaultShell, command, true),
+      login: startsAsLogin(settings.defaultShell),
+      cwd,
+      cols,
+      rows,
+      env: {
+        // The reporter runs via our Electron binary in Node mode; Claude itself
+        // ignores this var. Port/token are also passed as reporter argv. Windows
+        // only: elsewhere the hooks and the Ctrl+G shim set it themselves, so the
+        // programs Claude runs don't inherit it (see hooks-config.ts).
+        ...(process.platform === 'win32' ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+        TERMINATOR_PORT: String(reportPort()),
+        TERMINATOR_TOKEN: reportToken(),
+        TERMINATOR_SESSION_ID: s.id,
+        // Ctrl+G's editor, but only when Settings asks for an Editor pane. Spread
+        // rather than set, because pty-manager merges this over the real
+        // environment: a `VISUAL: ''` would *clear* the user's own $VISUAL and
+        // quietly move their Ctrl+G, which is the one thing this feature promises
+        // not to do. Read here rather than at the keypress, which is why the
+        // setting reaches a session only when that session starts.
+        ...(promptEditor ? { VISUAL: promptEditor } : {}),
+      },
+    }),
+  )
+  if (!launched) return
   markStarted(id)
   setStatus(id, 'idle', 'ready')
+}
+
+/**
+ * Run a pty spawn, turning a refusal into the session's error status. node-pty
+ * throws rather than exiting when it can't start the program at all — a shell
+ * that isn't there, a folder that's gone, a helper that can't be executed — and
+ * without this the session would just sit there, not running and not saying why.
+ */
+function spawned(id: string, spawn: () => void): boolean {
+  try {
+    spawn()
+    return true
+  } catch (e) {
+    setStatus(id, 'error', `couldn't start: ${(e instanceof Error ? e.message : String(e)).slice(0, 140)}`)
+    return false
+  }
 }
 
 // ---- WSL ---------------------------------------------------------------------

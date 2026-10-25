@@ -162,7 +162,11 @@ function guard(contents: WebContents): void {
   // reloads the whole app window with it.
   contents.on('before-input-event', (e, input) => {
     if (input.type !== 'keyDown') return
-    if (input.key === 'F5') {
+    const mac = process.platform === 'darwin'
+    // On macOS Cmd+R as well: the app's menu there has no Reload (mac-menu.ts), and
+    // F5 takes the fn key on most Mac keyboards.
+    const cmdR = mac && input.meta && !input.control && !input.alt && !input.shift && input.code === 'KeyR'
+    if (input.key === 'F5' || cmdR) {
       e.preventDefault()
       contents.reload()
       return
@@ -173,12 +177,13 @@ function guard(contents: WebContents): void {
     // window, which runs the switch it would have run itself. Alt+Shift+arrow is
     // left alone to match the window's own handler. A page loses these keys even
     // when there's nowhere to switch to; few pages want them, and switching from
-    // anywhere is the point.
+    // anywhere is the point. On macOS the digits are Cmd+1..9, as in the window
+    // (Option types characters there; see sessionDigitMod in the renderer).
+    const alt = input.alt && !input.control && !input.meta
+    const digitMod = mac ? input.meta && !input.control && !input.alt : alt
     if (
-      input.alt &&
-      !input.control &&
-      !input.meta &&
-      (/^Digit[1-9]$/.test(input.code) || (!input.shift && (input.code === 'ArrowUp' || input.code === 'ArrowDown')))
+      (digitMod && /^Digit[1-9]$/.test(input.code)) ||
+      (alt && !input.shift && (input.code === 'ArrowUp' || input.code === 'ArrowDown'))
     ) {
       const host = contents.hostWebContents
       if (!host || host.isDestroyed()) return
@@ -188,7 +193,9 @@ function guard(contents: WebContents): void {
     }
     // `code`, not `key`, so a non-US layout still finds the F — the same
     // layout-independence the renderer's own shortcut matching is built on.
-    if (input.code !== 'KeyF' || input.alt || input.shift || !(input.control || input.meta)) return
+    // Cmd alone on macOS, where Ctrl+Cmd+F is full screen.
+    const primary = mac ? input.meta && !input.control : input.control || input.meta
+    if (input.code !== 'KeyF' || input.alt || input.shift || !primary) return
     // Unlike F5, this can't be finished here: the find bar is a React component
     // in the host window, so all main can do is report the press. It reports the
     // *guest's* id rather than working out which pane that is — main has no

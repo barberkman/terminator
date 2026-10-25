@@ -11,6 +11,7 @@ import { expandHome } from './pty-manager'
 import { getSession, updateSession } from './state'
 import { findCommand, shquote } from './shell'
 import { expandLinuxHome, readyProbe, wslCheck, wslExe } from './wsl'
+import { whenShellEnv } from './shell-env'
 
 const pExecFile = promisify(execFile)
 
@@ -53,15 +54,18 @@ export function openGitGui(id: string, which?: FolderChoice): void {
   const cmd = loadSettings().gitGuiCommand.trim()
   if (!cmd) return
   const parts = cmd.split(/\s+/)
-  const child = spawn(parts[0], [...parts.slice(1), folder], {
-    cwd: folder,
-    detached: true,
-    stdio: 'ignore',
+  // On macOS the GUI's command is found on the login shell's PATH (see shell-env.ts).
+  void whenShellEnv().then(() => {
+    const child = spawn(parts[0], [...parts.slice(1), folder], {
+      cwd: folder,
+      detached: true,
+      stdio: 'ignore',
+    })
+    child.on('error', () => {
+      /* GUI not installed / bad command — no-op (best effort) */
+    })
+    child.unref()
   })
-  child.on('error', () => {
-    /* GUI not installed / bad command — no-op (best effort) */
-  })
-  child.unref()
 }
 
 /** Open a session's folder in the OS default file manager. Best effort. */

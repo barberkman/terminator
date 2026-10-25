@@ -20,12 +20,20 @@ const FRIENDLY: Record<string, string> = {
  * folder or the Windows extension.
  */
 export function editorLabel(editor: EditorOption): string {
-  const args = editor.args ?? []
-  const base = editor.command.trim().split(/[/\\]/).filter(Boolean).pop() ?? ''
+  const name = programName(editor.command, editor.args)
+  return FRIENDLY[name.toLowerCase()] ?? (name || 'your editor')
+}
+
+/**
+ * A configured program's name as it's shown: its basename without the folder,
+ * the Windows extension, or a macOS bundle's `.app` — and for `open -a <App>`, the
+ * app's. '' for no program.
+ */
+export function programName(command: string, args: string[] = []): string {
+  const base = command.trim().split(/[/\\]/).filter(Boolean).pop() ?? ''
   if (base === 'open') {
     const app = args.indexOf('-a')
-    if (app >= 0 && args[app + 1]) return args[app + 1].replace(/\.app$/i, '')
+    if (app >= 0 && args[app + 1]) return args[app + 1].split('/').filter(Boolean).pop()!.replace(/\.app$/i, '')
   }
-  const name = base.replace(/\.(exe|cmd|bat|com)$/i, '')
-  return FRIENDLY[name.toLowerCase()] ?? (name || 'your editor')
+  return base.replace(/\.(exe|cmd|bat|com|app)$/i, '')
 }

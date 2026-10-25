@@ -1,11 +1,12 @@
 import { existsSync } from 'node:fs'
-import { extname, join } from 'node:path'
+import { basename, extname, join } from 'node:path'
+import { loginShell } from './shell-env'
 
 /**
  * Resolve the default shell for new sessions. Single source of truth shared by
  * settings.ts (the stored default) and pty-manager.ts (the spawn-time fallback).
  *
- * - POSIX (Linux/macOS): the user's $SHELL, falling back to /bin/bash.
+ * - POSIX (Linux/macOS): the user's $SHELL, falling back to the account's shell.
  * - Windows: prefer PowerShell. Use PowerShell 7 (`pwsh.exe`) if it's on PATH,
  *   else Windows PowerShell (`powershell.exe`, present since Windows ≥ 5.1). We
  *   deliberately do NOT use COMSPEC, which always points at cmd.exe — a user who
@@ -15,7 +16,25 @@ export function defaultShell(): string {
   if (process.platform === 'win32') {
     return findOnPath('pwsh.exe') || 'powershell.exe'
   }
-  return process.env.SHELL || '/bin/bash'
+  return loginShell()
+}
+
+/** Shells that take `-l` for "login shell" alongside other flags (tcsh only takes it alone). */
+const TAKES_LOGIN_FLAG = new Set(['sh', 'bash', 'zsh', 'ksh', 'dash', 'fish'])
+
+/**
+ * Whether a shell is started as a login shell here. Only on macOS, where every
+ * terminal does it — Terminal.app, iTerm, VS Code — and where the profile files a
+ * login shell reads are what put Homebrew and friends on PATH (see shell-env.ts).
+ */
+export function startsAsLogin(shell: string): boolean {
+  return process.platform === 'darwin' && TAKES_LOGIN_FLAG.has(basename(shell))
+}
+
+/** The arguments a terminal pane's shell starts with: Settings' own, or the platform's default. */
+export function shellArgsFor(shell: string, configured: string[]): string[] {
+  if (configured.length) return configured
+  return startsAsLogin(shell) ? ['-l'] : []
 }
 
 /** First absolute path for `name` found on PATH (Windows-only helper, no deps). */
@@ -58,7 +77,9 @@ export function shellRunArgs(shell: string, command: string, interactive = false
   }
   // Interactive (-i) sources ~/.bashrc / ~/.zshrc, so the user's aliases and
   // functions (e.g. a `claude-readonly` alias) resolve. Login (-l) only sources
-  // profile files, which usually don't define those.
+  // profile files, which usually don't define those. On macOS it's both: the
+  // profile is where PATH is put together there (see startsAsLogin).
+  if (interactive && startsAsLogin(shell)) return ['-l', '-i', '-c', command]
   return interactive ? ['-ic', command] : ['-lc', command]
 }
 
