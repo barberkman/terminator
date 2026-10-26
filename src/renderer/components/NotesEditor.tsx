@@ -43,11 +43,14 @@ export function NotesEditor({
   onChange,
   onSave,
   onClose,
+  notice,
 }: {
   value: string
   onChange: (v: string) => void
   onSave: () => void
   onClose: () => void
+  /** Shown beside the buttons — that saving would replace a newer version, say. */
+  notice?: string
 }): React.JSX.Element {
   const [mode, setMode] = useState<'edit' | 'preview'>('preview')
 
@@ -116,7 +119,8 @@ export function NotesEditor({
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '16px 20px 20px' }}>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', padding: '16px 20px 20px' }}>
+          {notice && <span style={{ flex: 1, fontSize: 11, color: C.danger }}>{notice}</span>}
           <button onClick={onClose} style={{ padding: '10px 18px', background: 'transparent', border: `1px solid ${C.border3}`, borderRadius: 9, color: C.textBtn, font: 'inherit', fontSize: 12.5, cursor: 'pointer' }}>
             Close
           </button>

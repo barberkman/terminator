@@ -9,6 +9,10 @@ name: Scripting test
 # portable builds — so that job is the long one. Linux runs the same test under a
 # virtual display.
 #
+# test/sync/e2e.js (README → Syncing settings across machines) rides along: it plays
+# git against a running app's sync folder, and runs on all three OSes, macOS
+# included, so the folder paths are tested in each OS's own spelling.
+#
 # Runs on every push that touches the app, on any branch: a PR's branch is tested
 # before the PR is opened, and not a second time once it is.
 on:
@@ -16,6 +20,7 @@ on:
     paths:
       - 'src/**'
       - 'test/scripting/**'
+      - 'test/sync/**'
       - 'package.json'
       - 'package-lock.json'
       - 'electron.vite.config.ts'
@@ -62,6 +67,12 @@ jobs:
           TERMINATOR_TEST_WSL: Ubuntu-24.04
         run: npm run test:scripting
 
+      - name: Test settings sync
+        if: ${{ !cancelled() }}
+        env:
+          TERMINATOR_TEST_OUT: ${{ runner.temp }}/sync
+        run: npm run test:sync
+
       # The packaged builds are tested even when the development build failed, so
       # one run reports everything that's wrong rather than the first thing.
       - name: Build installer and portable exe
@@ -87,7 +98,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: scripting-windows
-          path: ${{ runner.temp }}/scripting
+          path: |
+            ${{ runner.temp }}/scripting
+            ${{ runner.temp }}/sync
           retention-days: 7
 
   linux:
@@ -111,10 +124,47 @@ jobs:
           TERMINATOR_TEST_OUT: ${{ runner.temp }}/scripting
         run: xvfb-run -a npm run test:scripting
 
+      - name: Test settings sync
+        if: ${{ !cancelled() }}
+        env:
+          TERMINATOR_TEST_OUT: ${{ runner.temp }}/sync
+        run: xvfb-run -a npm run test:sync
+
       - name: Upload the test's work folder
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: scripting-linux
-          path: ${{ runner.temp }}/scripting
+          path: |
+            ${{ runner.temp }}/scripting
+            ${{ runner.temp }}/sync
+          retention-days: 7
+
+  macos:
+    name: macOS (settings sync)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Test settings sync
+        env:
+          TERMINATOR_TEST_OUT: ${{ runner.temp }}/sync
+        run: npm run test:sync
+
+      - name: Upload the test's work folder
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sync-macos
+          path: ${{ runner.temp }}/sync
           retention-days: 7

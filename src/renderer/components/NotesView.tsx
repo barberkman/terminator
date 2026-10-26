@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../state/store'
+import { saveSettings } from '../settingsActions'
 import { NotesEditor } from './NotesEditor'
 
 /**
@@ -12,19 +13,31 @@ export function NotesView(): React.JSX.Element | null {
   const show = useStore((s) => s.showNotes)
   const setShow = useStore((s) => s.setShowNotes)
   const settings = useStore((s) => s.settings)
-  const setSettings = useStore((s) => s.setSettings)
   const [draft, setDraft] = useState('')
+  // What the draft was taken from. While the two match there are no edits to lose,
+  // so notes that change on disk — a `git pull` in the sync folder — come straight in.
+  const seeded = useRef<string | null>(null)
 
   useEffect(() => {
-    if (show) setDraft(settings?.notes ?? '')
+    if (!show) {
+      seeded.current = null
+      return
+    }
+    const stored = settings?.notes ?? ''
+    if (seeded.current === null || draft === seeded.current) {
+      setDraft(stored)
+      seeded.current = stored
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, settings])
 
   if (!show) return null
 
+  const stored = settings?.notes ?? ''
+  const changedUnderneath = seeded.current !== null && stored !== seeded.current
+
   const save = async () => {
-    const result = await window.terminator.updateSettings({ notes: draft })
-    setSettings(result)
-    setShow(false)
+    if (await saveSettings({ notes: draft })) setShow(false)
   }
 
   return (
@@ -33,6 +46,7 @@ export function NotesView(): React.JSX.Element | null {
       onChange={setDraft}
       onSave={() => void save()}
       onClose={() => setShow(false)}
+      notice={changedUnderneath ? 'These notes changed on disk since you opened them. Save replaces that version with yours.' : undefined}
     />
   )
 }

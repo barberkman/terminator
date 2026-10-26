@@ -5,6 +5,7 @@ import { RuntimeChip } from './RuntimeChip'
 import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, statusMark, sz } from '../theme'
 import { Icon, type IconName } from '../icons'
 import { runProjectTask, stopProjectTask } from '../menus'
+import { saveSettings } from '../settingsActions'
 import { SESSION_MIME } from './SplitDropOverlay'
 import {
   type MenuTarget,
@@ -628,7 +629,6 @@ function ProjectCommandsMenu({
   proj?: ProjectConfig
   onClose: () => void
 }): React.JSX.Element {
-  const setSettings = useStore((s) => s.setSettings)
   const [build, setBuild] = useState(proj?.buildCommand ?? '')
   const [run, setRun] = useState(proj?.runCommand ?? '')
   const [stop, setStop] = useState(proj?.stopCommand ?? '')
@@ -654,9 +654,7 @@ function ProjectCommandsMenu({
             stopCommand,
           },
         ]
-    const result = await window.terminator.updateSettings({ projects })
-    setSettings(result)
-    onClose()
+    if (await saveSettings({ projects })) onClose()
   }
 
   return (

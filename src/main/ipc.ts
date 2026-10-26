@@ -16,6 +16,7 @@ import type {
   SendPromptResult,
   SessionMode,
   TaskCommand,
+  ThemeOp,
   TranscriptPrompt,
 } from '../shared/types'
 import type { BridgeReply } from '../shared/control'
@@ -32,8 +33,9 @@ import {
   stopSession,
   switchMode,
 } from './session-launcher'
-import { loadSettings, rememberProject, saveSettings } from './settings'
-import { loadCustomThemes, saveCustomThemes } from './theme-store'
+import { loadSettings, rememberProject, saveSettings, syncStatus } from './settings'
+import { loadCustomThemes, updateCustomThemes } from './theme-store'
+import { publishSettings } from './sync-watch'
 import { loadUsage } from './usage-store'
 import { addWorktree, openGitGui, openInFolder, openProjectEditor, removeWorktree } from './worktree'
 import { conversationFile, forkTranscript, listPrompts, transcriptDirFor } from './transcript'
@@ -79,7 +81,11 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const inKnownWorktree = state
       .listSessions()
       .some((x) => !!x.worktreePath && x.worktreePath === session.projectPath)
-    if (!input.task && !inKnownWorktree) rememberProject(input.projectPath, input.projectName, input.runtime)
+    if (!input.task && !inKnownWorktree) {
+      rememberProject(input.projectPath, input.projectName, input.runtime)
+      // The window's copy of the list is what the sidebar and New Session write back.
+      publishSettings()
+    }
     // Create the worktree before returning so the PTY launches in it (any kind).
     if (input.worktree) {
       try {
@@ -421,28 +427,42 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   })
   ipcMain.handle(Channels.settingsGet, () => loadSettings())
   ipcMain.handle(Channels.settingsUpdate, (_e, patch) => {
-    const next = saveSettings(patch)
-    // Re-register the global hotkey in case it changed.
-    applyGlobalShortcut(getWin)
-    // Start or stop listening for the `terminator` command, in case that changed.
-    applyScripting()
-    // And push the user agent, in case that changed — pages already open keep the
-    // old one until they navigate, which is the same deal a real browser offers.
-    applyBrowserUserAgent()
-    return next
+    try {
+      const next = saveSettings(patch)
+      // Re-register the global hotkey in case it changed.
+      applyGlobalShortcut(getWin)
+      // Start or stop listening for the `terminator` command, in case that changed.
+      applyScripting()
+      // And push the user agent, in case that changed — pages already open keep the
+      // old one until they navigate, which is the same deal a real browser offers.
+      applyBrowserUserAgent()
+      return next
+    } finally {
+      // A new sync folder can bring its own themes as well as settings — and a save
+      // refused part-way can still have switched folders first.
+      publishSettings()
+    }
   })
+  ipcMain.handle(Channels.syncStatus, () => syncStatus())
   ipcMain.handle(Channels.themesGet, () => loadCustomThemes())
-  ipcMain.handle(Channels.themesSave, (_e, list: unknown) => {
-    const themes = saveCustomThemes(list)
-    // A theme can only disappear through this call, so this is where a dangling
-    // selection gets repaired. The renderer falls back at paint time anyway, but
-    // the window's backgroundColor is read from settings at launch — so the file
-    // has to agree, or the next start opens on the wrong ground.
+  ipcMain.handle(Channels.themesSave, (_e, op: ThemeOp) => {
+    const themes = updateCustomThemes(op)
+    // Deleting the theme in use moves the selection too. The renderer falls back at
+    // paint time anyway, but the window's backgroundColor is read from settings at
+    // launch — so the file has to agree, or the next start opens on the wrong
+    // ground. Only for a delete made here: a theme a pull took away is the other
+    // computer's doing, and writing `theme` back would carry the repair to all of them.
     const current = loadSettings().theme
-    const settings =
-      isBuiltIn(current) || themes.some((t) => t.id === current)
-        ? loadSettings()
-        : saveSettings({ theme: DEFAULT_THEME_ID })
+    const removed = typeof op === 'object' && op !== null && 'remove' in op && op.remove === current
+    let settings = loadSettings()
+    if (removed && !isBuiltIn(current) && !themes.some((t) => t.id === current)) {
+      try {
+        settings = saveSettings({ theme: DEFAULT_THEME_ID })
+      } catch {
+        // The synced settings can't be written right now; the paint-time fallback covers it.
+      }
+    }
+    publishSettings()
     return { themes, settings }
   })
   ipcMain.handle(Channels.globalShortcutStatus, () => globalShortcutStatus())

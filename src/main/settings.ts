@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import {
   USAGE_REFRESH_DEFAULT,
   USAGE_REFRESH_MAX,
@@ -9,10 +9,37 @@ import {
   type EditorOption,
   type SessionRuntime,
   type Settings,
+  type SyncStatus,
 } from '../shared/types'
+import {
+  type PatchLeaf,
+  type SettingsPatch,
+  applyPatch,
+  deepEqual,
+  diffSettings,
+  isLocalLeaf,
+  isPlainObject,
+  isSyncedJsonLeaf,
+  leaves,
+  osOverrideFile,
+  pickLeaves,
+} from '../shared/settings-sync'
 import { isWsl, sameRuntime, validRuntime } from '../shared/wsl-path'
 import { DEFAULT_THEME_ID } from '../shared/themes'
 import { defaultShell } from './shell'
+import {
+  type SyncFiles,
+  isInside,
+  readJson,
+  readText,
+  resolveSyncFolder,
+  samePath,
+  setSyncDirs,
+  syncFiles,
+  writeAtomic,
+  writeJson,
+} from './sync-files'
+import { carryThemes, loadCustomThemes, themesProblem } from './theme-store'
 
 function defaultGitGui(): string {
   // The user's documented default on Windows is GitExtensions; elsewhere they set their own.
@@ -94,6 +121,8 @@ export function defaultSettings(): Settings {
       claudeCommand: '',
       claudeReadonlyCommand: '',
     },
+    // Off: everything stays in this computer's settings.json, as it always has.
+    syncFolder: '',
   }
 }
 
@@ -112,43 +141,141 @@ function clampRefresh(v: unknown): number {
 }
 
 /** Deep-merge persisted settings over defaults so new fields always have a value. */
-function merge(base: Settings, patch: Partial<Settings>): Settings {
+function merge(base: Settings, patch: SettingsPatch): Settings {
   return {
-    ...base,
-    ...patch,
-    modes: { ...base.modes, ...(patch.modes ?? {}) },
-    projectEditor: { ...base.projectEditor, ...(patch.projectEditor ?? {}) },
-    notifications: { ...base.notifications, ...(patch.notifications ?? {}) },
-    attachments: { ...base.attachments, ...(patch.attachments ?? {}) },
-    // browsers[] is replaced wholesale (it's a list, not a set of fields), which
-    // is what makes removing one in Settings actually remove it.
-    links: { ...base.links, ...(patch.links ?? {}) },
-    browser: { ...base.browser, ...(patch.browser ?? {}) },
-    wsl: { ...base.wsl, ...(patch.wsl ?? {}) },
+    ...applyPatch(base, patch),
     usageRefreshSeconds: clampRefresh(
       'usageRefreshSeconds' in patch ? patch.usageRefreshSeconds : base.usageRefreshSeconds,
     ),
-    // Replaced wholesale rather than deep-merged, so deleting a token from
-    // settings.json actually removes that override.
-    customTheme: 'customTheme' in patch ? patch.customTheme : base.customTheme,
   }
 }
 
+// ---- where each setting comes from ------------------------------------------
+//
+// With no sync folder, settings.json in userData is the whole story, read and
+// written exactly as it always was. With one, the shared settings come from the
+// folder — its settings.json, then this OS's override file — and the notes from its
+// notes.md, while this computer's own settings stay here. settings.json here goes on
+// holding everything, as a copy: turning sync off, or the folder going missing (not
+// cloned yet, a network drive that's down), leaves this computer where it was.
+
+/** userData/settings.json as it is on disk. A corrupt file reads as empty, as ever. */
+function readLocal(): Record<string, unknown> {
+  const r = readJson(settingsPath())
+  return r.kind === 'ok' && isPlainObject(r.value) ? r.value : {}
+}
+
+interface Layers {
+  local: Record<string, unknown>
+  dir: string | null
+  files: SyncFiles | null
+  /** Null when the folder isn't usable, and this computer runs on its copy. */
+  shared: Record<string, unknown> | null
+  os: Record<string, unknown>
+  notes: string
+  /** Synced files that don't parse right now. Never written to. */
+  broken: Set<string>
+  status: SyncStatus
+}
+
+/**
+ * The last version of each synced file that parsed, so a merge conflict holds the
+ * values it had rather than dropping everything it set back to the defaults.
+ */
+const lastGood = new Map<string, Record<string, unknown>>()
+
+function readSynced(path: string, broken: Set<string>): Record<string, unknown> | null {
+  const r = readJson(path)
+  if (r.kind === 'ok' && isPlainObject(r.value)) {
+    lastGood.set(path, r.value)
+    return r.value
+  }
+  if (r.kind === 'missing') {
+    lastGood.delete(path)
+    return null
+  }
+  broken.add(path)
+  return lastGood.get(path) ?? null
+}
+
+function brokenMessage(names: string[]): string {
+  const which = names.join(' and ')
+  return `${which} in the sync folder ${names.length > 1 ? "aren't" : "isn't"} valid JSON — a merge conflict? Until ${names.length > 1 ? 'they parse' : 'it parses'}, Terminator keeps the last good version and won't write to ${names.length > 1 ? 'them' : 'it'}.`
+}
+
+/** Every file, read fresh. Also tells sync-files which folder is in use. */
+function readLayers(): Layers {
+  const local = readLocal()
+  const dir = resolveSyncFolder(typeof local.syncFolder === 'string' ? local.syncFolder : '')
+  const osFile = osOverrideFile(process.platform)
+  const broken = new Set<string>()
+  if (!dir) {
+    setSyncDirs({ configured: null, active: null })
+    const status = { dir: null, osFile, files: [], problem: '' }
+    return { local, dir, files: null, shared: null, os: {}, notes: '', broken, status }
+  }
+  const files = syncFiles(dir)
+  const shared = readSynced(files.settings, broken)
+  const os = (files.os && readSynced(files.os, broken)) || {}
+  const notes = readText(files.notes) ?? ''
+  const present = [files.settings, files.os, files.themes, files.notes]
+    .filter((f): f is string => !!f && existsSync(f))
+    .map((f) => basename(f))
+  let problem = ''
+  if (broken.size) problem = brokenMessage([...broken].map((f) => basename(f)))
+  else if (!shared) {
+    problem = `There's no settings.json in ${dir}. Until there is, this computer runs on its last copy of the shared settings, and changes to them can't be saved.`
+  }
+  setSyncDirs({ configured: dir, active: shared ? dir : null })
+  return { local, dir, files, shared, os, notes, broken, status: { dir, osFile, files: present, problem } }
+}
+
+/** Defaults, then this computer's settings, then the folder's — each only for the keys it owns. */
+function compose(l: Layers): Settings {
+  const base = defaultSettings()
+  if (!l.shared) return merge(base, l.local as SettingsPatch)
+  let s = merge(base, pickLeaves(l.local, isLocalLeaf))
+  s = merge(s, pickLeaves(l.shared, isSyncedJsonLeaf))
+  s = merge(s, pickLeaves(l.os, isSyncedJsonLeaf))
+  return { ...s, notes: l.notes }
+}
+
+/** Today's format: the whole settings object, so the file is still the full list to edit. */
+function writeLocal(next: Settings): void {
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeAtomic(settingsPath(), JSON.stringify(next, null, 2))
+}
+
 let cached: Settings | null = null
+let status: SyncStatus = { dir: null, osFile: null, files: [], problem: '' }
 
 export function loadSettings(): Settings {
   if (cached) return cached
-  const path = settingsPath()
-  let value = defaultSettings()
-  if (existsSync(path)) {
+  const l = readLayers()
+  cached = compose(l)
+  status = l.status
+  // The copy here follows the folder, whoever changed it.
+  if (l.shared && !deepEqual(l.local, cached)) {
     try {
-      value = merge(value, JSON.parse(readFileSync(path, 'utf8')) as Partial<Settings>)
+      writeLocal(cached)
     } catch {
-      // keep defaults on a corrupt file
+      // A copy: the next change tries again.
     }
   }
-  cached = value
-  return value
+  return cached
+}
+
+/** Re-read everything — the sync folder changed on disk. True when the result moved. */
+export function reloadSettings(): boolean {
+  const before = cached
+  cached = null
+  return !before || !deepEqual(before, loadSettings())
+}
+
+export function syncStatus(): SyncStatus {
+  loadSettings()
+  loadCustomThemes()
+  return { ...status, problem: status.problem || themesProblem() }
 }
 
 /**
@@ -164,15 +291,108 @@ export function rememberProject(path: string, name?: string, runtime?: SessionRu
   saveSettings({ projects })
 }
 
-/** Atomic write (temp + rename) so a crash mid-write can't corrupt the file. */
-export function saveSettings(patch: Partial<Settings>): Settings {
-  const next = merge(loadSettings(), patch)
-  cached = next
-  const dir = app.getPath('userData')
-  mkdirSync(dir, { recursive: true })
-  const path = settingsPath()
-  const tmp = `${path}.${process.pid}.tmp`
-  writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8')
-  renameSync(tmp, path)
-  return next
+/** Whether a file already sets this leaf — an override stays an override. */
+function sets(file: Record<string, unknown>, leaf: PatchLeaf): boolean {
+  if (leaf.field === undefined) return leaf.key in file
+  const section = file[leaf.key]
+  return isPlainObject(section) && leaf.field in section
+}
+
+function setLeaf(file: Record<string, unknown>, leaf: PatchLeaf): void {
+  if (leaf.field === undefined) {
+    if (leaf.value === undefined) delete file[leaf.key]
+    else file[leaf.key] = leaf.value
+    return
+  }
+  const section = isPlainObject(file[leaf.key]) ? (file[leaf.key] as Record<string, unknown>) : {}
+  if (leaf.value === undefined) delete section[leaf.field]
+  else section[leaf.field] = leaf.value
+  file[leaf.key] = section
+}
+
+/**
+ * Write the shared leaves that changed into the folder, and only those: each file is
+ * taken as it is on disk now, so whatever a pull put there that this save didn't
+ * touch stays. Every target is checked before anything is written, so a save never
+ * lands half-way.
+ */
+function writeSynced(l: Layers, changes: SettingsPatch): void {
+  const shared = leaves(changes).filter((c) => !isLocalLeaf(c.key, c.field))
+  if (!shared.length || !l.files) return
+  if (!l.shared) throw new Error(l.status.problem)
+  const files = l.files
+  const json = new Map<string, Record<string, unknown>>()
+  let notes: string | undefined
+  for (const leaf of shared) {
+    if (leaf.key === 'notes') {
+      notes = typeof leaf.value === 'string' ? leaf.value : ''
+      continue
+    }
+    const target = files.os && sets(l.os, leaf) ? files.os : files.settings
+    if (l.broken.has(target)) throw new Error(brokenMessage([basename(target)]))
+    if (!json.has(target)) json.set(target, structuredClone(target === files.os ? l.os : l.shared))
+    setLeaf(json.get(target)!, leaf)
+  }
+  for (const [path, value] of json) writeJson(path, value)
+  if (notes !== undefined) writeAtomic(files.notes, notes)
+}
+
+/** Atomic writes (temp + rename) so a crash mid-write can't corrupt a file. */
+export function saveSettings(patch: SettingsPatch): Settings {
+  const { syncFolder, ...rest } = patch
+  if (typeof syncFolder === 'string') switchSyncFolder(syncFolder)
+  const l = readLayers()
+  const current = compose(l)
+  const next = merge(current, rest)
+  writeSynced(l, diffSettings(current, next))
+  writeLocal(next)
+  cached = null
+  return loadSettings()
+}
+
+/** Keys a Terminator settings file can have — anything else is somebody else's file. */
+function looksLikeOurs(file: Record<string, unknown>): boolean {
+  const known = new Set([...Object.keys(defaultSettings()), 'customTheme', 'settingsOpen'])
+  const keys = Object.keys(file)
+  return keys.length === 0 || keys.some((k) => known.has(k))
+}
+
+/**
+ * Point this computer at a sync folder, another one, or none. A folder that already
+ * holds settings — a clone of the repo another computer filled — is adopted as it
+ * is; an empty one is seeded from this computer, with the shared settings that differ
+ * from the defaults, the notes and the themes. Either way your themes join the
+ * folder's. Turning it off needs nothing: the copy here is already complete.
+ */
+function switchSyncFolder(raw: string): void {
+  const l = readLayers()
+  const current = compose(l)
+  const to = resolveSyncFolder(raw)
+  if (!to || (l.dir && samePath(to, l.dir))) {
+    writeLocal({ ...current, syncFolder: to ? raw : '' })
+    return
+  }
+  const userData = app.getPath('userData')
+  if (isInside(to, userData)) {
+    throw new Error(`The sync folder can't be inside Terminator's own data folder (${userData}).`)
+  }
+  const files = syncFiles(to)
+  const theirs = readJson(files.settings)
+  if (theirs.kind === 'broken' || (theirs.kind === 'ok' && !isPlainObject(theirs.value))) {
+    throw new Error(`${files.settings} isn't valid JSON — a merge conflict? Fix it, then choose the folder again.`)
+  }
+  if (theirs.kind === 'ok' && !looksLikeOurs(theirs.value as Record<string, unknown>)) {
+    throw new Error(`${files.settings} isn't a Terminator settings file. Choose a folder of its own for these settings.`)
+  }
+  mkdirSync(to, { recursive: true })
+  // Kept once, from before the first switch: adopting a folder replaces this
+  // computer's own preferences, and this is the one copy of them.
+  const backup = join(userData, 'settings.before-sync.json')
+  if (!existsSync(backup) && existsSync(settingsPath())) copyFileSync(settingsPath(), backup)
+  if (theirs.kind === 'missing') {
+    writeJson(files.settings, pickLeaves(diffSettings(defaultSettings(), current), isSyncedJsonLeaf))
+  }
+  if (current.notes && !existsSync(files.notes)) writeAtomic(files.notes, current.notes)
+  carryThemes(files.themes)
+  writeLocal({ ...current, syncFolder: raw })
 }

@@ -1,9 +1,14 @@
 import type { CustomTheme } from '../shared/themes'
+import type { ThemeOp } from '../shared/types'
+import { reasonOf } from './settingsActions'
 import { useStore } from './state/store'
 import { applyThemeFromSettings } from './theme-apply'
 
 /**
- * Write the whole theme set and take back what the main process makes of it.
+ * Hand main one change to the theme set and take back what it makes of it. One
+ * theme rather than the whole list, because main applies it to the file as it is
+ * now — and with a synced folder, a pull may have added a theme this window hasn't
+ * heard of yet.
  *
  * Two things come back rather than one: the sanitised list, and the settings —
  * because deleting the theme you were using has to move the selection too, and
@@ -14,12 +19,27 @@ import { applyThemeFromSettings } from './theme-apply'
  * so editing a theme's *colours* without changing which one is selected would
  * otherwise change nothing on screen.
  */
-export async function writeThemes(next: CustomTheme[]): Promise<void> {
-  const { themes, settings } = await window.terminator.saveCustomThemes(next)
+async function writeTheme(op: ThemeOp): Promise<boolean> {
   const store = useStore.getState()
-  store.setCustomThemes(themes)
-  store.setSettings(settings)
-  applyThemeFromSettings(settings)
+  try {
+    const { themes, settings } = await window.terminator.updateCustomThemes(op)
+    store.setCustomThemes(themes)
+    store.setSettings(settings)
+    applyThemeFromSettings(settings)
+    return true
+  } catch (e) {
+    store.pushToast({ tone: 'error', icon: 'settings', text: "The theme wasn't saved", sub: reasonOf(e) })
+    return false
+  }
+}
+
+/** Add a theme, or replace the one with its id. */
+export function saveTheme(seed: CustomTheme): Promise<boolean> {
+  return writeTheme({ upsert: seed })
+}
+
+export function deleteTheme(id: string): Promise<boolean> {
+  return writeTheme({ remove: id })
 }
 
 /** "Darcula copy", then "Darcula copy 2" — a duplicate never silently reuses a name. */
@@ -30,13 +50,4 @@ export function freeName(base: string, taken: string[]): string {
     if (!taken.includes(`${wanted} ${n}`)) return `${wanted} ${n}`
   }
   return wanted
-}
-
-/** The set with one theme replaced, or appended when it's new. */
-export function upsert(list: CustomTheme[], seed: CustomTheme): CustomTheme[] {
-  const at = list.findIndex((t) => t.id === seed.id)
-  if (at < 0) return [...list, seed]
-  const next = list.slice()
-  next[at] = seed
-  return next
 }

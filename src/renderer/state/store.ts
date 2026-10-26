@@ -6,6 +6,7 @@ import {
   type Session,
   type SessionRuntime,
   type Settings,
+  type SyncStatus,
   type UsageSnapshot,
   type WslDistro,
 } from '../../shared/types'
@@ -305,6 +306,8 @@ interface StoreState {
    * off Windows.
    */
   wslDistros: WslDistro[] | null
+  /** Where synced settings come from (Settings → SYNC). Null until `init` asks. */
+  syncStatus: SyncStatus | null
 
   init(): Promise<void>
   upsert(s: Session): void
@@ -339,6 +342,7 @@ interface StoreState {
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
+  setSyncStatus(s: SyncStatus): void
   setCustomThemes(list: CustomTheme[]): void
   setUsage(u: UsageSnapshot): void
   pushToast(t: Omit<ToastItem, 'id'>): void
@@ -483,11 +487,12 @@ export const useStore = create<StoreState>((set, get) => ({
   usage: null,
   toasts: [],
   wslDistros: null,
+  syncStatus: null,
 
   async init() {
     if (initialized) return
     initialized = true
-    const [list, settings, themes, usage] = await Promise.all([
+    const [list, settings, themes, usage, syncStatus] = await Promise.all([
       window.terminator.listSessions(),
       window.terminator.getSettings(),
       window.terminator.getCustomThemes(),
@@ -495,6 +500,7 @@ export const useStore = create<StoreState>((set, get) => ({
       // run left on disk come from, and it also covers a report that landed before
       // the subscription existed.
       window.terminator.getUsage(),
+      window.terminator.getSyncStatus(),
     ])
     // main.tsx already published these before the first paint; doing it again is
     // idempotent and keeps the one code path that owns the mirror.
@@ -518,6 +524,7 @@ export const useStore = create<StoreState>((set, get) => ({
       panes,
       browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
       usage,
+      syncStatus,
       relaunchOffer: restorable.length ? restorable : null,
     }))
 
@@ -905,6 +912,9 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   setSettings(s) {
     set({ settings: s })
+  },
+  setSyncStatus(s) {
+    set({ syncStatus: s })
   },
   /**
    * The store holds the themes so React re-renders on a change; shared/themes.ts

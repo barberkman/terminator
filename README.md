@@ -878,8 +878,9 @@ A few things worth knowing:
 ## Settings
 
 Settings live in a JSON file in the app's user-data directory (editable in-app via the gear
-icon, or on disk). The panel is a set of foldable sections — collapsed, each one shows what it's
-set to — and which ones you left open is remembered:
+icon, or on disk), unless you keep the shared ones in a folder of your own — see **Syncing
+settings across machines** below. The panel is a set of foldable sections — collapsed, each one
+shows what it's set to — and which ones you left open is remembered:
 
 - `modes.normal.command` / `modes.readonly.command` — the Claude commands (defaults `claude`,
   `claude-readonly`). The app appends `--session-id` / `--resume` / `--settings`, so a custom
@@ -923,6 +924,69 @@ set to — and which ones you left open is remembered:
   whose paths and programs are Windows ones; empty commands mean "the same as on Windows". A
   session's distro is stored on the session itself (`runtime` in `sessions.json`), and a
   remembered project's on the project. See **WSL sessions** above.
+- `notes` — the Notes overlay's markdown, and `notesShortcut`, the key that opens it (default
+  `CommandOrControl+Shift+N`).
+- `syncFolder` — a folder to keep the shared settings, your themes and the notes in. Empty (the
+  default) keeps everything in this file. See below.
+
+## Syncing settings across machines
+
+To carry your settings between computers — Windows and macOS alike — keep them in a folder you
+put in git, the way you might keep `~/.claude/`. Settings → **SYNC** takes the folder (`~` works,
+as does a path of any other kind); it applies at once. Leave it empty and nothing changes: the one
+`settings.json` in the user-data directory goes on holding everything.
+
+The folder holds these, and Terminator writes nothing else there:
+
+- `settings.json` — the shared settings.
+- `settings.windows.json`, `settings.macos.json`, `settings.linux.json` — per-OS overrides. Each
+  computer reads only its own OS's file, over `settings.json`, so one repo serves every machine.
+- `themes.json` — your themes.
+- `notes.md` — the notes, as plain markdown, so a diff or a merge of them reads like one.
+
+What only makes sense on one computer stays on it, in the user-data directory: `defaultShell`,
+`shellArgs`, `gitGuiCommand`, `projectEditor`, `worktreesRoot`, `projects`, the WSL settings
+(`wsl.*`), `scripting`, which Settings sections are open, `notifications.command` and
+`notifications.perType`, and the browsers and editor for links (`links.browsers`,
+`links.defaultBrowserId`, `links.editor`). So does everything that is state rather than a setting:
+sessions, the usage snapshot, `control.json`, pasted images, the in-app browser's data and the
+`terminator` command. Everything else syncs — the theme and its overrides, fonts and sizes,
+shortcuts, notes, the Claude commands in `modes`, how links behave, and the rest. The list lives
+in [`src/shared/settings-sync.ts`](src/shared/settings-sync.ts).
+
+An override file is a partial `settings.json` — just the keys that differ on that OS:
+
+```json
+{ "fontSize": 13, "modes": { "readonly": { "command": "claude-readonly.cmd" } } }
+```
+
+**Saving** puts each change where it belongs: a machine setting in the user-data directory, a shared
+one in the folder's `settings.json` — or in this OS's override file, if that file already sets it,
+so an override you made stays one — and the notes in `notes.md`. Only the settings you changed are
+written, onto each file as it is on disk at that moment.
+
+**A `git pull` while the app is running** is picked up within a couple of seconds, settings, themes
+and notes alike, and nothing needs a restart. Because a save only ever writes what you changed, it
+never puts back what the pull replaced. A pull that changes the notes while you have unsaved edits
+in them leaves your draft alone and tells you; Save then replaces the pulled version.
+
+**A file that doesn't parse** — a merge conflict, say — is never written to. The app holds on to
+that file's last good version, says so in a toast and in Settings → SYNC, and refuses to save
+changes that belong in it; machine settings save as usual. Fix the file and it carries on.
+
+**On another computer**, clone the repo first, then choose the clone. The folder's settings win over
+what that computer had (which is kept once, as `settings.before-sync.json` in the user-data
+directory), and that computer's own themes are added to the folder's. An empty folder is filled
+from the computer that chose it: the shared settings that differ from the defaults, the notes and
+the themes. A folder holding someone else's `settings.json` — `~/.claude`, for one — is refused.
+
+The `settings.json` in the user-data directory keeps a full copy of everything while you sync, so
+**Stop syncing**, or a folder that isn't there (a network drive that's down), leaves the computer
+where it was. Until the folder is back, changes to shared settings can't be saved. Edit the copy
+by hand and the synced value wins: while a folder is in use, edit the folder's files instead.
+
+Writes are a temp file and a rename, so a crash can't leave a torn file. Add `*.tmp` to the repo's
+`.gitignore` in case one ever leaves its temp file behind.
 
 ## Themes
 
@@ -963,7 +1027,8 @@ again if the built-in it came from ever changes. Rename, duplicate and delete yo
 deleting the one you're using falls back to Terminator.
 
 Your themes are stored in `themes.json`, next to `settings.json` but deliberately not in it — a
-theme is seventy-odd colours and `settings.json` is a file you edit by hand.
+theme is seventy-odd colours and `settings.json` is a file you edit by hand. With a sync folder,
+it's the folder's `themes.json`.
 
 **Edit** opens a view of its own rather than another block in the Settings scroll:
 
@@ -993,7 +1058,7 @@ overwriting one.
 ### Overriding a single colour by hand
 
 To adjust a colour of a **built-in** without making a theme, add a `customTheme` block to
-`settings.json`:
+`settings.json` (the sync folder's, if you use one):
 
 ```json
 { "theme": "jetbrains-new-dark", "customTheme": { "accent": "#00b0ff", "bg": "#101216" } }

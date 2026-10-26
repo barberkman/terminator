@@ -14,6 +14,7 @@ import {
   type Settings,
 } from '../../shared/types'
 import { formatArgs, parseArgs } from '../../shared/args'
+import { type SettingsPatch, applyPatch, diffSettings } from '../../shared/settings-sync'
 import { programName } from '../../shared/editor-name'
 import { importTheme, newThemeId, resolveTheme, snapshotSeed } from '../../shared/themes'
 import { C, STATUS_COLORS, accentA, sz } from '../theme'
@@ -23,18 +24,21 @@ import { ThemePicker } from './ThemePicker'
 import { WslDistroStatus } from './WslDistroStatus'
 import { Choice, Field, Section, inputStyle, smallBtn } from './controls'
 import { applyThemeFromSettings } from '../theme-apply'
-import { freeName, upsert, writeThemes } from '../themeActions'
+import { freeName, saveTheme } from '../themeActions'
+import { saveSettings } from '../settingsActions'
 import { eventToAccelerator } from '../shortcuts'
 import { clickLabel } from '../term/links'
 
 const NOTIF_TYPES: NotifType[] = ['waiting', 'finished', 'error', 'exited', 'idle']
 
 /**
- * The settings this panel is the editor of. Save posts these and nothing else:
- * `notes` belongs to the Notes overlay, `projects` to the sidebar, `customTheme`
- * to whoever edits the file by hand, and `theme` is persisted the moment you pick
- * one. Posting a whole draft would revert any of them that moved while the panel
- * was open — including the main process's repair when a theme in use is deleted.
+ * The settings this panel is the editor of. Save posts the ones you changed and
+ * nothing else: `notes` belongs to the Notes overlay, `projects` to the sidebar,
+ * `customTheme` to whoever edits the file by hand, `theme` is persisted the moment
+ * you pick one, and `syncFolder` the moment you choose one. Posting a whole draft
+ * would revert any of them that moved while the panel was open — including the
+ * main process's repair when a theme in use is deleted, and a `git pull` in the
+ * sync folder.
  */
 const OWNED = [
   'modes', 'defaultShell', 'gitGuiCommand', 'projectEditor', 'worktreesRoot', 'notifications',
@@ -342,10 +346,13 @@ export function SettingsView(): React.JSX.Element | null {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
   const settings = useStore((s) => s.settings)
-  const setSettings = useStore((s) => s.setSettings)
   const customThemes = useStore((s) => s.customThemes)
   const setThemeEditorFor = useStore((s) => s.setThemeEditorFor)
+  const syncStatus = useStore((s) => s.syncStatus)
   const [draft, setDraft] = useState<Settings | null>(settings)
+  // The saved settings the draft was taken from: Save posts the difference.
+  const [base, setBase] = useState<Settings | null>(settings)
+  const [syncInput, setSyncInput] = useState(settings?.syncFolder ?? '')
   const [shortcutStatus, setShortcutStatus] = useState<{ accelerator: string; registered: boolean } | null>(null)
   // Whether Claude's Ctrl+G can be pointed here at all on this machine, and if not
   // why — see promptEditorCommand in main/prompt-edit.ts.
@@ -361,13 +368,15 @@ export function SettingsView(): React.JSX.Element | null {
   const setConfirm = useStore((s) => s.setConfirm)
   const confirm = useStore((s) => s.confirm)
 
-  // Re-seeded when the panel opens, and deliberately not when `settings` changes
-  // underneath: duplicating a theme writes settings while the panel is up, and
-  // re-seeding there would throw away whatever the user was half-way through
-  // typing in one of the command boxes.
+  // Seeded when the panel opens. Settings that change underneath it afterwards —
+  // a theme duplicated, a `git pull` in the sync folder — are folded in below
+  // rather than re-seeded, which would throw away whatever the user was half-way
+  // through typing in one of the command boxes.
   useEffect(() => {
     if (show) {
       setDraft(settings)
+      setBase(settings)
+      setSyncInput(settings?.syncFolder ?? '')
       setImportText(null)
       setImportError('')
       void window.terminator.getGlobalShortcutStatus().then(setShortcutStatus)
@@ -377,6 +386,16 @@ export function SettingsView(): React.JSX.Element | null {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show])
+
+  // The draft follows the saved settings for every field you haven't touched, and
+  // keeps the ones you have.
+  useEffect(() => {
+    if (!show || !settings || !base || settings === base) return
+    setDraft((d) => (d ? applyPatch(settings, diffSettings(base, d)) : settings))
+    setSyncInput((typed) => (typed === base.syncFolder ? settings.syncFolder : typed))
+    setBase(settings)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings])
 
   // Re-read once on open, and again whenever a confirm closes — the two
   // destructive clears run from that dialog, so that's when the number moves.
@@ -388,14 +407,16 @@ export function SettingsView(): React.JSX.Element | null {
       .catch(() => setCacheSize(null))
   }, [show, confirm])
 
-  if (!show || !draft) return null
+  if (!show || !draft || !base) return null
 
   const patch = (p: Partial<Settings>) => setDraft({ ...draft, ...p })
   const save = async () => {
-    const patch: Partial<Settings> = {}
-    for (const key of OWNED) Object.assign(patch, { [key]: draft[key] })
-    setSettings(await window.terminator.updateSettings(patch))
-    setShow(false)
+    const changed = diffSettings(base, draft)
+    const patch: SettingsPatch = {}
+    for (const key of OWNED) if (key in changed) Object.assign(patch, { [key]: changed[key] })
+    // A refused save — a merge conflict in the sync folder — keeps the panel and its
+    // draft; the toast says why.
+    if (await saveSettings(patch)) setShow(false)
   }
 
   const patchLinks = (p: Partial<Settings['links']>) => patch({ links: { ...draft.links, ...p } })
@@ -431,7 +452,7 @@ export function SettingsView(): React.JSX.Element | null {
   const toggleSection = (id: string) => {
     const settingsOpen = { ...draft.settingsOpen, [id]: !isOpen(id) }
     patch({ settingsOpen })
-    void window.terminator.updateSettings({ settingsOpen }).then(setSettings)
+    void saveSettings({ settingsOpen })
   }
   const section = (id: string, label: string, summary: React.ReactNode, children: React.ReactNode, actions?: React.ReactNode) => (
     <Section label={label} summary={summary} actions={actions} open={isOpen(id)} onToggle={() => toggleSection(id)}>
@@ -447,15 +468,15 @@ export function SettingsView(): React.JSX.Element | null {
   /** Applied for the eye, persisted for real — picking a theme is not a preview. */
   const pickTheme = async (theme: string) => {
     applyThemeFromSettings({ theme, customTheme: settings?.customTheme })
-    setSettings(await window.terminator.updateSettings({ theme }))
+    // Refused (the sync folder's settings.json has a conflict in it): back to what's saved.
+    if (!(await saveSettings({ theme })) && settings) applyThemeFromSettings(settings)
   }
   const selectAndEdit = async (id: string) => {
     await pickTheme(id)
     setThemeEditorFor(id)
   }
-  const addTheme = async (seed: Parameters<typeof upsert>[1]) => {
-    await writeThemes(upsert(customThemes, seed))
-    await selectAndEdit(seed.id)
+  const addTheme = async (seed: Parameters<typeof saveTheme>[0]) => {
+    if (await saveTheme(seed)) await selectAndEdit(seed.id)
   }
   const duplicate = () =>
     void addTheme(
@@ -466,6 +487,23 @@ export function SettingsView(): React.JSX.Element | null {
         newThemeId(),
       ),
     )
+  // ---- sync ----
+  // Applied on the spot rather than with Save: choosing a folder can replace most
+  // of the other values in this panel, and the draft then follows them.
+  const applySyncFolder = async (raw: string) => {
+    const next = await saveSettings({ syncFolder: raw.trim() })
+    if (next) setSyncInput(next.syncFolder)
+  }
+  const browseSyncFolder = async () => {
+    const picked = await window.terminator.pickFolder(syncStatus?.dir ?? undefined)
+    if (picked) {
+      setSyncInput(picked)
+      await applySyncFolder(picked)
+    }
+  }
+  const osName = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[window.terminator.platform as string]
+  const savedSync = settings?.syncFolder ?? ''
+
   const runImport = () => {
     const result = importTheme(importText ?? '')
     if (!result.ok) {
@@ -1287,6 +1325,59 @@ export function SettingsView(): React.JSX.Element | null {
                       )
                     })}
                   </div>
+                </Field>
+              </>
+            ),
+          )}
+
+          {section(
+            'sync',
+            'SYNC',
+            savedSync || 'off',
+            (
+              <>
+                <Field
+                  label="SETTINGS FOLDER"
+                  hint="A folder of your own to keep the shared settings, your themes and the notes in — put it in git, and every computer that points here gets the same ones. What only makes sense on one computer stays on it: the shell, worktree folder, projects, browsers and editors, git GUI, notification command, WSL and scripting. Changing this applies at once. On another computer, clone the repo first and choose the clone."
+                >
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+                      spellCheck={false}
+                      placeholder="~/terminator-settings"
+                      value={syncInput}
+                      onChange={(e) => setSyncInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && syncInput.trim() !== savedSync) void applySyncFolder(syncInput)
+                      }}
+                    />
+                    <button onClick={() => void browseSyncFolder()} style={smallBtn}>
+                      Browse…
+                    </button>
+                  </div>
+                  {(savedSync || syncInput.trim()) && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      {syncInput.trim() && syncInput.trim() !== savedSync && (
+                        <button onClick={() => void applySyncFolder(syncInput)} style={smallBtn}>
+                          Use this folder
+                        </button>
+                      )}
+                      {savedSync && (
+                        <button onClick={() => void applySyncFolder('')} style={smallBtn}>
+                          Stop syncing
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {syncStatus?.dir &&
+                    (syncStatus.problem ? (
+                      <div style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>{syncStatus.problem}</div>
+                    ) : (
+                      <div style={{ fontSize: 10.5, color: C.dim, marginTop: 6 }}>
+                        Reading {syncStatus.files.join(', ')} from {syncStatus.dir}.
+                        {syncStatus.osFile && ` Settings that should differ on ${osName ?? 'this OS'} go in ${syncStatus.osFile}.`}
+                      </div>
+                    ))}
                 </Field>
               </>
             ),

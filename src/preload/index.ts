@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { clipboard, contextBridge, ipcRenderer, webFrame, webUtils } from 'electron'
 import { Channels } from '../shared/channels'
-import type { CustomTheme } from '../shared/themes'
+import type { SettingsPatch } from '../shared/settings-sync'
 import type {
   AttachDeliver,
   AttachFileInput,
@@ -18,8 +18,9 @@ import type {
   PtyExit,
   Session,
   SessionMode,
-  Settings,
+  SettingsChange,
   TerminatorApi,
+  ThemeOp,
   UsageSnapshot,
 } from '../shared/types'
 import type { BridgeReply, BridgeRequest } from '../shared/control'
@@ -96,10 +97,12 @@ const api: TerminatorApi = {
   pickFolder: (defaultPath?: string) => ipcRenderer.invoke(Channels.pickFolder, defaultPath),
   pickFile: (opts?: string | PickFileOptions) => ipcRenderer.invoke(Channels.pickFile, opts),
   getSettings: () => ipcRenderer.invoke(Channels.settingsGet),
-  updateSettings: (patch: Partial<Settings>) => ipcRenderer.invoke(Channels.settingsUpdate, patch),
+  updateSettings: (patch: SettingsPatch) => ipcRenderer.invoke(Channels.settingsUpdate, patch),
+  onSettingsChanged: (cb: (c: SettingsChange) => void) => on(Channels.settingsChanged, cb),
+  getSyncStatus: () => ipcRenderer.invoke(Channels.syncStatus),
   getGlobalShortcutStatus: () => ipcRenderer.invoke(Channels.globalShortcutStatus),
   getCustomThemes: () => ipcRenderer.invoke(Channels.themesGet),
-  saveCustomThemes: (list: CustomTheme[]) => ipcRenderer.invoke(Channels.themesSave, list),
+  updateCustomThemes: (op: ThemeOp) => ipcRenderer.invoke(Channels.themesSave, op),
 
   onControlRequest: (cb: (r: BridgeRequest) => void) => on(Channels.controlRequest, cb),
   controlReply: (r: BridgeReply) => ipcRenderer.send(Channels.controlReply, r),

@@ -19,7 +19,8 @@ import { C, dotStyle, sz } from '../theme'
 import { Icon } from '../icons'
 import { useStore } from '../state/store'
 import { applyTheme } from '../theme-apply'
-import { freeName, upsert, writeThemes } from '../themeActions'
+import { deleteTheme, freeName, saveTheme } from '../themeActions'
+import { saveSettings } from '../settingsActions'
 import { Choice, Field, Section, inputStyle, smallBtn } from './controls'
 import { ColorField, ContrastNotes } from './ColorField'
 import { ThemeCodeSample } from './ThemeCodeSample'
@@ -81,9 +82,8 @@ export function ThemeEditorView(): React.JSX.Element | null {
   const latest = useRef<CustomTheme | null>(null)
 
   /**
-   * Land whatever the debounce is still holding. Awaitable, because a write that
-   * replaces the whole set has to finish before the next one reads the list back —
-   * otherwise the second write is composed from a list that predates the first.
+   * Land whatever the debounce is still holding. Awaitable, so a duplicate made
+   * mid-edit lands after the edit it was copied from.
    */
   const flush = async (): Promise<void> => {
     if (pending.current !== null) {
@@ -91,7 +91,7 @@ export function ThemeEditorView(): React.JSX.Element | null {
       pending.current = null
     }
     const seed = latest.current
-    if (seed) await writeThemes(upsert(useStore.getState().customThemes, seed))
+    if (seed) await saveTheme(seed)
   }
 
   const stored = customThemes.find((t) => t.id === id) ?? null
@@ -124,7 +124,7 @@ export function ThemeEditorView(): React.JSX.Element | null {
     if (pending.current !== null) window.clearTimeout(pending.current)
     pending.current = window.setTimeout(() => {
       pending.current = null
-      void writeThemes(upsert(useStore.getState().customThemes, next))
+      void saveTheme(next)
     }, 400)
   }
 
@@ -158,8 +158,7 @@ export function ThemeEditorView(): React.JSX.Element | null {
 
   const duplicate = () => {
     void (async () => {
-      // Awaited: everything below reads the list back, and this write replaces the
-      // whole set — so an unfinished flush would drop the edits it was carrying.
+      // Awaited: the copy's name is picked from the list this write hands back.
       await flush()
       const list = useStore.getState().customThemes
       // Copied from the draft rather than the stored seed, so duplicating mid-edit
@@ -176,9 +175,8 @@ export function ThemeEditorView(): React.JSX.Element | null {
         from: draft.name,
         createdAt: Date.now(),
       }
-      await writeThemes(upsert(useStore.getState().customThemes, copy))
-      const settings = await window.terminator.updateSettings({ theme: copy.id })
-      useStore.getState().setSettings(settings)
+      if (!(await saveTheme(copy))) return
+      await saveSettings({ theme: copy.id })
       setId(copy.id)
     })()
   }
@@ -190,9 +188,7 @@ export function ThemeEditorView(): React.JSX.Element | null {
     setId(null)
     // The main process moves the selection to the default when the theme that
     // just vanished was the one in use, and hands the repaired settings back.
-    // Read from the store rather than this render's list: an autosave for another
-    // theme may have landed since, and this write replaces the whole set.
-    void writeThemes(useStore.getState().customThemes.filter((t) => t.id !== draft.id))
+    void deleteTheme(draft.id)
   }
 
   const close = () => {

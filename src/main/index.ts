@@ -23,6 +23,7 @@ import { flushUsage, setWindow as setUsageWindow } from './usage-store'
 import { installCommand } from './cli-install'
 import { wireClaudeTurns } from './claude-turns'
 import { applyScripting, stopControlServer } from './control-server'
+import { startSyncWatch, stopSyncWatch } from './sync-watch'
 import { setScriptingWindow, wireScripting } from './scripting'
 import { startShellEnv } from './shell-env'
 import { macMenu } from './mac-menu'
@@ -170,6 +171,8 @@ app.whenReady().then(async () => {
   applyGlobalShortcut(() => win)
   // Settings → SCRIPTING: listen for the `terminator` command only while it's on.
   applyScripting()
+  // Settings → SYNC: pick up a `git pull` in the settings folder while running.
+  startSyncWatch(() => win)
 
   app.on('activate', () => {
     if (!win || win.isDestroyed()) {
@@ -199,5 +202,6 @@ app.on('before-quit', () => {
   disposePromptEditor()
   stopReportServer()
   stopControlServer()
+  stopSyncWatch()
   disposeGlobalShortcut()
 })

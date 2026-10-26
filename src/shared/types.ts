@@ -1,4 +1,5 @@
 import type { CustomTheme, ThemeOverrides } from './themes'
+import type { SettingsPatch } from './settings-sync'
 import type { BridgeReply, BridgeRequest } from './control'
 
 // Shared types used across main / preload / renderer.
@@ -628,7 +629,41 @@ export interface Settings {
   links: LinkSettings
   browser: BrowserSettings
   wsl: WslSettings
+  /**
+   * A folder to keep the shared settings, your themes and the notes in, so it can
+   * live in git and follow you between computers (Settings → SYNC). Empty = off: all
+   * of it stays in this file, as it always has. `~` and relative paths are from the
+   * home folder. Which keys stay on this computer is `LOCAL_SETTINGS` in
+   * shared/settings-sync.ts — a new setting naming a program or a path belongs there.
+   */
+  syncFolder: string
 }
+
+/** Where the synced settings come from, for Settings → SYNC and the toast. */
+export interface SyncStatus {
+  /** The folder in use, resolved. Null when syncing is off. */
+  dir: string | null
+  /** The per-OS override this computer reads from it (`settings.macos.json`…). */
+  osFile: string | null
+  /** The sync files the folder holds right now. */
+  files: string[]
+  /** Why the folder isn't being used, or which file is held at its last good version. Empty = fine. */
+  problem: string
+}
+
+/** main -> renderer, whenever any of the three moved: a pull, a save, a remembered project. */
+export interface SettingsChange {
+  settings: Settings
+  themes: CustomTheme[]
+  sync: SyncStatus
+}
+
+/**
+ * One change to the user's themes. Never the whole list: main applies it to what is
+ * on disk at that moment, so a theme another computer added since doesn't vanish
+ * because this window hadn't heard of it yet.
+ */
+export type ThemeOp = { upsert: CustomTheme } | { remove: string }
 
 /**
  * Settings that only apply to sessions running inside WSL. The Windows-side ones
@@ -867,16 +902,24 @@ export interface TerminatorApi {
    */
   pickFile(opts?: string | PickFileOptions): Promise<string | null>
   getSettings(): Promise<Settings>
-  updateSettings(patch: Partial<Settings>): Promise<Settings>
+  /**
+   * Save the leaves a patch names, each to the file it belongs in. Rejects — and
+   * writes nothing — when a synced file it would write to is missing or doesn't
+   * parse; the message says which and why.
+   */
+  updateSettings(patch: SettingsPatch): Promise<Settings>
+  /** main -> renderer: settings, themes or the sync folder's state changed. */
+  onSettingsChanged(cb: (c: SettingsChange) => void): () => void
+  getSyncStatus(): Promise<SyncStatus>
   getGlobalShortcutStatus(): Promise<{ accelerator: string; registered: boolean }>
 
   // the user's own themes (themes.json)
   getCustomThemes(): Promise<CustomTheme[]>
   /**
-   * Replace the whole set. Comes back with the settings too, because dropping the
-   * theme you were using has to move the selection as well as the list.
+   * Add, replace or delete one theme. Comes back with the settings too, because
+   * dropping the theme you were using has to move the selection as well as the list.
    */
-  saveCustomThemes(list: CustomTheme[]): Promise<{ themes: CustomTheme[]; settings: Settings }>
+  updateCustomThemes(op: ThemeOp): Promise<{ themes: CustomTheme[]; settings: Settings }>
 
   // scripting: the `terminator` command (Settings → SCRIPTING, renderer/scripting.ts)
   /** main -> renderer: create a session the New Session dialog's way, for a script. */

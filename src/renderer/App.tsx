@@ -16,6 +16,7 @@ import { ThemeEditorView } from './components/ThemeEditorView'
 import { NotesView } from './components/NotesView'
 import { Toasts } from './components/Toasts'
 import { wirePromptEdits } from './promptEdit'
+import { listenForSettings } from './settingsActions'
 import { IS_MAC, matchesAccelerator, primaryMod, sessionDigitMod } from './shortcuts'
 import { C } from './theme'
 import { applyThemeFromSettings } from './theme-apply'
@@ -40,6 +41,9 @@ export function App(): React.JSX.Element {
   // of the app rather than to any view: a session can be blocked on one of these
   // with no pane of the editor's on screen at all.
   useEffect(() => wirePromptEdits(), [])
+
+  // Settings that change under the window: a `git pull` in the sync folder.
+  useEffect(() => listenForSettings(), [])
 
   // Terminal font family → xterm panes.
   useEffect(() => {

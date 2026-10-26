@@ -90,6 +90,10 @@ export const Channels = {
   pickFile: 'dialog:pickFile',
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+  // main -> renderer: settings, themes or the sync folder moved under the window —
+  // a git pull, or main saving something on its own (a remembered project).
+  settingsChanged: 'settings:changed',
+  syncStatus: 'settings:syncStatus',
 
   // the user's own themes (themes.json, kept apart from settings.json)
   themesGet: 'themes:get',

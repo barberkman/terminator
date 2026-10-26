@@ -6,6 +6,7 @@ import { Icon } from '../icons'
 import { errorText } from '../menus'
 import { TYPES, newSessionInput, settleFolder, type TypeKey } from '../sessionTypes'
 import { useStore } from '../state/store'
+import { saveSettings } from '../settingsActions'
 import { RuntimeChip } from './RuntimeChip'
 
 function basename(p: string): string {
@@ -37,7 +38,6 @@ export function NewSessionModal(): React.JSX.Element | null {
   const prefill = useStore((s) => s.newPrefill)
   const setShowNew = useStore((s) => s.setShowNew)
   const settings = useStore((s) => s.settings)
-  const setSettings = useStore((s) => s.setSettings)
   const sessions = useStore((s) => s.sessions)
   const order = useStore((s) => s.order)
   const distros = useStore((s) => s.wslDistros) ?? []
@@ -195,8 +195,7 @@ export function NewSessionModal(): React.JSX.Element | null {
   const removeRecent = async (path: string, rt?: SessionRuntime) => {
     if (!settings) return
     const projects = settings.projects.filter((p) => !(p.path === path && sameRuntime(p.runtime, rt)))
-    const result = await window.terminator.updateSettings({ projects })
-    setSettings(result)
+    if (!(await saveSettings({ projects }))) return
     if (folder === path && sameRuntime(runtime, rt)) setFolder('')
   }
 
