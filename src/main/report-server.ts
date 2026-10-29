@@ -9,6 +9,7 @@ import { getSession, notify, setStatus, updateSession } from './state'
 import { flushPendingPrompt } from './prefill'
 import { claudeReady, promptSubmitted } from './claude-turns'
 import { recordUsage } from './usage-store'
+import { short, trace } from './hook-trace'
 import type { SessionMetrics, SessionStatus, UsageWindow } from '../shared/types'
 
 let server: Server | null = null
@@ -82,8 +83,9 @@ export function startReportServer(): Promise<void> {
         // The reporter stamps each report when Claude spawned it; without that, all
         // we would know is delivery order, which is not emission order (see handleHook).
         const at = Number(req.headers['x-terminator-ts']) || Date.now()
-        if (req.url === '/hook') handleHook(payload, at)
-        else if (req.url === '/status') handleStatus(payload)
+        const id = sessionOf(payload, String(req.headers['x-terminator-session'] ?? ''))
+        if (req.url === '/hook') handleHook(payload, at, id)
+        else if (req.url === '/status') handleStatus(payload, id)
         // Ctrl+G, let go from the terminal: the WSL shim's word for Ctrl+C in the pane,
         // which its helper can't hear itself (see wslShimSource).
         else if (req.url === '/edit-cancel' && typeof payload.sessionId === 'string') {
@@ -142,6 +144,12 @@ interface Turn {
   ended: boolean
   /** Live subagents: `agent_id` -> `agent_type`. */
   agents: Map<string, string>
+  /**
+   * The tool a permission dialog on screen is asking about. Approving it fires no
+   * hook until the tool is done, so the key that answers it is the only word that
+   * the session is working again (`permissionAnswered`).
+   */
+  dialog?: string
 }
 const turns = new Map<string, Turn>()
 
@@ -182,21 +190,57 @@ function subagentActivity(t: Turn): string | undefined {
   return `running ${[...t.agents.values()][0] || 'subagent'}`
 }
 
-function handleHook(p: Record<string, unknown>, at: number): void {
-  const id = str(p.session_id)
+/**
+ * The app's session a report is about: the one its reporter names, which stays put
+ * when Claude's own session_id doesn't — `/clear` starts Claude on a new one. A
+ * report that names none (a reporter from before this) falls back to session_id.
+ */
+function sessionOf(p: Record<string, unknown>, named: string): string | undefined {
+  return named && getSession(named) ? named : str(p.session_id)
+}
+
+function handleHook(p: Record<string, unknown>, at: number, id: string | undefined): void {
   if (!id) return
+  const from = getSession(id)?.status
+  const d = hookDecision(id, p, at)
+  const conv = str(p.session_id)
+  trace({
+    s: id.slice(0, 8),
+    ...(conv && conv !== id ? { conv: conv.slice(0, 8) } : {}),
+    ev: String(p.hook_event_name ?? ''),
+    at,
+    p: short(p.prompt_id),
+    nt: str(p.notification_type),
+    tool: str(p.tool_name),
+    src: str(p.source),
+    trig: str(p.trigger),
+    agent: short(p.agent_id),
+    d,
+    from,
+    to: getSession(id)?.status,
+  })
+}
+
+/** Act on one hook, and say what was done with it: `applied`, or why not. */
+function hookDecision(id: string, p: Record<string, unknown>, at: number): string {
   const s = getSession(id)
   // A hook from a process the app has already buried is stale by definition, and a
   // straggling Stop would otherwise pull a stopped session back out of 'closed'.
   if (!s || !s.alive) {
     turns.delete(id)
-    return
+    return 'dead'
+  }
+  // The conversation Claude is on now — a new one after /clear — is where its
+  // transcript is: what reply, the conversation view and the next resume read.
+  const conv = str(p.session_id)
+  if (conv && conv !== (s.conversationId ?? s.id)) {
+    updateSession(id, { conversationId: conv === s.id ? undefined : conv })
   }
   const event = String(p.hook_event_name ?? '')
   // SessionEnd is handled by the PTY exit path.
   if (event === 'SessionEnd') {
     turns.delete(id)
-    return
+    return 'session-end'
   }
 
   // What `terminator send` and `wait` go by (claude-turns.ts), taken ahead of the
@@ -216,7 +260,7 @@ function handleHook(p: Record<string, unknown>, at: number): void {
   // Anything Claude emitted before the newest event we already acted on is stale by
   // the time it reaches us, whatever order it arrived in.
   const behind = t.lastAt - at
-  if (behind > 0 && behind <= ORDER_WINDOW_MS) return
+  if (behind > 0 && behind <= ORDER_WINDOW_MS) return 'stale'
 
   // The idle nudge is judged before the turn-ended guard below, because being raised
   // after a turn ended is the whole point of it. "Claude is waiting for your input" is
@@ -226,16 +270,17 @@ function handleHook(p: Record<string, unknown>, at: number): void {
   // session really is sitting idle.
   if (event === 'Notification' && str(p.notification_type) === 'idle_prompt') {
     if (s.status === 'idle') notify(id, 'idle', str(p.message) ?? `${s.name} is waiting for you`)
-    return
+    return 'idle-nudge'
   }
 
   // A turn that has already ended can only be reopened by the next prompt — the
   // clock-free backstop, for when two hooks share a millisecond.
-  if (t.ended && promptId && promptId === t.promptId && !TURN_BOUNDARY.has(event)) return
+  if (t.ended && promptId && promptId === t.promptId && !TURN_BOUNDARY.has(event)) return 'ended'
 
   /** Move the status, and record this event as the newest one acted on. */
   const apply = (status: SessionStatus, activity: string): void => {
     t.lastAt = at
+    if (status !== 'waiting') t.dialog = undefined
     setStatus(id, status, activity)
   }
 
@@ -256,23 +301,31 @@ function handleHook(p: Record<string, unknown>, at: number): void {
       t.ended = false
       t.agents.clear()
       apply('busy', 'working')
-      return
+      return 'applied'
     case 'PreToolUse': {
       const tool = str(p.tool_name)
       apply('busy', tool ? `using ${tool}` : 'working')
-      return
+      return 'applied'
     }
     case 'PostToolUse':
       apply('busy', subagentActivity(t) ?? 'working')
-      return
+      return 'applied'
     case 'PreCompact':
       apply('busy', 'compacting')
-      return
+      return 'applied'
+    case 'PostCompact':
+      // A `/compact` you typed is no turn of its own — no Stop follows it, so this is
+      // what ends it. One Claude starts itself is mid-turn, and the turn goes on.
+      if (str(p.trigger) === 'manual') {
+        t.ended = true
+        apply('idle', 'compacted')
+      } else apply('busy', 'working')
+      return 'applied'
     case 'SubagentStart': {
       const agentId = str(p.agent_id)
       if (agentId) t.agents.set(agentId, str(p.agent_type) ?? 'subagent')
       apply('busy', subagentActivity(t) ?? 'working')
-      return
+      return 'applied'
     }
     case 'SubagentStop': {
       // Deliberately not the Stop branch below: a subagent finishing leaves the
@@ -281,7 +334,7 @@ function handleHook(p: Record<string, unknown>, at: number): void {
       const agentId = str(p.agent_id)
       if (agentId) t.agents.delete(agentId)
       apply('busy', subagentActivity(t) ?? 'working')
-      return
+      return 'applied'
     }
 
     // ---- Claude is blocked on you ------------------------------------------
@@ -291,7 +344,9 @@ function handleHook(p: Record<string, unknown>, at: number): void {
         tool ? `permission: ${tool}` : 'waiting for permission',
         tool ? `${s.name} needs permission for ${tool}` : `${s.name} needs your input`,
       )
-      return
+      // A question is answered by a PostToolUse straight away; a tool, only once it has run.
+      t.dialog = tool && tool !== 'AskUserQuestion' ? tool : undefined
+      return 'applied'
     }
     case 'Elicitation': {
       const server = str(p.mcp_server_name)
@@ -299,17 +354,16 @@ function handleHook(p: Record<string, unknown>, at: number): void {
         server ? `${server} needs input` : 'waiting for input',
         str(p.message) ?? `${s.name} needs your input`,
       )
-      return
+      return 'applied'
     }
     case 'Notification': {
       // idle_prompt is already handled above; everything that is left either means
       // Claude has stopped for you, or announces something that completed, resolved
       // or timed out — and those must not touch the status.
       const type = str(p.notification_type)
-      if (type && BLOCKING_NOTIFICATIONS.has(type)) {
-        enterWaiting('waiting for input', str(p.message) ?? `${s.name} needs your input`)
-      }
-      return
+      if (!type || !BLOCKING_NOTIFICATIONS.has(type)) return 'ignored'
+      enterWaiting('waiting for input', str(p.message) ?? `${s.name} needs your input`)
+      return 'applied'
     }
 
     // ---- The turn is over --------------------------------------------------
@@ -319,7 +373,7 @@ function handleHook(p: Record<string, unknown>, at: number): void {
       t.agents.clear()
       apply('idle', 'finished')
       if (wasActive) notify(id, 'finished', `${s.name} finished`)
-      return
+      return 'applied'
     }
     case 'StopFailure': {
       // The turn itself failed — an API error, a rate limit, an exhausted retry. Its
@@ -329,21 +383,92 @@ function handleHook(p: Record<string, unknown>, at: number): void {
       t.agents.clear()
       apply('error', `error: ${reason}`)
       notify(id, 'error', `${s.name} hit an error: ${str(p.error_details) ?? reason}`)
-      return
+      return 'applied'
     }
 
     case 'SessionStart':
       // 'compact' fires mid-turn, when Claude compacts the conversation and carries on.
       // Treating that as a fresh session would reset a live turn to "ready" and type a
       // branch's queued prompt into the middle of Claude's own work.
-      if (str(p.source) === 'compact') return
+      if (str(p.source) === 'compact') return 'ignored'
       t.ended = false
       t.agents.clear()
       apply('idle', 'ready')
       // A branch can carry the prompt it was cut before, as an editable draft.
       flushPendingPrompt(id)
-      return
+      return 'applied'
   }
+  return 'ignored'
+}
+
+/** The `prompt_id` of the turn a session is on, as its hooks last said. */
+export function turnPromptId(id: string): string | undefined {
+  return turns.get(id)?.promptId
+}
+
+/**
+ * The user stopped the turn — Esc, or No on a permission dialog. Claude fires no
+ * hook for either (`Stop` "does not run if the stoppage occurred due to a user
+ * interrupt"), so without this the session would read working or waiting until
+ * the next prompt. interrupts.ts sees it in the transcript and says so here.
+ */
+export function turnInterrupted(id: string): void {
+  const s = getSession(id)
+  if (!s || !s.alive || (s.status !== 'busy' && s.status !== 'waiting')) return
+  const from = s.status
+  const t = turnOf(id)
+  // Over, the same as after Stop: a straggling hook from this turn can't reopen it.
+  t.ended = true
+  t.agents.clear()
+  t.lastAt = Date.now()
+  setStatus(id, 'idle', 'interrupted')
+  trace({ s: id.slice(0, 8), ev: 'TranscriptInterrupt', p: short(t.promptId), d: 'applied', from, to: 'idle' })
+}
+
+/**
+ * Enter, or an option's number, on a permission dialog: you answered it. Allowed,
+ * the tool runs — for as long as it takes — before PostToolUse says anything, and
+ * all that time the session would read waiting on you. Denied, Claude writes the
+ * interrupt down and interrupts.ts ends the turn.
+ */
+export function permissionAnswered(id: string): void {
+  const s = getSession(id)
+  const t = turns.get(id)
+  if (!s || !s.alive || s.status !== 'waiting' || !t?.dialog) return
+  const tool = t.dialog
+  t.dialog = undefined
+  // What was stamped before this — the ~6 s permission notice among it — is about
+  // the dialog just answered, and mustn't put it back.
+  t.lastAt = Date.now()
+  setStatus(id, 'busy', `using ${tool}`)
+  trace({ s: id.slice(0, 8), ev: 'KeyAnswer', p: short(t.promptId), tool, d: 'applied', from: 'waiting', to: 'busy' })
+}
+
+/** How long after an Esc a hook would have said the turn carried on. */
+const ESC_SETTLE_MS = 1500
+
+/**
+ * Esc while Claude works stops the turn. When there was something to stop it
+ * writes the interrupt down (interrupts.ts); when it hadn't answered yet it puts
+ * the prompt back in its input box and writes nothing at all. So an Esc that no
+ * hook follows within a moment is taken at its word. The turn isn't marked over:
+ * if a hook does turn up for it after all, the status follows that.
+ */
+export function escPressed(id: string): void {
+  const s = getSession(id)
+  if (!s || !s.alive || (s.status !== 'busy' && s.status !== 'waiting')) return
+  const t = turnOf(id)
+  const pressedAt = Date.now()
+  const promptId = t.promptId
+  setTimeout(() => {
+    const cur = getSession(id)
+    if (!cur || !cur.alive || (cur.status !== 'busy' && cur.status !== 'waiting')) return
+    if (t.lastAt > pressedAt || turns.get(id) !== t || t.promptId !== promptId) return
+    const from = cur.status
+    t.dialog = undefined
+    setStatus(id, 'idle', 'interrupted')
+    trace({ s: id.slice(0, 8), ev: 'KeyInterrupt', p: short(promptId), d: 'applied', from, to: 'idle' })
+  }, ESC_SETTLE_MS)
 }
 
 function num(v: unknown): number | undefined {
@@ -374,8 +499,7 @@ function usageWindow(v: unknown): UsageWindow | undefined {
   return resetsAt === undefined ? { usedPct } : { usedPct, resetsAt }
 }
 
-function handleStatus(p: Record<string, unknown>): void {
-  const id = typeof p.session_id === 'string' ? p.session_id : ''
+function handleStatus(p: Record<string, unknown>, id: string | undefined): void {
   if (!id) return
   const s = getSession(id)
   if (!s) return

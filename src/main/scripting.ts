@@ -27,12 +27,11 @@ import type {
   ControlRequests,
   ControlResponse,
   ListedSession,
-  SplitSide,
   StatusWord,
 } from '../shared/control'
 import { replyText, toTurns } from '../shared/conversation-turns'
 import { STATUS_LABELS, buildGroups } from '../shared/sidebar'
-import { isProcessless, type Session, type SessionStatus } from '../shared/types'
+import { EFFORT_LEVELS, isProcessless, type Session, type SessionStatus } from '../shared/types'
 import { parseWslUnc, validRuntime } from '../shared/wsl-path'
 import {
   addScriptedPrompt,
@@ -42,7 +41,7 @@ import {
   readySince,
   transcriptSize,
 } from './claude-turns'
-import { readConversation } from './conversation'
+import { readConversation, readRange } from './conversation'
 import { READY_BEAT_MS } from './prefill'
 import * as ptyMgr from './pty-manager'
 import { SUBMIT_DELAY_MS, sendPrompt, sendRefusal } from './send-prompt'
@@ -60,7 +59,6 @@ const BRIDGE_TIMEOUT_MS = 120_000
 /** setTimeout's ceiling; anything longer is "no timeout". */
 const MAX_DELAY_MS = 2 ** 31 - 1
 
-const SIDES: SplitSide[] = ['left', 'right', 'up', 'down']
 const STATUS_OF: Record<StatusWord, SessionStatus> = {
   idle: 'idle',
   working: 'busy',
@@ -83,7 +81,32 @@ function word(status: SessionStatus): StatusWord {
 }
 
 function listed(s: Session): ListedSession {
-  return { id: s.id, name: s.name, kind: s.kind, project: s.projectName, branch: s.branch, status: word(s.status) }
+  const row: ListedSession = {
+    id: s.id,
+    name: s.name,
+    kind: s.kind,
+    project: s.projectName,
+    branch: s.branch,
+    status: word(s.status),
+  }
+  if (s.kind !== 'claude') return row
+  // What the header shows; before Claude's first report, what it was launched with.
+  const model = s.metrics?.model ?? s.launchModel
+  const effort = s.metrics?.effort ?? s.launchEffort
+  return { ...row, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }
+}
+
+/** A model as `--model` and `/model` take it: an alias (`opus`) or a full name (`claude-opus-5-5`, `opus[1m]`). */
+const MODEL_NAME = /^[A-Za-z0-9][\w.\-[\]]*$/
+
+/** Why `--model`/`--effort` (or `model`/`effort`) can't take `value`, or null. */
+function launchRefusal(what: 'model' | 'effort', value: string): string | null {
+  if (what === 'effort') {
+    return (EFFORT_LEVELS as readonly string[]).includes(value)
+      ? null
+      : `effort is one of ${EFFORT_LEVELS.join(', ')}, not ${value || 'nothing'}`
+  }
+  return MODEL_NAME.test(value) ? null : `${value || 'nothing'} isn't a model name — try fable, opus, sonnet or haiku`
 }
 
 function errorText(e: unknown): string {
@@ -253,15 +276,17 @@ const create: Handler<'new'> = async (a) => {
   if (a.kind !== 'claude' && a.kind !== 'shell') return fail('new makes a claude or a shell session')
   const project = typeof a.project === 'string' ? a.project.trim() : ''
   if (!project) return fail('--project is required: the folder the session works in')
-  // No pane unless one is asked for: the session runs in the sidebar, where a
-  // click opens it, the way Start from the sidebar leaves one.
-  const split = a.split
-  if (split !== undefined && !SIDES.includes(split)) {
-    return fail(`--split takes left, right, up or down, not ${String(split)}`)
-  }
   const branch = typeof a.branch === 'string' ? a.branch.trim() : ''
   // The dialog's branch box only shows — and is only read — with the worktree on.
   if (branch && !a.worktree) return fail("--branch names the worktree's branch, so it needs --worktree")
+  const model = typeof a.model === 'string' ? a.model.trim() : undefined
+  const effort = typeof a.effort === 'string' ? a.effort.trim() : undefined
+  if ((model !== undefined || effort !== undefined) && a.kind !== 'claude') {
+    return fail('--model and --effort are for a claude session')
+  }
+  const refused =
+    (model !== undefined && launchRefusal('model', model)) || (effort !== undefined && launchRefusal('effort', effort))
+  if (refused) return fail(refused)
   const runtime = validRuntime(a.runtime)
   const missing = await missingFolder(project, !!runtime)
   if (missing) return fail(missing)
@@ -273,7 +298,8 @@ const create: Handler<'new'> = async (a) => {
     worktree: !!a.worktree,
     branch,
     runtime,
-    ...(split ? { split } : {}),
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
   })
   if (!r.ok) return fail(r.error)
   const s = state.getSession(r.id)
@@ -284,22 +310,29 @@ const create: Handler<'new'> = async (a) => {
   return { ok: true, id: s.id, session: listed(s) }
 }
 
-/** Sends to one session go one at a time, each holding its place until its Enter is in. */
+/**
+ * What a script types into one session goes in one thing at a time — a prompt, a
+ * `/model` — each holding its place until its Enter is in.
+ */
 const sendChains = new Map<string, Promise<unknown>>()
+
+async function inTurn<T>(id: string, typeIt: () => Promise<T>): Promise<T> {
+  const prev = sendChains.get(id) ?? Promise.resolve()
+  const run = prev.then(typeIt)
+  const tail = run.catch(() => {})
+  sendChains.set(id, tail)
+  try {
+    return await run
+  } finally {
+    if (sendChains.get(id) === tail) sendChains.delete(id)
+  }
+}
 
 const send: Handler<'send'> = async (a, signal) => {
   const s = findSession(a.session)
   if (isFail(s)) return s
   const text = typeof a.text === 'string' ? a.text : ''
-  const prev = sendChains.get(s.id) ?? Promise.resolve()
-  const run = prev.then(() => sendWhenReady(s.id, text, signal))
-  const tail = run.catch(() => {})
-  sendChains.set(s.id, tail)
-  try {
-    return await run
-  } finally {
-    if (sendChains.get(s.id) === tail) sendChains.delete(s.id)
-  }
+  return inTurn(s.id, () => sendWhenReady(s.id, text, signal))
 }
 
 /**
@@ -309,6 +342,22 @@ const send: Handler<'send'> = async (a, signal) => {
  * when the send came in or turned up while Claude was starting.
  */
 async function sendWhenReady(id: string, text: string, signal: AbortSignal): Promise<ControlResponse<'send'>> {
+  const notReady = await whenReady(id, signal)
+  if (notReady) return notReady
+
+  const s = state.getSession(id)
+  if (!s) return fail('that session is gone')
+  const offset = await transcriptSize(await conversationFile(s))
+  const res = sendPrompt(id, text)
+  if (!res.ok) return fail(res.reason)
+  addScriptedPrompt(id, res.text, offset)
+  // The Enter goes in SUBMIT_DELAY_MS after the paste; the next send waits it out.
+  await delay(SUBMIT_DELAY_MS + 50)
+  return { ok: true }
+}
+
+/** Until Claude has its input box up — or why it won't, as a failure. */
+async function whenReady(id: string, signal: AbortSignal): Promise<ControlFailure | null> {
   const deadline = Date.now() + READY_TIMEOUT_MS
   for (;;) {
     if (signal.aborted) return fail('cancelled')
@@ -334,16 +383,131 @@ async function sendWhenReady(id: string, text: string, signal: AbortSignal): Pro
     }
     await nextChange(id, deadline - Date.now(), signal)
   }
+  return null
+}
 
-  const s = state.getSession(id)
+/** How long a `/model` or `/effort` may take to answer in the transcript. */
+const SWITCH_TIMEOUT_MS = 15_000
+
+/**
+ * The header's MODEL or EFFORT picker, from a script: `/model <m>` or `/effort <level>`
+ * typed into Claude's input box, as the picker types it. Claude doesn't run its
+ * statusLine again after either (see the picker), so the receipt is the transcript,
+ * where Claude writes the command's own answer — "Set model to …" — as it runs it.
+ */
+async function switchTo(
+  ref: string,
+  what: 'model' | 'effort',
+  raw: unknown,
+  signal: AbortSignal,
+): Promise<ControlResponse<'model'>> {
+  const found = findSession(ref)
+  if (isFail(found)) return found
+  if (found.kind !== 'claude') return fail(`${found.name} is a ${found.kind} session — only a Claude session has a ${what}`)
+  const value = typeof raw === 'string' ? raw.trim() : ''
+  const refused = launchRefusal(what, value)
+  if (refused) return fail(refused)
+  const notReady = await whenReady(found.id, signal)
+  if (notReady) return notReady
+  const s = state.getSession(found.id)
   if (!s) return fail('that session is gone')
-  const offset = await transcriptSize(await conversationFile(s))
-  const res = sendPrompt(id, text)
-  if (!res.ok) return fail(res.reason)
-  addScriptedPrompt(id, res.text, offset)
-  // The Enter goes in SUBMIT_DELAY_MS after the paste; the next send waits it out.
-  await delay(SUBMIT_DELAY_MS + 50)
-  return { ok: true }
+  // Typed into a turn, it would wait behind it as a queued message; a script asking
+  // for the switch wants it before what it sends next, so it waits for idle first.
+  if (s.status !== 'idle' || hasScriptedPrompt(s.id)) {
+    return fail(`${s.name} is ${hasScriptedPrompt(s.id) ? 'about to work on a prompt' : word(s.status)} — wait for idle, then switch`)
+  }
+  const before = await conversationFile(s)
+  const offset = await transcriptSize(before)
+  const gen = ptyMgr.ptyGeneration(s.id)
+  ptyMgr.writePty(s.id, `/${what} ${value}`)
+  await delay(SUBMIT_DELAY_MS)
+  if (ptyMgr.ptyGeneration(s.id) !== gen || !state.getSession(s.id)?.alive) return fail(`${s.name} stopped`)
+  // Mid-conversation Claude asks before it changes model: "Switch model? … 1. Yes,
+  // switch to …". The switch is what was asked for, so — as by hand — it's Yes,
+  // the option the dialog has picked already. No hook says the dialog is up; its
+  // words on the terminal do.
+  let screen = ''
+  const stopWatching =
+    what === 'model'
+      ? ptyMgr.onData((pid, data) => {
+          if (pid === s.id) screen = (screen + plainText(data)).slice(-4000)
+        })
+      : () => {}
+  let confirmed = false
+  ptyMgr.writePty(s.id, '\r')
+
+  const deadline = Date.now() + SWITCH_TIMEOUT_MS
+  let answer: string | null = null
+  try {
+    while (!signal.aborted && Date.now() < deadline) {
+      await delay(250)
+      const cur = state.getSession(s.id)
+      if (!cur) return fail('that session is gone')
+      if (!confirmed && /Switch\s*model\?/.test(screen) && /Yes,\s*switch/.test(screen)) {
+        confirmed = true
+        ptyMgr.writePty(s.id, '\r')
+      }
+      // A conversation's first record can be the command itself.
+      const file = before ?? (await conversationFile(cur))
+      answer = await commandAnswer(file, before ? offset : 0, what)
+      if (answer !== null) break
+    }
+  } finally {
+    stopWatching()
+  }
+  if (signal.aborted) return fail('cancelled')
+  if (answer === null) return fail(`${s.name} didn't answer /${what} within 15 seconds — look at its terminal`)
+  if (!/^set\b/i.test(answer)) return fail(answer || `${s.name} answered /${what} with nothing`)
+  const cur = state.getSession(s.id)
+  if (cur) {
+    // Shown at once, as the picker shows its pick; the next statusLine report has the last word.
+    const shown = what === 'model' ? (/`([^`]+)`/.exec(answer)?.[1] ?? value) : value
+    state.updateSession(s.id, {
+      metrics: { ...(cur.metrics ?? {}), [what]: shown },
+      ...(what === 'model' ? { launchModel: value } : { launchEffort: value }),
+    })
+  }
+  return { ok: true, message: answer }
+}
+
+/** Terminal output with its escape sequences taken out, for finding words in. */
+function plainText(data: string): string {
+  return data.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b./g, ' ')
+}
+
+/**
+ * What Claude printed for the last `/<what>` in a transcript past `from`, or null
+ * while it hasn't. The command and its output are records of their own, one after
+ * the other: `<command-name>/model</command-name>`, then `<local-command-stdout>`.
+ * A command that worked is written as the user's; one that didn't — an unknown
+ * model — as a `system` record with the same words in its `content`.
+ */
+async function commandAnswer(file: string | null, from: number, what: string): Promise<string | null> {
+  if (!file) return null
+  const size = await transcriptSize(file)
+  if (size <= from) return null
+  const text = (await readRange(file, from, size - from))?.toString('utf8') ?? ''
+  let ours = false
+  let answer: string | null = null
+  for (const line of text.split('\n')) {
+    if (!line.includes('<command-name>') && !line.includes('<local-command-stdout>')) continue
+    let content = ''
+    try {
+      const rec = JSON.parse(line) as { message?: { content?: unknown }; content?: unknown }
+      const c = rec.message?.content ?? rec.content
+      content = typeof c === 'string' ? c : Array.isArray(c) ? c.map((b) => (b as { text?: string }).text ?? '').join('') : ''
+    } catch {
+      continue // the last line, still being written
+    }
+    const name = /<command-name>\/?([^<]*)<\/command-name>/.exec(content)
+    if (name) {
+      ours = name[1].trim() === what
+      continue
+    }
+    const out = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(content)
+    if (out && ours) answer = out[1].replace(/\x1b\[[0-9;]*m/g, '').trim()
+  }
+  return answer
 }
 
 const wait: Handler<'wait'> = async (a, signal) => {
@@ -437,7 +601,26 @@ const remove: Handler<'remove'> = async (a) => {
   return { ok: true }
 }
 
-const commands: { [C in ControlCommand]: Handler<C> } = { list, new: create, send, wait, reply, stop, remove }
+const model: Handler<'model'> = async (a, signal) => {
+  const s = findSession(a.session)
+  return isFail(s) ? s : inTurn(s.id, () => switchTo(s.id, 'model', a.model, signal))
+}
+const effort: Handler<'effort'> = async (a, signal) => {
+  const s = findSession(a.session)
+  return isFail(s) ? s : inTurn(s.id, () => switchTo(s.id, 'effort', a.effort, signal))
+}
+
+const commands: { [C in ControlCommand]: Handler<C> } = {
+  list,
+  new: create,
+  send,
+  wait,
+  reply,
+  model,
+  effort,
+  stop,
+  remove,
+}
 
 export function isCommand(name: string): name is ControlCommand {
   return Object.hasOwn(commands, name)

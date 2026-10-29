@@ -18,7 +18,7 @@ function Check([string] $what) {
 }
 
 1..$Tries | % {
-  $id = terminator new claude --project $Project --name "try-$_" --split right; Check new
+  $id = terminator new claude --project $Project --name "try-$_"; Check new
   terminator send $id "List the files in this folder and say which one is largest"; Check send
   terminator wait $id idle error --timeout 10m; Check wait
   terminator reply $id > "results\try-$_.md"; Check reply

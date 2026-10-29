@@ -21,8 +21,6 @@ export interface ControlFile {
 /** The words a status dot carries, as the command prints them. */
 export type StatusWord = 'idle' | 'working' | 'waiting' | 'error' | 'closed'
 
-export type SplitSide = 'left' | 'right' | 'up' | 'down'
-
 /** One row of `terminator list` — what the sidebar shows about a session. */
 export interface ListedSession {
   id: string
@@ -31,6 +29,9 @@ export interface ListedSession {
   project: string
   branch: string
   status: StatusWord
+  /** Claude: its model and effort, as the pane header shows them. */
+  model?: string
+  effort?: string
 }
 
 /** Every request body carries the protocol it was written for. */
@@ -46,13 +47,17 @@ export interface ControlRequests {
     name?: string
     worktree?: boolean
     branch?: string
-    split?: SplitSide
+    /** Claude only: `--model` and `--effort` for every launch of it. */
+    model?: string
+    effort?: string
     /** Set by the WSL shim: `project` is a Linux path in this distro. */
     runtime?: SessionRuntime
   }
   send: Req & { session: string; text: string }
   wait: Req & { session: string; statuses: StatusWord[]; timeoutMs?: number }
   reply: Req & { session: string }
+  model: Req & { session: string; model: string }
+  effort: Req & { session: string; effort: string }
   stop: Req & { session: string }
   remove: Req & { session: string; removeWorktree?: boolean }
 }
@@ -75,6 +80,9 @@ export interface ControlResults {
   send: { ok: true }
   wait: { ok: true; status: StatusWord; warning?: string }
   reply: { ok: true; markdown: string }
+  /** What Claude answered the slash command with, e.g. "Set model to …". */
+  model: { ok: true; message: string }
+  effort: { ok: true; message: string }
   stop: { ok: true }
   remove: { ok: true }
 }
@@ -93,8 +101,8 @@ export interface BridgeNewArgs {
   worktree: boolean
   branch: string
   runtime?: SessionRuntime
-  /** The edge of your pane to open it at. Absent: no pane — it runs in the sidebar. */
-  split?: SplitSide
+  model?: string
+  effort?: string
 }
 
 export type BridgeRequest = { reqId: number; cmd: 'new'; args: BridgeNewArgs }

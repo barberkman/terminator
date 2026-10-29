@@ -83,7 +83,7 @@ export function transcriptFile(dir: string, sessionId: string): string {
  */
 export async function conversationFile(s: Session): Promise<string | null> {
   try {
-    return transcriptFile(await transcriptDirFor(s.runtime, sessionFolder(s)), s.id)
+    return transcriptFile(await transcriptDirFor(s.runtime, sessionFolder(s)), s.conversationId ?? s.id)
   } catch {
     return null
   }

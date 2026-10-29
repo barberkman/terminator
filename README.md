@@ -153,7 +153,10 @@ file injects **hooks** and a **statusLine** that report back to a loopback HTTP 
 
 - Hooks → state transitions. `UserPromptSubmit`/`PreToolUse`/`PostToolUse`/`PreCompact` and the
   `SubagentStart`/`SubagentStop` pair → **working** (a subagent finishing leaves the turn
-  running, so it never reads as finished). `PermissionRequest` and `Elicitation` → **waiting**,
+  running, so it never reads as finished). `PostCompact` → **idle** after a `/compact` you typed,
+  which no `Stop` follows, and **working** after one Claude ran mid-turn. `PermissionRequest`
+  and `Elicitation` → **waiting** — and the Enter or number that approves a tool's permission
+  dialog → **working** again, since no hook says so until the tool is done —
   and `Notification` only when its `notification_type` is one that means Claude has actually
   stopped for you: `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog`,
   `agent_needs_input`, `worker_permission_prompt`, `quota_auto_resume_stale`. The hook fires for
@@ -170,6 +173,14 @@ file injects **hooks** and a **statusLine** that report back to a loopback HTTP 
   raised before a turn ended can never drag the finished session back to **waiting**. The
   "needs me" highlight clears itself when the session leaves waiting — clicking the row is a way
   to dismiss it early, not the only way out.
+- What no hook says: stopping a turn yourself. Esc mid-turn, or Esc or **No** on a permission
+  dialog, ends Claude's turn without `Stop` (it "does not run if the stoppage occurred due to a
+  user interrupt") or any other hook. Claude does write the interrupt into the transcript, as
+  `[Request interrupted by user]`, so while a session reads working or waiting the app reads its
+  transcript on from where the turn began, and that record ends the turn: **idle**, activity
+  `interrupted`. An Esc before Claude has answered anything leaves no record at all — Claude
+  puts your prompt back in its input box — so an Esc that no hook follows within a second and a
+  half reads **idle** too.
 - statusLine → the model / effort / context% / cost shown in the pane header, and the
   rate-limit usage in the footer. The 5-hour and weekly windows belong to the account, not
   to a session, so they're held once and shown whichever pane has focus: any running
@@ -179,6 +190,17 @@ file injects **hooks** and a **statusLine** that report back to a loopback HTTP 
 Because the app forces `--session-id`, every hook payload's `session_id` maps back to the exact
 session — so two Claude sessions in the *same folder* are tracked independently. Your own
 `~/.claude` and project hooks are read and merged in, so they keep firing.
+
+`/clear` is the exception to `--session-id`: Claude starts the new conversation under a new
+session id of its own. So the reporter in each session's settings file names the app's session
+itself, and doesn't go by the payload's; and the new id is kept as the session's conversation —
+what `reply`, the conversation view and branching read, and what a relaunch resumes.
+
+`hook-trace.log`, beside `settings.json` in the app's data folder, has a line for every hook:
+when Claude stamped it, when it arrived, and what the app did with it — applied, or dropped as
+out of order, as part of a turn that had already ended, or as coming from a process that's gone.
+Ids and event names only, never a prompt or a tool's input. It moves to `hook-trace.log.1` at
+5 MB. When a status dot looks wrong, that file says why.
 
 ## Session menus
 
@@ -814,16 +836,21 @@ the app starts:
 }
 ```
 
+From Python, [`examples/scripted_session.py`](examples/scripted_session.py) is the same loop
+taken one step further: it asks, waits, takes the reply, switches the model and effort, and asks
+a follow-up built from that reply in the same session.
+
 The commands:
 
-- `list` — the sessions the sidebar shows, in its order: id, name, kind, project, branch and
-  status.
+- `list` — the sessions the sidebar shows, in its order: id, name, kind, project, branch,
+  status, and for a Claude session its model and effort, as the pane header shows them.
 - `new <claude|shell> --project <folder> [--name <name>] [--worktree [--branch <branch>]]
-  [--split left|right|up|down]` — the New Session dialog with its fields filled in: the same
-  defaults, the same project list, the same worktree (`--branch` is its branch box, `work` when
-  left out). The session starts at once, off screen, the way **Start** in the sidebar leaves one:
-  it's in the sidebar, and a click there opens it. With `--split` it opens in a pane too, beside
-  the one you're in, at that edge — as dropping it there would — or in that pane if it's empty.
+  [--model <model>] [--effort <level>]` — the New Session dialog with its fields filled in: the
+  same defaults, the same project list, the same worktree (`--branch` is its branch box, `work`
+  when left out). The session starts at once, off screen, the way **Start** in the sidebar leaves
+  one: it's in the sidebar, and a click there opens it. `--model` (an alias such as `opus` or a
+  full model name) and `--effort` (`low`, `medium`, `high`, `xhigh`, `max`) are Claude's own
+  launch flags, and the session keeps them: a Stop and Start, or a Relaunch, asks for them again.
   Prints the new session's id. A relative folder is taken from where you run the command;
   a `\\wsl.localhost` folder makes a WSL session, as does any folder named from a WSL shell.
 - `send <session> <text>` — what **Send** does in the conversation view: types the prompt into
@@ -837,6 +864,13 @@ The commands:
   takes.
 - `reply <session>` — the latest finished reply as markdown: exactly what **Copy reply** copies.
   A turn still running doesn't count.
+- `model <session> <model>` and `effort <session> <level>` — the pane header's MODEL and EFFORT
+  pickers: they type `/model <model>` or `/effort <level>` into Claude's input box, and print
+  what Claude answered (``Set model to `Sonnet 5.5`…``). A model Claude doesn't know fails
+  with Claude's own answer. Refused unless the session is idle, so the switch lands before your
+  next `send` rather than queued behind a turn. The session keeps the new choice for its next
+  launch too. Typed by hand or by a script, Claude saves `/model` and `/effort` as your default
+  for new sessions as well.
 - `stop <session>` — **Stop** from the session menu: ends the process, keeps the row.
 - `remove <session> [--remove-worktree]` — **Remove session**, with nothing asked. Its worktree
   stays unless you add `--remove-worktree`; if git won't delete it, nothing is removed.
@@ -848,10 +882,9 @@ by default, and one JSON value with `--json` (failures included). Exit codes: **
 
 What a script can't do:
 
-- **Take your keyboard.** A new session leaves your panes as they are — and with `--split` its
-  pane opens beside yours while yours stays the focused one; whatever you were typing in — a
-  terminal, an editor, a reply, a rename — keeps the keyboard. The new session's pane takes focus
-  only when you click into it.
+- **Take your keyboard.** A new session leaves your panes as they are: it runs in the sidebar, and
+  whatever you were typing in — a terminal, an editor, a reply, a rename — keeps the keyboard. The
+  session's pane opens when you click its row.
 - **Answer anything.** When a session asks a question in its terminal it waits for you with the
   usual **needs me** signal, `wait` reports `waiting`, and `send` is refused until you've answered.
 - **Be used by anyone else.** It listens only on 127.0.0.1, and the key it needs is in a file only

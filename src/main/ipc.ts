@@ -46,6 +46,7 @@ import { applyGlobalShortcut, globalShortcutStatus } from './window-toggle'
 import { applyScripting } from './control-server'
 import { bridgeReply, rendererIsReady } from './scripting'
 import { addToPath, scriptingInfo } from './cli-install'
+import { userTyped } from './interrupts'
 
 /** Registers every ipcMain handler. The single IPC registry for the main process. */
 export function registerIpc(getWin: () => BrowserWindow): void {
@@ -169,7 +170,7 @@ export function registerIpc(getWin: () => BrowserWindow): void {
     const s = state.getSession(id)
     if (!s || s.kind !== 'claude') return []
     try {
-      return await listPrompts(await transcriptDirFor(s.runtime, sessionFolder(s)), s.id)
+      return await listPrompts(await transcriptDirFor(s.runtime, sessionFolder(s)), s.conversationId ?? s.id)
     } catch {
       return [] // a WSL distro that can't be reached has no prompts to offer
     }
@@ -226,6 +227,8 @@ export function registerIpc(getWin: () => BrowserWindow): void {
           projectName: parent.projectName,
           // A branch runs where its parent does: its transcript is seeded there.
           runtime: parent.runtime,
+          launchModel: parent.launchModel,
+          launchEffort: parent.launchEffort,
         },
         { parentId: parent.id, branchedFrom: parent.name, branchPoint: input.keptPrompts },
       )
@@ -243,7 +246,7 @@ export function registerIpc(getWin: () => BrowserWindow): void {
           ? await transcriptDirFor(parent.runtime, parentCwd).then(
               async (parentDir) =>
                 forkTranscript({
-                  parentSessionId: parent.id,
+                  parentSessionId: parent.conversationId ?? parent.id,
                   parentDir,
                   parentCwd,
                   newSessionId: session.id,
@@ -270,9 +273,10 @@ export function registerIpc(getWin: () => BrowserWindow): void {
   )
 
   // ---- pty hot path ----
-  ipcMain.on(Channels.ptyWrite, (_e, { id, data }: { id: string; data: string }) =>
-    ptyMgr.writePty(id, data),
-  )
+  ipcMain.on(Channels.ptyWrite, (_e, { id, data }: { id: string; data: string }) => {
+    ptyMgr.writePty(id, data)
+    userTyped(id, data)
+  })
   ipcMain.on(
     Channels.ptyResize,
     (_e, { id, cols, rows }: { id: string; cols: number; rows: number }) =>

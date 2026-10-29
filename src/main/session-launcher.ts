@@ -85,13 +85,16 @@ function startWindows(win: BrowserWindow, s: Session, opts: StartOpts): void {
   const mode = s.mode === 'readonly' ? settings.modes.readonly : settings.modes.normal
   const promptEditor = promptEditorCommand()
   const settingsFile = buildSettingsFile(s)
-  const parts = [mode.command, ...mode.extraArgs.map((a) => quoteFor(settings.defaultShell, a))]
+  const parts = [mode.command, ...[...mode.extraArgs, ...launchFlags(s)].map((a) => quoteFor(settings.defaultShell, a))]
   // --resume only works once a conversation exists. Before any prompt is sent the
   // id is unclaimed, so it must be set with --session-id (resuming an empty id
   // errors with "no conversation found", and re-claiming a used id also errors).
   // A branched session lands here too: its transcript was seeded on disk by
-  // transcript.ts, so it resumes the conversation it was forked from.
-  if (hasTranscript(windowsTranscriptDir(cwd), s.id)) parts.push('--resume', s.id)
+  // transcript.ts, so it resumes the conversation it was forked from. After a
+  // /clear the conversation is a new one, under its own id (`conversationId`).
+  const dir = windowsTranscriptDir(cwd)
+  const conv = s.conversationId && hasTranscript(dir, s.conversationId) ? s.conversationId : s.id
+  if (hasTranscript(dir, conv)) parts.push('--resume', conv)
   else parts.push('--session-id', s.id)
   parts.push('--settings', quoteFor(settings.defaultShell, settingsFile))
   const command = parts.join(' ')
@@ -163,6 +166,11 @@ function spawned(id: string, spawn: () => void): boolean {
 //     which is why the shell is interactive at all.
 //   • The session id then appears in exactly one command line in the distro — Claude's
 //     own — which is what lets `reap` find a leftover one.
+
+/** `--model` and `--effort`, for a session that was asked for them (`Session.launchModel`). */
+function launchFlags(s: Session): string[] {
+  return [...(s.launchModel ? ['--model', s.launchModel] : []), ...(s.launchEffort ? ['--effort', s.launchEffort] : [])]
+}
 
 /** Starts in flight. A second Start while the first is still asking its distro is dropped. */
 const starting = new Map<string, { cancelled: boolean }>()
@@ -246,7 +254,9 @@ async function startWsl(win: BrowserWindow, id: string, opts: StartOpts): Promis
       mode.command
     const settingsFile = winToLinux(p, buildSettingsFile(s, p))
     if (!settingsFile) throw new Error(`${p.distro} can't reach this app's settings folder (is /mnt/c mounted?)`)
-    const resume = await transcriptExists(await transcriptDirFor(s.runtime, cwd), s.id)
+    const dir = await transcriptDirFor(s.runtime, cwd)
+    const conv = s.conversationId && (await transcriptExists(dir, s.conversationId)) ? s.conversationId : s.id
+    const resume = await transcriptExists(dir, conv)
     const visual = await promptEditorCommandFor(s, p)
     s = wanted()
     if (!s) return
@@ -260,9 +270,9 @@ async function startWsl(win: BrowserWindow, id: string, opts: StartOpts): Promis
     }
     const claude = [
       command,
-      ...mode.extraArgs.map(shquote),
+      ...[...mode.extraArgs, ...launchFlags(s)].map(shquote),
       resume ? '--resume' : '--session-id',
-      s.id,
+      resume ? conv : s.id,
       '--settings',
       shquote(settingsFile),
     ].join(' ')

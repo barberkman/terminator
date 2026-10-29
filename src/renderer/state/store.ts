@@ -206,7 +206,8 @@ interface StoreState {
    */
   paneKeys: number[]
   /**
-   * Sessions put on screen by a script rather than by you (see renderer/scripting.ts).
+   * Sessions put on screen by a script rather than by you: the ones that slide into
+   * a pane when a script removes the session that was there (`quietWhenRemoved`).
    * Their panes don't pull the keyboard to themselves the way one you opened does;
    * the mark goes the first time you open, focus or click into one.
    */
@@ -310,8 +311,8 @@ interface StoreState {
   upsert(s: Session): void
   remove(id: string): void
   openSession(id: string): void
-  openInPane(id: string, index: number, opts?: PlaceOpts): void
-  splitPane(id: string, index: number, side: Side, opts?: PlaceOpts): void
+  openInPane(id: string, index: number): void
+  splitPane(id: string, index: number, side: Side): void
   /** A script is about to remove `id`: whatever takes its place on screen arrives quietly. */
   quietWhenRemoved(id: string): void
   closePane(index: number): void
@@ -346,28 +347,9 @@ interface StoreState {
   loadWslDistros(force?: boolean): Promise<WslDistro[]>
 }
 
-/**
- * How a session is put in a pane. `quiet` is a script's placement: the pane you
- * have focused stays the focused one, a rename you're typing is left alone, and
- * the new session is marked so its pane doesn't take the keyboard (see `quiet`).
- */
-export interface PlaceOpts {
-  quiet?: boolean
-}
-
 let nextPaneKey = 1
 /** Sessions a script is removing, whose pane's next occupant should arrive quietly. */
 const quietRemovals = new Set<string>()
-
-/**
- * Where the focused pane is after a quiet placement: the same pane — by key, not
- * index — that was focused before, wherever the new one landed around it. Falls
- * back to `placed` only when that pane is the one the placement replaced.
- */
-function stillFocused(st: { paneKeys: number[]; focused: number }, paneKeys: number[], placed: number): number {
-  const at = paneKeys.indexOf(st.paneKeys[st.focused])
-  return at >= 0 ? at : placed
-}
 
 /** `quiet` without `id`, or the same object when it wasn't marked — a user action on it. */
 function unquiet(quiet: Record<string, boolean>, id: string): Record<string, boolean> {
@@ -665,7 +647,7 @@ export const useStore = create<StoreState>((set, get) => ({
    * session appears in `panes` at most once, and one xterm host element can only
    * live in one pane anyway.
    */
-  openInPane(id, index, opts) {
+  openInPane(id, index) {
     set((st) => {
       if (index < 0 || index >= st.panes.length) return {}
       const panes = st.panes.slice()
@@ -695,9 +677,9 @@ export const useStore = create<StoreState>((set, get) => ({
         paneKeys,
         browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
         sessions,
-        ...(opts?.quiet
-          ? { focused: stillFocused(st, paneKeys, target), quiet: { ...st.quiet, [id]: true } }
-          : { focused: target, quiet: unquiet(st.quiet, id), editingId: null }),
+        focused: target,
+        quiet: unquiet(st.quiet, id),
+        editingId: null,
       }
     })
   },
@@ -712,14 +694,14 @@ export const useStore = create<StoreState>((set, get) => ({
    * ordinal after it down by one, including possibly the one being split — hence
    * the adjustment rather than splitting first and tidying up after.
    */
-  splitPane(id, index, side, opts) {
+  splitPane(id, index, side) {
     const now = get()
     if (index < 0 || index >= now.panes.length) return
     // There is nothing to split: halving an empty pane would leave one half
     // still empty. The only empty pane there can be is the one that stands in
     // for "no sessions open at all", and dropping onto it means fill it.
     if (!now.panes[index]) {
-      get().openInPane(id, index, opts)
+      get().openInPane(id, index)
       return
     }
     set((st) => {
@@ -755,9 +737,9 @@ export const useStore = create<StoreState>((set, get) => ({
         paneKeys,
         browserLive: keepBrowsersAlive(st.browserLive, panes, sessions),
         sessions,
-        ...(opts?.quiet
-          ? { focused: stillFocused(st, paneKeys, split.at), quiet: { ...st.quiet, [id]: true } }
-          : { focused: split.at, quiet: unquiet(st.quiet, id), editingId: null }),
+        focused: split.at,
+        quiet: unquiet(st.quiet, id),
+        editingId: null,
       }
     })
   },

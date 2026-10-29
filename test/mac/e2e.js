@@ -271,10 +271,11 @@ async function suite(app, page, cdp) {
   const sessions = () => JSON.parse(t('list', '--json').out || '{"sessions":[]}').sessions
   const byName = (name) => sessions().find((s) => s.name === name)
   const status = (name) => byName(name)?.status
-  /** A shell session in its own pane, focused, with its prompt up. */
+  /** A shell session, opened from its row into the focused pane, with its prompt up. */
   async function shell(name, project = proj) {
-    const r = t('new', 'shell', '--project', project, '--name', name, '--split', 'right')
+    const r = t('new', 'shell', '--project', project, '--name', name)
     if (r.code !== 0) throw new Error(`new shell ${name}: ${r.err}`)
+    await page.click(`.cc-row:has-text("${name}")`)
     await page.waitForSelector(`[data-pane-session="${name}"] .xterm`)
     await waitFor(async () => (await screen(name)).trim().length > 0, 10_000)
     await sleep(800)

@@ -22,6 +22,7 @@ import { loadCustomThemes } from './theme-store'
 import { flushUsage, setWindow as setUsageWindow } from './usage-store'
 import { installCommand } from './cli-install'
 import { wireClaudeTurns } from './claude-turns'
+import { wireInterrupts } from './interrupts'
 import { applyScripting, stopControlServer } from './control-server'
 import { setScriptingWindow, wireScripting } from './scripting'
 import { startShellEnv } from './shell-env'
@@ -152,6 +153,7 @@ app.whenReady().then(async () => {
   wireProcessEvents()
   wireLauncher()
   wireClaudeTurns()
+  wireInterrupts()
   wireScripting()
   // Before any shell session can start: they get its folder on their PATH.
   installCommand()

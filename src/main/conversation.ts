@@ -227,7 +227,7 @@ function collect(
  * the distro's share — whose first read after the VM idled out boots it, which
  * would otherwise freeze the whole window for seconds.
  */
-async function readRange(file: string, at: number, len: number): Promise<Buffer | null> {
+export async function readRange(file: string, at: number, len: number): Promise<Buffer | null> {
   let fh: Awaited<ReturnType<typeof fsp.open>> | null = null
   try {
     fh = await fsp.open(file, 'r')

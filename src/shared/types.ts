@@ -66,6 +66,9 @@ export interface SessionRuntime {
  */
 export type NotifType = 'waiting' | 'finished' | 'error' | 'exited' | 'idle'
 
+/** What Claude's `--effort` and `/effort` take — the header's EFFORT picker offers the same. */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
 export interface SessionMetrics {
   model?: string
   effort?: string
@@ -152,6 +155,19 @@ export interface Session {
   /** Whether the session was ever started (so a restored, never-started session reads differently). */
   everStarted: boolean
   metrics?: SessionMetrics
+  /**
+   * Claude: the model and effort every launch asks for (`--model`, `--effort`). Set
+   * by `terminator new`, and kept current by `terminator model`/`effort`, so a Stop
+   * and Start doesn't hand the session back to Claude's default.
+   */
+  launchModel?: string
+  launchEffort?: string
+  /**
+   * Claude: the session_id of the conversation it is on, when that isn't this
+   * session's id — `/clear` moves Claude to a new one. Its transcript is named for
+   * it, so it is what the transcript is read by, and what a relaunch resumes.
+   */
+  conversationId?: string
   createdAt: number
   /** Set when this session was branched off another Claude session's conversation. */
   parentId?: string
@@ -177,6 +193,9 @@ export interface CreateSessionInput {
   file?: string
   /** Run inside this WSL distro. Absent = Windows. */
   runtime?: SessionRuntime
+  /** Claude only: see `Session.launchModel`. */
+  launchModel?: string
+  launchEffort?: string
 }
 
 /** One prompt the user typed, read out of a Claude session's transcript. */

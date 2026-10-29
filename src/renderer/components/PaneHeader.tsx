@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { Session } from '../../shared/types'
+import { EFFORT_LEVELS, type Session } from '../../shared/types'
 import { editorLabel } from '../../shared/editor-name'
 import { C, STATUS_COLORS, STATUS_LABELS, accentA, ink, dotStyle, sz } from '../theme'
 import { Icon } from '../icons'
@@ -55,7 +55,6 @@ function Metric({ label, children }: { label: string; children: React.ReactNode 
 
 // Slash-command aliases sent into the live Claude session via writePty.
 const MODEL_OPTIONS = ['fable', 'opus', 'sonnet', 'haiku'] as const
-const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
 /**
  * Click-to-open picker for a header metric (model/effort). Selecting an option
@@ -361,7 +360,7 @@ export function PaneHeader({
             <Metric label="EFFORT">
               <MetricPicker
                 value={m?.effort ?? '—'}
-                options={EFFORT_OPTIONS}
+                options={EFFORT_LEVELS}
                 isActive={(opt) => m?.effort?.toLowerCase() === opt}
                 disabled={!session.alive}
                 onPick={(opt) => pickMetric('effort', opt)}

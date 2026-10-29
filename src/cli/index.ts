@@ -18,7 +18,6 @@ import type {
   ControlRequests,
   ControlResponse,
   ListedSession,
-  SplitSide,
   StatusWord,
 } from '../shared/control'
 import type { SessionRuntime } from '../shared/types'
@@ -37,12 +36,15 @@ Drive the running Terminator. Turn it on in Settings > SCRIPTING.
   list                                      the sessions the sidebar shows
   new <claude|shell> --project <folder>     create a session and start it, in the
       [--name <name>] [--worktree [--branch <branch>]]       sidebar; prints its id
-      [--split left|right|up|down]          also open it in a pane beside yours
+      [--model <model>] [--effort <level>]  a Claude session's model and effort
   send <session> <text>                     type a prompt and press Enter, as Send does
   wait <session> <status>... [--timeout <time>]
                                             until it's idle, working, waiting, error or
                                             closed; prints which
   reply <session>                           the latest finished reply, as Copy reply
+  model <session> <model>                   switch an idle Claude session's model, as
+                                            /model does: fable, opus, sonnet, haiku...
+  effort <session> <level>                  ... or its effort: low, medium, high, xhigh, max
   stop <session>                            stop its process; the session stays
   remove <session> [--remove-worktree]      remove it without asking
 
@@ -57,10 +59,12 @@ class UsageError extends Error {}
 /** Flags each command takes; `true` means the flag carries a value. */
 const FLAGS: Record<ControlCommand, Record<string, boolean>> = {
   list: {},
-  new: { project: true, name: true, worktree: false, branch: true, split: true },
+  new: { project: true, name: true, worktree: false, branch: true, model: true, effort: true },
   send: {},
   wait: { timeout: true },
   reply: {},
+  model: {},
+  effort: {},
   stop: {},
   remove: { 'remove-worktree': false },
 }
@@ -72,6 +76,8 @@ const POSITIONALS: Record<ControlCommand, [number, number]> = {
   send: [2, 2],
   wait: [2, Infinity],
   reply: [1, 1],
+  model: [2, 2],
+  effort: [2, 2],
   stop: [1, 1],
   remove: [1, 1],
 }
@@ -82,6 +88,8 @@ const NAMES: Record<ControlCommand, string> = {
   send: 'send <session> <text>',
   wait: 'wait <session> <status>...',
   reply: 'reply <session>',
+  model: 'model <session> <model>',
+  effort: 'effort <session> <level>',
   stop: 'stop <session>',
   remove: 'remove <session>',
 }
@@ -194,10 +202,6 @@ function request_<C extends ControlCommand>(p: Parsed): ControlRequests[C] {
       if (kind !== 'claude' && kind !== 'shell') throw new UsageError('new makes a claude or a shell session')
       const folder = str('project')
       if (!folder) throw new UsageError('new needs --project <folder>')
-      const split = str('split')
-      if (split !== undefined && !['left', 'right', 'up', 'down'].includes(split)) {
-        throw new UsageError('--split takes left, right, up or down')
-      }
       const req: ControlRequests['new'] = {
         protocol: PROTOCOL,
         kind,
@@ -205,7 +209,8 @@ function request_<C extends ControlCommand>(p: Parsed): ControlRequests[C] {
         ...(str('name') !== undefined ? { name: str('name') } : {}),
         ...(f.worktree ? { worktree: true } : {}),
         ...(str('branch') !== undefined ? { branch: str('branch') } : {}),
-        ...(split ? { split: split as SplitSide } : {}),
+        ...(str('model') !== undefined ? { model: str('model') } : {}),
+        ...(str('effort') !== undefined ? { effort: str('effort') } : {}),
       }
       return req as ControlRequests[C]
     }
@@ -223,6 +228,10 @@ function request_<C extends ControlCommand>(p: Parsed): ControlRequests[C] {
     case 'reply':
     case 'stop':
       return { protocol: PROTOCOL, session: p.pos[0] } as ControlRequests[C]
+    case 'model':
+      return { protocol: PROTOCOL, session: p.pos[0], model: p.pos[1] } as ControlRequests[C]
+    case 'effort':
+      return { protocol: PROTOCOL, session: p.pos[0], effort: p.pos[1] } as ControlRequests[C]
     case 'remove':
       return {
         protocol: PROTOCOL,
@@ -303,10 +312,14 @@ function json(v: unknown): string {
 }
 
 function table(rows: ListedSession[]): string {
-  const head = ['ID', 'NAME', 'KIND', 'PROJECT', 'BRANCH', 'STATUS']
-  const cells = [head, ...rows.map((r) => [r.id, r.name, r.kind, r.project, r.branch, r.status])]
+  const head = ['ID', 'NAME', 'KIND', 'PROJECT', 'BRANCH', 'STATUS', 'MODEL', 'EFFORT']
+  const cells = [
+    head,
+    ...rows.map((r) => [r.id, r.name, r.kind, r.project, r.branch, r.status, r.model ?? '', r.effort ?? '']),
+  ]
   const widths = head.map((_, i) => Math.max(...cells.map((c) => c[i].length)))
-  return cells.map((c) => c.map((x, i) => (i === c.length - 1 ? x : x.padEnd(widths[i]))).join('  ')).join('\n')
+  // A shell's row has no model or effort to show, so trailing padding is trimmed.
+  return cells.map((c) => c.map((x, i) => (i === c.length - 1 ? x : x.padEnd(widths[i]))).join('  ').trimEnd()).join('\n')
 }
 
 function out(text: string): void {
@@ -372,6 +385,10 @@ async function main(): Promise<number> {
     }
     case 'reply':
       out((res as ControlResponse<'reply'> & { ok: true }).markdown)
+      break
+    case 'model':
+    case 'effort':
+      out((res as ControlResponse<'model'> & { ok: true }).message)
       break
   }
   return EXIT_OK

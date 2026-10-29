@@ -117,6 +117,44 @@ function readSessions() {
   }
 }
 
+/**
+ * Drag a session's sidebar row onto `pane`, near its `side` edge — splitting it the
+ * way you do by hand (SplitDropOverlay).
+ */
+async function dragToEdge(page, name, pane, side) {
+  const box = await page.locator(`[data-pane-session="${pane}"]`).boundingBox()
+  const x = side === 'left' ? box.x + 8 : side === 'right' ? box.x + box.width - 8 : box.x + box.width / 2
+  const y = side === 'up' ? box.y + 8 : side === 'down' ? box.y + box.height - 8 : box.y + box.height / 2
+  await page.locator(`.cc-row:has-text("${name}")`).dragTo(page.locator('body'), {
+    targetPosition: { x, y },
+  })
+  await sleep(800)
+}
+
+const fakeText = () => (fs.existsSync(fakeLog) ? fs.readFileSync(fakeLog, 'utf8') : '')
+/** The stand-in's start lines whose conversation (`as`) is `conv`: its argv as it was launched. */
+const fakeStarts = (conv) =>
+  fakeText()
+    .split('\n')
+    .filter((l) => l.includes(' start {'))
+    .map((l) => JSON.parse(l.slice(l.indexOf(' start ') + 7)))
+    .filter((s) => s.as === conv)
+/** A session as `list --json` has it. */
+const listedAs = (id) => (JSON.parse(t('list', '--json').out || '{}').sessions ?? []).find((s) => s.id === id)
+/** hook-trace.log's lines about a session, for a failure's detail. */
+function traceOf(id) {
+  const f = path.join(userData, 'hook-trace.log')
+  if (!fs.existsSync(f)) return []
+  return fs
+    .readFileSync(f, 'utf8')
+    .split('\n')
+    .filter((l) => l.includes(`"s":"${id.slice(0, 8)}"`))
+    .map((l) => {
+      const j = JSON.parse(l)
+      return `${j.ev}${j.nt ? `(${j.nt})` : ''} ${j.d} ${j.from}→${j.to}`
+    })
+}
+
 /** The stand-in's reply to a prompt — what `reply` must print, byte for byte. */
 const fakeReply = (prompt) => `Reply to: ${prompt}\n\n- one — two\n- three`
 
@@ -165,10 +203,10 @@ async function main() {
   check('list on an empty app', r.code === 0 && r.out.startsWith('ID'), r)
 
   // ---- shells, panes and focus ------------------------------------------------
-  // Without --split a session runs in the sidebar only: no pane, the layout untouched.
+  // A script's session runs in the sidebar only: no pane, the layout untouched.
   r = t('new', 'shell', '--project', '.', '--name', 'bg')
   const bg = r.out
-  check('new shell, no --split', r.code === 0 && /^[0-9a-f-]{36}$/.test(bg), r)
+  check('new shell', r.code === 0 && /^[0-9a-f-]{36}$/.test(bg), r)
   await sleep(1500)
   let p = await probe()
   check('... opens no pane', p.panes.length === 1 && p.panes[0] === '', p)
@@ -177,15 +215,18 @@ async function main() {
   t('stop', bg)
   t('remove', bg)
 
-  r = t('new', 'shell', '--project', '.', '--name', 'base', '--split', 'right')
-  const base = r.out
-  check('new shell into the empty pane', r.code === 0 && /^[0-9a-f-]{36}$/.test(base), r)
-  await sleep(1500)
-  p = await probe()
-  check('it fills the empty pane', p.panes.length === 1 && p.panes[0] === 'base', p)
-  check('a script-filled pane does not take the keyboard', p.active !== 'base', p)
+  r = t('new', 'shell', '--project', '.', '--name', 'gone', '--split', 'right')
+  check('there is no --split', r.code === 1 && /new has no --split option/.test(r.err), r)
 
-  // You click into it and type.
+  r = t('new', 'shell', '--project', '.', '--name', 'base')
+  const base = r.out
+  check('new shell', r.code === 0 && /^[0-9a-f-]{36}$/.test(base), r)
+  await sleep(1500)
+  // You open it from the sidebar, click into it and type.
+  await page.click('.cc-row:has-text("base")')
+  await page.waitForSelector('[data-pane-session="base"] .xterm')
+  p = await probe()
+  check('a click on its row fills the empty pane', p.panes.length === 1 && p.panes[0] === 'base', p)
   await page.click('[data-pane-session="base"] .xterm')
   await page.evaluate(() => document.activeElement && document.activeElement.setAttribute('data-e2e', 'mine'))
   await page.keyboard.type('echo one')
@@ -193,19 +234,23 @@ async function main() {
   check('clicking makes it yours', p.active === 'base' && p.mark === 'mine', p)
 
   const placed = []
-  for (const [name, side, want] of [
-    ['right1', 'right', 'base,right1'],
-    ['left1', 'left', 'left1,base,right1'],
-    ['up1', 'up', 'left1,up1,base,right1'],
-  ]) {
-    r = t('new', 'shell', '--project', proj, '--name', name, '--split', side)
+  for (const name of ['right1', 'left1', 'up1']) {
+    r = t('new', 'shell', '--project', proj, '--name', name)
     placed.push(r.out)
     await sleep(1000)
     p = await probe()
-    check(`--split ${side} opens beside your pane`, r.code === 0 && p.panes.join() === want, p)
+    check(`new ${name} opens no pane`, r.code === 0 && p.panes.join() === 'base', p)
     check(`... and your pane keeps the focus and the keyboard`, p.focused.join() === 'base' && p.active === 'base' && p.mark === 'mine', p)
   }
   const [right1, left1, up1] = placed
+
+  // You drag one beside yours, the way a pane comes into being by hand, then go back to typing.
+  await dragToEdge(page, 'right1', 'base', 'right')
+  p = await probe()
+  check('right1, dragged to your pane\'s right edge, opens beside it', p.panes.join() === 'base,right1', p)
+  await page.click('[data-pane-session="base"] .xterm')
+  p = await probe()
+  check('... and clicking back into yours finds your typing there', p.active === 'base' && p.mark === 'mine', p)
 
   await page.keyboard.type(' two')
   await page.keyboard.press('Enter')
@@ -233,7 +278,7 @@ async function main() {
   )
   r = t('wait', 'proj/right1', 'idle', 'working', '--timeout', '5s')
   check('project/name finds a session', r.code === 0 && /^(idle|working)$/.test(r.out), r)
-  r = t('new', 'shell', '--project', proj, '--name', 'right1', '--split', 'down')
+  r = t('new', 'shell', '--project', proj, '--name', 'right1')
   const dupe = r.out
   await sleep(800)
   r = t('stop', 'proj/right1')
@@ -273,7 +318,7 @@ async function main() {
   const prompt = 'List the files in this folder and say which one is "largest" & why'
   for (let i = 1; i <= 2; i++) {
     const t0 = Date.now()
-    r = t('new', 'claude', '--project', proj, '--name', `try-${i}`, '--split', 'right')
+    r = t('new', 'claude', '--project', proj, '--name', `try-${i}`)
     const id = r.out
     check(`try-${i}: new claude`, r.code === 0 && /^[0-9a-f-]{36}$/.test(id), r)
     r = t('send', id, prompt)
@@ -332,6 +377,139 @@ async function main() {
       { ...r, ms: Date.now() - t0 },
     )
   }
+
+  // ---- Claude: hook orders a real Claude produces now and then -----------------
+  // Each from hook-scenarios.js, in a session of its own, so one left waiting
+  // can't hold up the next.
+  for (const [name, sc] of Object.entries(require('./hook-scenarios'))) {
+    r = t('new', 'claude', '--project', proj, '--name', `replay-${name}`)
+    const rid = r.out
+    t('send', rid, `REPLAY ${name}`)
+    const done = await waitFor(() => fakeText().includes(`${rid.slice(0, 8)} replay done ${name}`), 30_000)
+    await sleep(500)
+    const st = listedAs(rid)?.status
+    check(`replay ${name}: reads ${sc.expect}`, !!done && st === sc.expect, { status: st, trace: traceOf(rid) })
+    t('stop', rid)
+    t('remove', rid)
+  }
+
+  // ---- Claude: Esc ends a turn, and no hook says so -----------------------------
+  r = t('new', 'claude', '--project', proj, '--name', 'escaper')
+  const esc = r.out
+  t('send', esc, 'a SLOW turn')
+  r = t('wait', esc, 'working', '--timeout', '30s')
+  check('a slow turn reads working', r.out === 'working', r)
+  await sleep(1000)
+  await page.evaluate((id) => window.terminator.writePty(id, '\x1b'), esc)
+  let t0 = Date.now()
+  r = t('wait', esc, 'idle', '--timeout', '10s')
+  check('Esc mid-turn: it reads idle, from the transcript', r.out === 'idle' && Date.now() - t0 < 5000, { ...r, ms: Date.now() - t0, trace: traceOf(esc) })
+  t('send', esc, 'please ASK')
+  r = t('wait', esc, 'waiting', '--timeout', '30s')
+  check('a dialog reads waiting', r.out === 'waiting', r)
+  await page.evaluate((id) => window.terminator.writePty(id, '\x1b'), esc)
+  t0 = Date.now()
+  r = t('wait', esc, 'idle', '--timeout', '10s')
+  check('Esc on the dialog: it reads idle', r.out === 'idle' && Date.now() - t0 < 5000, { ...r, ms: Date.now() - t0, trace: traceOf(esc) })
+  // Esc before Claude has answered: it puts the prompt back and writes nothing down.
+  t('send', esc, 'a SLOW QUIET turn')
+  t('wait', esc, 'working', '--timeout', '30s')
+  await sleep(500)
+  await page.evaluate((id) => window.terminator.writePty(id, '\x1b'), esc)
+  t0 = Date.now()
+  r = t('wait', esc, 'idle', '--timeout', '10s')
+  check('Esc that leaves no record: it reads idle all the same', r.out === 'idle' && Date.now() - t0 < 4000, { ...r, ms: Date.now() - t0, trace: traceOf(esc) })
+  // Approving a dialog: the tool runs before any hook says so.
+  t('send', esc, 'please ASK SLOWTOOL')
+  t('wait', esc, 'waiting', '--timeout', '30s')
+  await page.evaluate((id) => window.terminator.writePty(id, '\r'), esc)
+  await sleep(700)
+  const during = listedAs(esc)?.status
+  check('Enter on the dialog: the tool running reads working, not waiting', during === 'working', { status: during, trace: traceOf(esc) })
+  r = t('wait', esc, 'idle', '--timeout', '30s')
+  check('... and the turn ends idle', r.out === 'idle', r)
+  // A /compact you type is no turn: no Stop follows it.
+  await page.evaluate((id) => window.terminator.writePty(id, '/compact\r'), esc)
+  await sleep(300)
+  r = t('wait', esc, 'idle', '--timeout', '10s')
+  await sleep(1200)
+  check('/compact ends idle', listedAs(esc)?.status === 'idle' && traceOf(esc).some((l) => l.startsWith('PostCompact')), traceOf(esc).slice(-4))
+  t('send', esc, 'after the interrupts')
+  r = t('wait', esc, 'idle', '--timeout', '30s')
+  check('... and the next prompt is a turn like any other', r.out === 'idle' && t('reply', esc).out === fakeReply('after the interrupts'), r)
+
+  // ---- Claude: /clear moves Claude to a new conversation, under a new id ---------
+  await page.evaluate((id) => window.terminator.writePty(id, '/clear\r'), esc)
+  check('/clear', !!(await waitFor(() => /cleared: now/.test(fakeText()), 10_000)))
+  t('send', esc, 'after clear')
+  r = t('wait', esc, 'idle', '--timeout', '30s')
+  check("after /clear its hooks still reach the session (a turn's wait ends)", r.out === 'idle' && !r.err, { ...r, trace: traceOf(esc) })
+  check('... and reply reads the new conversation', t('reply', esc).out === fakeReply('after clear'))
+  const conv = readSessions().find((s) => s.id === esc)?.conversationId
+  check('the session holds the new conversation id', !!conv && conv !== esc, conv)
+  t('stop', esc)
+  await page.evaluate((id) => window.terminator.startSession(id, 100, 30), esc)
+  const resumed = await waitFor(() => fakeStarts(conv)[0], 15_000)
+  check('a relaunch resumes the new conversation', resumed?.resume === true, resumed)
+  t('send', esc, 'resumed')
+  r = t('wait', esc, 'idle', '--timeout', '30s')
+  check('... and its turns are tracked', r.out === 'idle' && t('reply', esc).out === fakeReply('resumed'), r)
+  t('remove', esc)
+
+  // ---- Claude: model and effort ---------------------------------------------------
+  r = t('new', 'claude', '--project', proj, '--name', 'tuned', '--model', 'haiku', '--effort', 'low')
+  const tuned = r.out
+  check('new --model haiku --effort low', r.code === 0, r)
+  t('send', tuned, 'first')
+  t('wait', tuned, 'idle', '--timeout', '30s')
+  let start = fakeStarts(tuned)[0]
+  check('--model and --effort reach claude', start?.model === 'haiku' && start?.effort === 'low', start)
+  let row = listedAs(tuned)
+  check('list --json has its model and effort', row?.model === 'Fake Haiku' && row?.effort === 'low', row)
+  r = t('list')
+  const lines = r.out.split('\n')
+  check(
+    'list prints MODEL and EFFORT',
+    /STATUS\s+MODEL\s+EFFORT$/.test(lines[0]) && lines.some((l) => l.startsWith(tuned) && /Fake Haiku\s+low$/.test(l)),
+    r.out,
+  )
+  r = t('model', tuned, 'sonnet')
+  check('model sonnet: Claude\'s answer', r.code === 0 && r.out === 'Set model to `Fake Sonnet` and saved as your default for new sessions', r)
+  r = t('effort', tuned, 'high')
+  check('effort high', r.code === 0 && /^Set effort level to high/.test(r.out), r)
+  row = listedAs(tuned)
+  check('list shows the switch at once', row?.model === 'Fake Sonnet' && row?.effort === 'high', row)
+  r = t('--json', 'model', tuned, 'opus')
+  check('model --json', r.code === 0 && JSON.parse(r.out || '{}').message === 'Set model to `Fake Opus` and saved as your default for new sessions', r)
+  r = t('model', tuned, 'nonesuch')
+  check("a model Claude doesn't know fails with Claude's answer", r.code === 1 && /Model 'nonesuch' not found/.test(r.err), r)
+  r = t('effort', tuned, 'extreme')
+  check('an effort that is no level is refused', r.code === 1 && /effort is one of low, medium, high, xhigh, max/.test(r.err), r)
+  r = t('model', tuned, 'two words')
+  check('a model with a space is refused', r.code === 1 && /isn't a model name/.test(r.err), r)
+  r = t('model', base, 'opus')
+  check('a shell has no model', r.code === 1 && /only a Claude session has a model/.test(r.err), r)
+  r = t('new', 'shell', '--project', proj, '--model', 'opus')
+  check('new shell --model is refused', r.code === 1 && /are for a claude session/.test(r.err), r)
+  r = t('new', 'claude', '--project', proj, '--effort', 'extreme')
+  check('new --effort extreme is refused', r.code === 1 && /effort is one of/.test(r.err), r)
+  t('send', tuned, 'a SLOW one')
+  t('wait', tuned, 'working', '--timeout', '30s')
+  r = t('model', tuned, 'haiku')
+  check('a switch mid-turn is refused', r.code === 1 && /working — wait for idle/.test(r.err), r)
+  t('wait', tuned, 'idle', '--timeout', '30s')
+  t('stop', tuned)
+  await page.evaluate((id) => window.terminator.startSession(id, 100, 30), tuned)
+  start = await waitFor(() => fakeStarts(tuned)[1], 15_000)
+  check('a relaunch keeps the last model and effort', start?.model === 'opus' && start?.effort === 'high' && start?.resume === true, start)
+  // The loop: ask, wait, take the reply, and follow up on it in the same session.
+  t('send', tuned, 'ask one')
+  t('wait', tuned, 'idle', '--timeout', '30s')
+  const first = t('reply', tuned).out.split('\n')[0]
+  t('send', tuned, `follow up on: ${first}`)
+  r = t('wait', tuned, 'idle', '--timeout', '30s')
+  check('a follow-up built from the reply, in the same session', r.out === 'idle' && t('reply', tuned).out === fakeReply(`follow up on: ${first}`), r)
+  t('remove', tuned)
 
   if (WIN) await windowsChecks(page, asker)
   t('remove', asker)
@@ -433,7 +611,7 @@ async function windowsChecks(page, asker) {
     await sleep(1500)
     const tail = fs.readFileSync(fakeLog, 'utf8').slice(before)
     check('Git Bash: a /path-looking prompt arrives unrewritten', r.code === 0 && /slash: \/no-conversion check/.test(tail), { ...r, tail })
-    r = shell(gitBash, ['-c', 'export PATH="$(cygpath -u "$BIN"):$PATH"; terminator new shell --project /c/Windows --name gitbash --split right'], { BIN: bin })
+    r = shell(gitBash, ['-c', 'export PATH="$(cygpath -u "$BIN"):$PATH"; terminator new shell --project /c/Windows --name gitbash'], { BIN: bin })
     await sleep(1000)
     const s = readSessions().find((x) => x.id === r.out)
     check('Git Bash: --project /c/Windows is C:\\Windows', r.code === 0 && /^C:\\Windows$/i.test(s?.projectPath ?? ''), { ...r, projectPath: s?.projectPath })
@@ -459,7 +637,7 @@ async function windowsChecks(page, asker) {
       r = wsl(`terminator wait ${asker} closed --timeout 1s; echo "rc=$?"`)
       check('WSL: exit codes come through interop', /rc=2/.test(r.out), r)
     }
-    r = wsl('mkdir -p /tmp/wproj && terminator new shell --project wproj --name wsl1 --split right')
+    r = wsl('mkdir -p /tmp/wproj && terminator new shell --project wproj --name wsl1')
     const id = r.out.split(/\r?\n/).pop()
     await sleep(1000)
     const s = readSessions().find((x) => x.id === id)

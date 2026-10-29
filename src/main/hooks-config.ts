@@ -21,6 +21,7 @@ const EVENTS = [
   'PreToolUse',
   'PostToolUse',
   'PreCompact',
+  'PostCompact',
   'Notification',
   'PermissionRequest',
   'Elicitation',
@@ -81,17 +82,22 @@ function readJson(file: string): Record<string, unknown> | null {
   }
 }
 
-function reporterCommand(kind: 'hook' | 'status', wsl?: Probe): string {
-  if (wsl) return wslReporterCommand(kind, wsl)
+/**
+ * The reporter's command line. It names the app's session itself, not only the
+ * session_id in each payload: that one is Claude's, and `/clear` swaps it for a new
+ * one mid-session — every hook after it would belong to no session the app knows.
+ */
+function reporterCommand(kind: 'hook' | 'status', sessionId: string, wsl?: Probe): string {
+  if (wsl) return wslReporterCommand(kind, sessionId, wsl)
   if (process.platform !== 'win32') {
     // Node mode set inline, as below for WSL, rather than in the session's
     // environment, where every program Claude runs would inherit it — and an
     // Electron app among them would start as plain Node.
     const args = [process.execPath, reporterPath()].map(shquote).join(' ')
-    return `ELECTRON_RUN_AS_NODE=1 ${args} ${kind} ${reportPort()} ${reportToken()}`
+    return `ELECTRON_RUN_AS_NODE=1 ${args} ${kind} ${reportPort()} ${reportToken()} ${sessionId}`
   }
   const q = (s: string) => `"${s}"`
-  return `${q(process.execPath)} ${q(reporterPath())} ${kind} ${reportPort()} ${reportToken()}`
+  return `${q(process.execPath)} ${q(reporterPath())} ${kind} ${reportPort()} ${reportToken()} ${sessionId}`
 }
 
 /**
@@ -110,7 +116,7 @@ function reporterCommand(kind: 'hook' | 'status', wsl?: Probe): string {
  *     from WSL takes long enough (~100 ms) that stamping it on arrival would blur the
  *     order of hooks fired close together — the order report-server.ts relies on.
  */
-function wslReporterCommand(kind: 'hook' | 'status', wsl: Probe): string {
+function wslReporterCommand(kind: 'hook' | 'status', sessionId: string, wsl: Probe): string {
   return [
     'ELECTRON_RUN_AS_NODE=1',
     'WSLENV=ELECTRON_RUN_AS_NODE',
@@ -119,12 +125,13 @@ function wslReporterCommand(kind: 'hook' | 'status', wsl: Probe): string {
     kind,
     String(reportPort()),
     reportToken(),
+    sessionId,
     '"$(date +%s%3N)"',
   ].join(' ')
 }
 
-function ourHooks(wsl?: Probe): Record<string, HookGroup[]> {
-  const group: HookGroup = { hooks: [{ type: 'command', command: reporterCommand('hook', wsl) }] }
+function ourHooks(sessionId: string, wsl?: Probe): Record<string, HookGroup[]> {
+  const group: HookGroup = { hooks: [{ type: 'command', command: reporterCommand('hook', sessionId, wsl) }] }
   const out: Record<string, HookGroup[]> = {}
   for (const ev of EVENTS) out[ev] = [group]
   return out
@@ -188,14 +195,14 @@ export function buildSettingsFile(session: Session, wsl?: Probe): string {
     ? sessionFolder(session)
     : expandHome(session.worktreePath || session.projectPath) || session.projectPath
   const hooks = readUserHooks(cwd, wsl)
-  for (const [event, groups] of Object.entries(ourHooks(wsl))) {
+  for (const [event, groups] of Object.entries(ourHooks(session.id, wsl))) {
     hooks[event] = [...(hooks[event] ?? []), ...groups]
   }
 
   const settings = {
     hooks,
     permissions: buildPermissions(cwd, wsl),
-    statusLine: { type: 'command', command: reporterCommand('status', wsl), padding: 0 },
+    statusLine: { type: 'command', command: reporterCommand('status', session.id, wsl), padding: 0 },
   }
 
   const dir = join(app.getPath('userData'), 'sessions')

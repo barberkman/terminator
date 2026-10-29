@@ -227,6 +227,8 @@ export function createSession(input: CreateSessionInput, branch?: BranchMeta): S
     alive: false,
     everStarted: false,
     metrics: input.kind === 'claude' ? {} : undefined,
+    launchModel: input.kind === 'claude' ? input.launchModel : undefined,
+    launchEffort: input.kind === 'claude' ? input.launchEffort : undefined,
     createdAt: Date.now(),
     parentId: branch?.parentId,
     branchedFrom: branch?.branchedFrom,

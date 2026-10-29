@@ -47,13 +47,18 @@ const FLUSH_MS = 8
 
 // Main-side observers (status/activity tracking in state.ts), separate from the
 // renderer IPC stream.
-type DataListener = (id: string) => void
+type DataListener = (id: string, data: string) => void
 type ExitListener = (id: string, exitCode: number, signal?: number) => void
 const dataListeners: DataListener[] = []
 const exitListeners: ExitListener[] = []
 
-export function onData(cb: DataListener): void {
+/** Hear every pty's output as it arrives; the returned function stops it. */
+export function onData(cb: DataListener): () => void {
   dataListeners.push(cb)
+  return () => {
+    const i = dataListeners.indexOf(cb)
+    if (i >= 0) dataListeners.splice(i, 1)
+  }
 }
 
 /** One-shot "it printed something" waiters, per session id. See `whenOutput`. */
@@ -148,7 +153,7 @@ export function createPty(win: BrowserWindow, opts: PtyCreateOpts): string {
 
   proc.onData((data) => {
     term.buf += data
-    for (const l of dataListeners) l(id)
+    for (const l of [...dataListeners]) l(id, data)
     const waiters = outputWaiters.get(id)
     if (waiters) for (const w of [...waiters]) w()
     if (term.flush) return
