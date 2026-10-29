@@ -123,7 +123,8 @@ export function App(): React.JSX.Element {
       } else if (k === 'b') {
         e.preventDefault()
         useStore.getState().closeContextMenu()
-        toggleSidebar()
+        // The top bar has nothing to hide: it already takes no width from the panes.
+        if (useStore.getState().settings?.sidebarSide !== 'top') toggleSidebar()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -153,7 +154,14 @@ export function App(): React.JSX.Element {
       const target = digit
         ? shortcutSlots(groups)[Number(digit[1]) - 1]
         : code === 'ArrowDown' || code === 'ArrowUp'
-          ? sidebarNeighbour(groups, st.collapsed, st.sidebarHidden, st.panes[st.focused] ?? '', code === 'ArrowDown' ? 1 : -1)
+          ? sidebarNeighbour(
+              groups,
+              st.collapsed,
+              // The top bar, like the rail, shows every session — a folded group as dots.
+              st.sidebarHidden || st.settings?.sidebarSide === 'top',
+              st.panes[st.focused] ?? '',
+              code === 'ArrowDown' ? 1 : -1,
+            )
           : ''
       if (!target) return false
       if (fromGuest) (document.activeElement as HTMLElement | null)?.blur()
@@ -248,14 +256,14 @@ export function App(): React.JSX.Element {
       <div
         style={{
           display: 'flex',
-          flexDirection: sidebarSide === 'right' ? 'row-reverse' : 'row',
+          flexDirection: sidebarSide === 'top' ? 'column' : sidebarSide === 'right' ? 'row-reverse' : 'row',
           flex: 1,
           minHeight: 0,
           width: '100%',
         }}
       >
         <Sidebar />
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: C.bg }}>
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: C.bg }}>
           <PaneGrid />
         </div>
       </div>

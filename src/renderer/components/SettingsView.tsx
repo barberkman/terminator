@@ -891,13 +891,14 @@ export function SettingsView(): React.JSX.Element | null {
                   />
                 </div>
               </Field>
-              <Field label="SIDEBAR POSITION" hint="Which side of the window the session sidebar sits on.">
+              <Field label="SIDEBAR POSITION" hint="Where the session list sits: a sidebar on either side, or a tab strip across the top.">
                 <Choice
                   value={draft.sidebarSide ?? 'left'}
                   onPick={(sidebarSide) => patch({ sidebarSide })}
                   options={[
                     { value: 'left' as const, label: 'Left' },
                     { value: 'right' as const, label: 'Right' },
+                    { value: 'top' as const, label: 'Top' },
                   ]}
                 />
               </Field>

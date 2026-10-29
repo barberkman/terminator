@@ -133,6 +133,108 @@ function activityColor(s: Session): string {
   return C.muted
 }
 
+const KIND_ICONS: Partial<Record<Session['kind'], IconName>> = {
+  shell: 'terminal',
+  editor: 'editor',
+  browser: 'globe',
+  pdf: 'pdf',
+}
+
+/**
+ * A session's drag, for the sidebar row and the top bar's tab alike. Two
+ * audiences. The MIME type is for the panes: `getData` is sealed during
+ * dragover, but `types` is readable, so this is the only way a drop target can
+ * tell a session drag from a file drag before the drop. The store field is for
+ * the drop overlay, which has to *mount* when the drag starts. Reordering among
+ * the session's siblings uses `draggedId`.
+ */
+function useSessionDrag(session: Session, editing: boolean) {
+  const reorderWithinGroup = useStore((s) => s.reorderWithinGroup)
+  const [dragOver, setDragOver] = useState(false)
+
+  // Drag-reorder: only offer a drop where the order stays meaningful — same
+  // project group, same place in the branch tree.
+  const canDropHere = (): boolean => {
+    if (!draggedId || draggedId === session.id) return false
+    const dragged = useStore.getState().sessions[draggedId]
+    return !!dragged && canReorderOnto(dragged, session)
+  }
+
+  const dragProps = {
+    // A draggable ancestor swallows drag-to-select inside a nested input, so
+    // the session stops being draggable while its name is being edited.
+    draggable: !editing,
+    onDragStart: (e: React.DragEvent) => {
+      draggedId = session.id
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData(SESSION_MIME, session.id)
+      useStore.getState().setDraggingSession(session.id)
+    },
+    onDragEnd: () => {
+      draggedId = null
+      setDragOver(false)
+      useStore.getState().setDraggingSession(null)
+    },
+    onDragOver: (e: React.DragEvent) => {
+      if (!canDropHere()) return
+      e.preventDefault()
+      if (!dragOver) setDragOver(true)
+    },
+    onDragLeave: () => setDragOver(false),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault()
+      setDragOver(false)
+      if (draggedId) reorderWithinGroup(draggedId, session.id)
+      draggedId = null
+    },
+  }
+  return { dragOver, dragProps }
+}
+
+/** The box a session's name turns into while it is being renamed. */
+function RenameField({ session, width }: { session: Session; width?: number }): React.JSX.Element {
+  const startEdit = useStore((s) => s.startEdit)
+  const nameRef = useRef<HTMLInputElement>(null)
+
+  const commitRename = () => {
+    const v = nameRef.current?.value.trim()
+    if (v) void window.terminator.renameSession(session.id, v)
+    startEdit(null)
+  }
+
+  return (
+    <input
+      ref={nameRef}
+      defaultValue={session.name}
+      autoFocus
+      // The row's own onClick calls openSession, which clears editingId —
+      // a single click inside the box would otherwise destroy it.
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onBlur={commitRename}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commitRename()
+        else if (e.key === 'Escape') {
+          e.stopPropagation() // cancelling the rename is all this Esc does
+          startEdit(null)
+        }
+      }}
+      style={{
+        ...(width ? { width, flex: 'none' } : { minWidth: 0, flex: 1 }),
+        background: ink(0.06),
+        border: `1px solid ${accentA(0.45)}`,
+        borderRadius: 4,
+        color: C.textMax,
+        font: 'inherit',
+        fontSize: 12.5,
+        fontWeight: 500,
+        padding: '1px 5px',
+        outline: 'none',
+      }}
+    />
+  )
+}
+
 /**
  * One session line. Branches are indented under the session they were forked
  * from, and a session with branches carries a count badge that folds them away —
@@ -153,36 +255,20 @@ function Row({
   const openSession = useStore((s) => s.openSession)
   const setConfirm = useStore((s) => s.setConfirm)
   const toggleGroup = useStore((s) => s.toggleGroup)
-  const reorderWithinGroup = useStore((s) => s.reorderWithinGroup)
   // `editingId` is global, so the surface has to match too — otherwise a session
   // open in a pane *and* visible here would render two autofocused inputs.
   const editing = useStore((s) => s.editingId === session.id && s.editingWhere === 'sidebar')
-  const startEdit = useStore((s) => s.startEdit)
   // A boolean, not a derived object: a fresh object from a selector would loop
   // useSyncExternalStore.
   const menuOpen = useStore(
     (s) => s.contextMenu?.target.kind === 'sessions' && s.contextMenu.target.ids.includes(session.id),
   )
-  const nameRef = useRef<HTMLInputElement>(null)
-  const [dragOver, setDragOver] = useState(false)
+  const { dragOver, dragProps } = useSessionDrag(session, editing)
   const active = focusedId === session.id
-
-  const commitRename = () => {
-    const v = nameRef.current?.value.trim()
-    if (v) void window.terminator.renameSession(session.id, v)
-    startEdit(null)
-  }
+  const kindIcon = KIND_ICONS[session.kind]
   // The accent "selected" treatment is reserved for the single focused session.
   // A notified (needs-attention) session is signalled separately by the pulsing
   // dot below, so it never competes with selection when several are notified.
-
-  // Drag-reorder: only offer a drop where the order stays meaningful — same
-  // project group, same place in the branch tree.
-  const canDropHere = (): boolean => {
-    if (!draggedId || draggedId === session.id) return false
-    const dragged = useStore.getState().sessions[draggedId]
-    return !!dragged && canReorderOnto(dragged, session)
-  }
 
   const iconBtn = (extra?: React.CSSProperties): React.CSSProperties => ({
     display: 'flex',
@@ -203,43 +289,13 @@ function Row({
   return (
     <div
       className="cc-row"
-      // A draggable ancestor swallows drag-to-select inside a nested input, so
-      // the row stops being draggable while its name is being edited.
-      draggable={!editing}
+      {...dragProps}
       onClick={() => openSession(session.id)}
       onContextMenu={
         editing
           ? undefined // leave the rename input its native menu, for paste
           : menuOpener({ kind: 'sessions', ids: [session.id] })
       }
-      onDragStart={(e) => {
-        draggedId = session.id
-        e.dataTransfer.effectAllowed = 'move'
-        // Two audiences. The MIME type is for the panes: `getData` is sealed
-        // during dragover, but `types` is readable, so this is the only way a
-        // drop target can tell a session drag from a file drag before the drop.
-        // The store field is for the drop overlay, which has to *mount* when the
-        // drag starts. Sidebar reordering below still uses `draggedId`.
-        e.dataTransfer.setData(SESSION_MIME, session.id)
-        useStore.getState().setDraggingSession(session.id)
-      }}
-      onDragEnd={() => {
-        draggedId = null
-        setDragOver(false)
-        useStore.getState().setDraggingSession(null)
-      }}
-      onDragOver={(e) => {
-        if (!canDropHere()) return
-        e.preventDefault()
-        if (!dragOver) setDragOver(true)
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragOver(false)
-        if (draggedId) reorderWithinGroup(draggedId, session.id)
-        draggedId = null
-      }}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -272,57 +328,13 @@ function Row({
       <span style={dotStyle(session.status, 9)} />
       <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {session.kind === 'shell' && (
+          {kindIcon && (
             <span style={{ display: 'flex', color: C.kindIcon, flex: 'none' }}>
-              <Icon name="terminal" size={12} />
-            </span>
-          )}
-          {session.kind === 'editor' && (
-            <span style={{ display: 'flex', color: C.kindIcon, flex: 'none' }}>
-              <Icon name="editor" size={12} />
-            </span>
-          )}
-          {session.kind === 'browser' && (
-            <span style={{ display: 'flex', color: C.kindIcon, flex: 'none' }}>
-              <Icon name="globe" size={12} />
-            </span>
-          )}
-          {session.kind === 'pdf' && (
-            <span style={{ display: 'flex', color: C.kindIcon, flex: 'none' }}>
-              <Icon name="pdf" size={12} />
+              <Icon name={kindIcon} size={12} />
             </span>
           )}
           {editing ? (
-            <input
-              ref={nameRef}
-              defaultValue={session.name}
-              autoFocus
-              // The row's own onClick calls openSession, which clears editingId —
-              // a single click inside the box would otherwise destroy it.
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitRename()
-                else if (e.key === 'Escape') {
-                  e.stopPropagation() // cancelling the rename is all this Esc does
-                  startEdit(null)
-                }
-              }}
-              style={{
-                minWidth: 0,
-                flex: 1,
-                background: ink(0.06),
-                border: `1px solid ${accentA(0.45)}`,
-                borderRadius: 4,
-                color: C.textMax,
-                font: 'inherit',
-                fontSize: 12.5,
-                fontWeight: 500,
-                padding: '1px 5px',
-                outline: 'none',
-              }}
-            />
+            <RenameField session={session} />
           ) : (
             <span
               style={{
@@ -612,13 +624,14 @@ function RailGroupDivider({ group }: { group: ProjectGroup }): React.JSX.Element
  * Popover to set a project's Build/Run/Stop commands. Prefilled from the current
  * config; Save writes the whole `projects` array back through updateSettings (its
  * `merge` replaces `projects` wholesale, so every command must be written each time).
- * Anchored to the group header's button cluster.
+ * Anchored to the group header's button cluster, or at `at` in the window when given.
  */
 function ProjectCommandsMenu({
   projectName,
   projectPath,
   runtime,
   proj,
+  at,
   onClose,
 }: {
   projectName: string
@@ -626,6 +639,7 @@ function ProjectCommandsMenu({
   /** Where the project lives — the same path in WSL and on Windows is two projects. */
   runtime?: SessionRuntime
   proj?: ProjectConfig
+  at?: { top: number; left: number }
   onClose: () => void
 }): React.JSX.Element {
   const setSettings = useStore((s) => s.setSettings)
@@ -671,9 +685,7 @@ function ProjectCommandsMenu({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          position: 'absolute',
-          top: 26,
-          right: 0,
+          ...(at ? { position: 'fixed', ...at } : { position: 'absolute', top: 26, right: 0 }),
           zIndex: 31,
           width: 236,
           padding: 12,
@@ -752,27 +764,20 @@ function ProjectCommandsMenu({
 }
 
 /**
- * One project group: a collapsible header (name + session count) carrying this
- * project's Build/Run buttons and a gear that opens the command editor, followed by
- * its session rows. Build/Run reuse one dedicated interactive terminal per project +
- * task, created inside this group; later clicks retype the command at its prompt.
- * Stop has no terminal of its own — it types the stop command into the Run terminal,
- * so it only appears once that terminal exists (i.e. after Run has been clicked).
+ * A project's Build/Run buttons and a gear that opens the command editor. Build/Run
+ * reuse one dedicated interactive terminal per project + task, created inside this
+ * group; later clicks retype the command at its prompt. Stop has no terminal of its
+ * own — it types the stop command into the Run terminal, so it only appears once
+ * that terminal exists (i.e. after Run has been clicked).
+ *
+ * `fixedMenu` opens the editor at a fixed spot under the buttons rather than inside
+ * them, for the top bar, whose scrolling strip would clip it.
  */
-function Group({
-  group,
-  slots,
-  altHeld,
-}: {
-  group: ProjectGroup
-  slots: Map<string, number>
-  altHeld: boolean
-}): React.JSX.Element {
-  const isCollapsed = useStore((s) => !!s.collapsed[group.key])
-  const collapsedMap = useStore((s) => s.collapsed)
-  const toggleGroup = useStore((s) => s.toggleGroup)
+function GroupActions({ group, fixedMenu }: { group: ProjectGroup; fixedMenu?: boolean }): React.JSX.Element {
   const settings = useStore((s) => s.settings)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuAt, setMenuAt] = useState<{ top: number; left: number }>()
+  const clusterRef = useRef<HTMLDivElement>(null)
 
   const projectPath = group.sessions[0]?.projectPath ?? ''
   const proj = settings ? findProject(settings.projects, projectPath, group.runtime) : undefined
@@ -822,6 +827,68 @@ function Group({
     )
 
   return (
+    <div
+      ref={clusterRef}
+      onClick={(e) => e.stopPropagation()}
+      style={{ display: 'flex', alignItems: 'center', gap: 1, position: 'relative', flex: 'none' }}
+    >
+      {taskBtn('build', !!buildCmd)}
+      {taskBtn('run', !!runCmd)}
+      {runSession &&
+        headerBtn(
+          'stop',
+          stopCmd ? 'Stop' : 'Set a stop command — click the gear',
+          !!stopCmd,
+          () => void stopTask(),
+        )}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          const r = clusterRef.current?.getBoundingClientRect()
+          // 244 = the editor's width plus a margin, so it never runs off the right edge.
+          if (fixedMenu && r) setMenuAt({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 244) })
+          setMenuOpen((v) => !v)
+        }}
+        title="Set Build / Run / Stop commands for this project"
+        style={{ ...headerBtnStyle, background: menuOpen ? HEADER_BTN_HOVER : 'transparent' }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = HEADER_BTN_HOVER)}
+        onMouseLeave={(e) => (e.currentTarget.style.background = menuOpen ? HEADER_BTN_HOVER : 'transparent')}
+      >
+        <Icon name="settings" size={13} />
+      </button>
+      {menuOpen && (
+        <ProjectCommandsMenu
+          projectName={group.name}
+          projectPath={projectPath}
+          runtime={group.runtime}
+          proj={proj}
+          at={menuAt}
+          onClose={() => setMenuOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * One project group: a collapsible header (name + session count) carrying this
+ * project's GroupActions, followed by its session rows.
+ */
+function Group({
+  group,
+  slots,
+  altHeld,
+}: {
+  group: ProjectGroup
+  slots: Map<string, number>
+  altHeld: boolean
+}): React.JSX.Element {
+  const isCollapsed = useStore((s) => !!s.collapsed[group.key])
+  const collapsedMap = useStore((s) => s.collapsed)
+  const toggleGroup = useStore((s) => s.toggleGroup)
+  const projectPath = group.sessions[0]?.projectPath ?? ''
+
+  return (
     <div>
       <div
         onClick={() => toggleGroup(group.key)}
@@ -854,41 +921,7 @@ function Group({
         <RuntimeChip runtime={group.runtime} />
         <span style={{ fontSize: 10, color: C.faint2 }}>{group.sessions.length}</span>
         <span style={{ flex: 1, height: 1, background: C.hair, minWidth: 8 }} />
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{ display: 'flex', alignItems: 'center', gap: 1, position: 'relative', flex: 'none' }}
-        >
-          {taskBtn('build', !!buildCmd)}
-          {taskBtn('run', !!runCmd)}
-          {runSession &&
-            headerBtn(
-              'stop',
-              stopCmd ? 'Stop' : 'Set a stop command — click the gear',
-              !!stopCmd,
-              () => void stopTask(),
-            )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setMenuOpen((v) => !v)
-            }}
-            title="Set Build / Run / Stop commands for this project"
-            style={{ ...headerBtnStyle, background: menuOpen ? HEADER_BTN_HOVER : 'transparent' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = HEADER_BTN_HOVER)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = menuOpen ? HEADER_BTN_HOVER : 'transparent')}
-          >
-            <Icon name="settings" size={13} />
-          </button>
-          {menuOpen && (
-            <ProjectCommandsMenu
-              projectName={group.name}
-              projectPath={projectPath}
-              runtime={group.runtime}
-              proj={proj}
-              onClose={() => setMenuOpen(false)}
-            />
-          )}
-        </div>
+        <GroupActions group={group} />
       </div>
       {!isCollapsed && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -897,6 +930,294 @@ function Group({
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * A session in the top bar: the sidebar row laid on its side. The line a row
+ * shows under the name — the activity — goes into the tooltip, since a tab has
+ * no room for a second line; everything else (status dot, kind, rename, remove,
+ * the Alt+N digit, both drags) is the row's. A branch can't be indented in a
+ * strip, but it already follows its parent, and keeps the branch mark.
+ */
+function TopTab({
+  session,
+  branch,
+  slot,
+  altHeld,
+}: {
+  session: Session
+  branch: boolean
+  slot?: number
+  altHeld: boolean
+}): React.JSX.Element {
+  const shown = useStore((s) => s.panes.includes(session.id))
+  const focusedId = useStore((s) => s.panes[s.focused])
+  const openSession = useStore((s) => s.openSession)
+  const setConfirm = useStore((s) => s.setConfirm)
+  // The rename the context menu starts on the 'sidebar' surface lands here.
+  const editing = useStore((s) => s.editingId === session.id && s.editingWhere === 'sidebar')
+  const menuOpen = useStore(
+    (s) => s.contextMenu?.target.kind === 'sessions' && s.contextMenu.target.ids.includes(session.id),
+  )
+  const { dragOver, dragProps } = useSessionDrag(session, editing)
+  const ref = useRef<HTMLDivElement>(null)
+  const active = focusedId === session.id
+  const kindIcon = KIND_ICONS[session.kind]
+  const hint = slot ? `  (${SESSION_DIGIT_LABEL}${slot})` : ''
+
+  // Alt+N and Alt+Up/Down can switch to a tab scrolled out of the strip.
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [active])
+
+  return (
+    <div
+      ref={ref}
+      className="cc-row"
+      {...dragProps}
+      onClick={() => openSession(session.id)}
+      onContextMenu={editing ? undefined : menuOpener({ kind: 'sessions', ids: [session.id] })}
+      title={`${session.name} · ${session.activity || STATUS_LABELS[session.status]}${hint}`}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7,
+        maxWidth: 220,
+        padding: '5px 6px 5px 9px',
+        borderRadius: 7,
+        flex: 'none',
+        cursor: 'pointer',
+        background: active ? C.rowActive : menuOpen ? ink(0.06) : shown ? ink(0.04) : 'transparent',
+        border: `1px solid ${active ? C.rowActiveBorder : menuOpen ? C.border3 : 'transparent'}`,
+        boxShadow: dragOver ? `inset 2px 0 0 ${C.accent}` : undefined,
+      }}
+    >
+      {branch && (
+        <span style={{ display: 'flex', color: C.faint2, flex: 'none', marginRight: -3 }}>
+          <Icon name="branch" size={11} />
+        </span>
+      )}
+      <span style={dotStyle(session.status, 8)} />
+      {kindIcon && (
+        <span style={{ display: 'flex', color: C.kindIcon, flex: 'none' }}>
+          <Icon name={kindIcon} size={12} />
+        </span>
+      )}
+      {editing ? (
+        <RenameField session={session} width={140} />
+      ) : (
+        <span
+          style={{
+            minWidth: 0,
+            fontSize: 12.5,
+            fontWeight: 500,
+            color: active ? C.textHi : C.text,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {session.name}
+        </span>
+      )}
+      {session.kind === 'claude' && session.mode === 'readonly' && (
+        <span style={{ display: 'flex', color: C.muted, flex: 'none' }}>
+          <Icon name="lock" size={11} />
+        </span>
+      )}
+      <RuntimeChip runtime={session.runtime} />
+      {session.notified && (
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: C.accent,
+            flex: 'none',
+            animation: 'cc-notif 1.2s ease-in-out infinite',
+          }}
+        />
+      )}
+      <button
+        className="cc-x"
+        onClick={(e) => {
+          e.stopPropagation()
+          setConfirm({ kind: 'remove', id: session.id, name: session.name })
+        }}
+        title="Remove session"
+        style={{ ...headerBtnStyle, width: sz(18), height: sz(18), borderRadius: 4 }}
+      >
+        <Icon name="close" size={12} />
+      </button>
+      <ShortcutSlot slot={slot} altHeld={altHeld} />
+    </div>
+  )
+}
+
+/**
+ * One project group in the top bar: a header chip, then its tabs. The chip does
+ * what the sidebar's group header does — click folds, right-click opens the
+ * project menu — and shows the group's buttons only while hovered, which a strip
+ * can't spare the room to keep out. A folded group doesn't disappear: its tabs
+ * shrink to the rail's status marks, so the "needs me" signal stays on screen and
+ * Alt+Up/Down still reaches every session.
+ */
+function TopGroup({
+  group,
+  slots,
+  altHeld,
+}: {
+  group: ProjectGroup
+  slots: Map<string, number>
+  altHeld: boolean
+}): React.JSX.Element {
+  const isCollapsed = useStore((s) => !!s.collapsed[group.key])
+  const toggleGroup = useStore((s) => s.toggleGroup)
+  const projectPath = group.sessions[0]?.projectPath ?? ''
+  const n = group.sessions.length
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 3, flex: 'none' }}>
+      <div
+        className="cc-tgroup"
+        onClick={() => toggleGroup(group.key)}
+        onContextMenu={menuOpener({ kind: 'project', name: group.name, path: projectPath, runtime: group.runtime })}
+        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 4px 0 2px', cursor: 'pointer', flex: 'none' }}
+      >
+        <span
+          style={{
+            display: 'flex',
+            color: C.muted,
+            transform: isCollapsed ? 'rotate(-90deg)' : 'none',
+            transition: 'transform 0.12s ease',
+          }}
+        >
+          <Icon name="chevron" size={12} />
+        </span>
+        {/* The title sits here, not on the chip: the commands editor opens inside
+            the chip and would otherwise wear it as a tooltip. */}
+        <span
+          title={`${group.name} · ${n} session${n === 1 ? '' : 's'} — right-click for the project menu`}
+          style={{
+            maxWidth: 140,
+            fontSize: 10.5,
+            letterSpacing: 0.6,
+            color: C.dim,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {group.name}
+        </span>
+        <RuntimeChip runtime={group.runtime} />
+        <span style={{ fontSize: 10, color: C.faint2 }}>{n}</span>
+        <span className="cc-tgroup-actions">
+          <GroupActions group={group} fixedMenu />
+        </span>
+      </div>
+      {group.sessions.map((s) =>
+        isCollapsed ? (
+          <RailTab key={s.id} session={s} slot={slots.get(s.id)} altHeld={altHeld} />
+        ) : (
+          <TopTab key={s.id} session={s} branch={!!group.depth[s.id]} slot={slots.get(s.id)} altHeld={altHeld} />
+        ),
+      )}
+    </div>
+  )
+}
+
+/**
+ * The session list as a strip across the top of the window (`sidebarSide: 'top'`):
+ * New session, every project group's tabs in the sidebar's order, then Notes and
+ * Settings. It has no collapsed form — it takes no width from the panes, so there
+ * is nothing to win by hiding it — and scrolls sideways once the tabs outgrow it.
+ */
+function TopBar({
+  groups,
+  slots,
+  altHeld,
+}: {
+  groups: ProjectGroup[]
+  slots: Map<string, number>
+  altHeld: boolean
+}): React.JSX.Element {
+  const setShowNew = useStore((s) => s.setShowNew)
+  const setShowSettings = useStore((s) => s.setShowSettings)
+  const setShowNotes = useStore((s) => s.setShowNotes)
+
+  const btn: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: sz(28),
+    height: sz(28),
+    borderRadius: 7,
+    border: `1px solid ${C.border2}`,
+    background: 'transparent',
+    color: C.textSubtle,
+    cursor: 'pointer',
+    padding: 0,
+    flex: 'none',
+  }
+
+  return (
+    <div
+      style={{
+        flex: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '5px 10px',
+        background: C.sidebar,
+        borderBottom: `1px solid ${C.border}`,
+      }}
+    >
+      <button
+        onClick={() => setShowNew(true)}
+        title="New session (⌘N)"
+        style={{ ...btn, background: C.accentBg, border: `1px solid ${C.accentBorder}`, color: C.accent }}
+      >
+        <Icon name="plus" size={16} />
+      </button>
+      <div
+        className="cc-topbar-tabs"
+        // A mouse wheel only scrolls up and down, and the strip has nowhere to go
+        // but sideways. A trackpad's own sideways swipe comes through untouched.
+        onWheel={(e) => {
+          if (!e.deltaX) e.currentTarget.scrollLeft += e.deltaY
+        }}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          overflowX: 'auto',
+          overflowY: 'hidden',
+        }}
+      >
+        {groups.length === 0 && (
+          <span style={{ fontSize: 11.5, color: C.dim, whiteSpace: 'nowrap' }}>
+            No sessions yet. Create one to get started.
+          </span>
+        )}
+        {groups.map((g, i) => (
+          <Fragment key={g.key}>
+            {i > 0 && <span style={{ width: 1, height: 18, background: C.border2, flex: 'none' }} />}
+            <TopGroup group={g} slots={slots} altHeld={altHeld} />
+          </Fragment>
+        ))}
+      </div>
+      <button onClick={() => setShowNotes(true)} title="Notes" style={btn}>
+        <Icon name="note" size={15} />
+      </button>
+      <button onClick={() => setShowSettings(true)} title="Settings" style={btn}>
+        <Icon name="settings" size={15} />
+      </button>
     </div>
   )
 }
@@ -921,6 +1242,8 @@ export function Sidebar(): React.JSX.Element {
   const hidden = useStore((s) => s.sidebarHidden)
   const toggleSidebar = useStore((s) => s.toggleSidebar)
   const sidebarSide = useStore((s) => s.settings?.sidebarSide ?? 'left')
+
+  if (sidebarSide === 'top') return <TopBar groups={groups} slots={slots} altHeld={altHeld} />
 
   // The divider sits between the sidebar and the panes, so it flips with the side.
   const sideBorder: React.CSSProperties =

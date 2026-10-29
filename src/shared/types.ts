@@ -564,8 +564,8 @@ export interface Settings {
   fontSize: number
   /** Extra scale applied to icons and their button boxes only (100 = default). Multiplies on top of the global zoom. */
   iconScale: number
-  /** Which side of the window the session sidebar sits on. */
-  sidebarSide: 'left' | 'right'
+  /** Where the session list sits: a sidebar on either side, or a tab strip across the top. */
+  sidebarSide: 'left' | 'right' | 'top'
   /** Id of the active colour theme (see shared/themes.ts). Unknown ids fall back to the default. */
   theme: string
   /**

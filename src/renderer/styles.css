@@ -192,6 +192,18 @@ textarea {
   opacity: 1;
 }
 
+/* Top bar: a project's buttons only while its header chip is hovered */
+.cc-tgroup .cc-tgroup-actions {
+  display: none;
+}
+.cc-tgroup:hover .cc-tgroup-actions {
+  display: flex;
+}
+/* ...and a thinner scrollbar under the tabs, so it doesn't crowd them */
+.cc-topbar-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
 /* Rendered markdown (Notes preview). Colors come from the active theme. */
 .md-body {
   color: var(--c-text);
