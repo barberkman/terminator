@@ -52,6 +52,11 @@ type ExitListener = (id: string, exitCode: number, signal?: number) => void
 const dataListeners: DataListener[] = []
 const exitListeners: ExitListener[] = []
 
+/** Terminal output with its escape sequences taken out, for finding words in. */
+export function plainText(data: string): string {
+  return data.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b./g, ' ')
+}
+
 /** Hear every pty's output as it arrives; the returned function stops it. */
 export function onData(cb: DataListener): () => void {
   dataListeners.push(cb)

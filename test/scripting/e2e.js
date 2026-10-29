@@ -513,6 +513,33 @@ async function main() {
 
   if (WIN) await windowsChecks(page, asker)
   t('remove', asker)
+
+  // ---- Claude: the trust question, which comes before any hook ---------------------
+  const fresh = path.join(work, 'fresh')
+  fs.mkdirSync(fresh, { recursive: true })
+  fs.writeFileSync(path.join(fresh, 'TRUST_ME'), '')
+  r = t('new', 'claude', '--project', fresh, '--name', 'truster')
+  const truster = r.out
+  r = t('wait', truster, 'waiting', '--timeout', '15s')
+  check('the trust question reads waiting', r.code === 0 && r.out === 'waiting', r)
+  const trustRow = await page.evaluate(() => [...document.querySelectorAll('.cc-row')].map((e) => e.innerText).find((x) => x.includes('truster')) ?? '')
+  check('... and the row says what it asks', /trust this folder\?/.test(trustRow), trustRow)
+  // A send straight away holds until it's answered, as it always has.
+  const held = new Promise((done) => {
+    const c = spawn(command(), ['send', truster, 'after trust'], { env, cwd: proj })
+    c.on('exit', (code) => done(code))
+  })
+  let sent = null
+  held.then((code) => (sent = code))
+  await sleep(1500)
+  check('... a send holds while it is up', sent === null, sent)
+  await page.evaluate((id) => window.terminator.writePty(id, '\x1b[B'), truster)
+  await sleep(300)
+  await page.evaluate((id) => window.terminator.writePty(id, '\r'), truster)
+  check('... and goes in once it is answered', (await held) === 0)
+  r = t('wait', truster, 'idle', '--timeout', '30s')
+  check('... the turn ends idle', r.out === 'idle' && t('reply', truster).out === fakeReply('after trust'), r)
+  t('remove', truster)
   check('no prompt was ever typed before Claude was ready', !/DROPPED/.test(fs.existsSync(fakeLog) ? fs.readFileSync(fakeLog, 'utf8') : ''))
 
   // ---- access ------------------------------------------------------------------

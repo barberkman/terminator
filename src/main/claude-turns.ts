@@ -18,7 +18,7 @@ import { PENDING_UNSURE_MS, reconcile, type SentPrompt } from '../shared/convers
 import type { ConversationItem, SessionStatus } from '../shared/types'
 import { readConversation } from './conversation'
 import * as ptyMgr from './pty-manager'
-import { getSession, onSessionChange } from './state'
+import { getSession, notify, onSessionChange, setStatus } from './state'
 import { conversationFile } from './transcript'
 
 /** The pty generation whose Claude said it was up, and when. */
@@ -54,6 +54,8 @@ function changed(id: string): void {
 /** SessionStart from the session's current Claude. */
 export function claudeReady(id: string): void {
   ready.set(id, { gen: ptyMgr.ptyGeneration(id), at: Date.now() })
+  startup.delete(id)
+  trusting.delete(id)
   changed(id)
 }
 
@@ -111,6 +113,8 @@ function settle(id: string, left: Scripted[]): void {
 
 function forget(id: string): void {
   ready.delete(id)
+  startup.delete(id)
+  trusting.delete(id)
   if (pending.delete(id)) changed(id)
 }
 
@@ -185,6 +189,41 @@ export async function transcriptSize(file: string | null): Promise<number> {
   }
 }
 
+// ---- before Claude is up ----------------------------------------------------------
+//
+// What Claude asks before its hooks run — whether to trust a folder it hasn't seen —
+// no hook can report. Its words on the terminal can, so until Claude says it's up,
+// its output is read for them. The session then reads waiting, with the usual
+// "needs me", until SessionStart puts it at ready (report-server.ts).
+
+const TRUST_QUESTION = /Yes,\s*I\s*trust\s*this\s*folder/
+/** The latest output of each Claude that hasn't said it's up yet. */
+const startup = new Map<string, string>()
+/** Claudes on their trust question now. */
+const trusting = new Set<string>()
+
+/** Whether a session's Claude is asking whether to trust its folder. */
+export function askingTrust(id: string): boolean {
+  return trusting.has(id) && readySince(id) === undefined
+}
+
+function startupOutput(id: string, data: string): void {
+  const s = getSession(id)
+  if (!s || s.kind !== 'claude' || !s.alive || readySince(id) !== undefined || trusting.has(id)) {
+    startup.delete(id)
+    return
+  }
+  const tail = ((startup.get(id) ?? '') + ptyMgr.plainText(data)).slice(-2000)
+  if (!TRUST_QUESTION.test(tail)) {
+    startup.set(id, tail)
+    return
+  }
+  startup.delete(id)
+  trusting.add(id)
+  setStatus(id, 'waiting', 'trust this folder?')
+  notify(id, 'waiting', `${s.name} asks whether to trust its folder`)
+}
+
 /**
  * A process that exits takes its readiness and its outstanding prompts with it. A
  * move into working is a turn running: it restarts the quiet clock, and opens the
@@ -192,6 +231,7 @@ export async function transcriptSize(file: string | null): Promise<number> {
  */
 export function wireClaudeTurns(): void {
   ptyMgr.onExit((id) => forget(id))
+  ptyMgr.onData(startupOutput)
   onSessionChange((id, s) => {
     if (!s) {
       forget(id)

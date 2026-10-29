@@ -897,6 +897,7 @@ A few things worth knowing:
   setup, or whether to trust a folder it hasn't seen (a new project, or a new worktree) — comes
   before those hooks, so `send` holds and never types into it: answer it in the session's
   terminal and the prompt goes in; left unanswered for two minutes, `send` gives up and says so.
+  The trust question reads **waiting**, with the usual "needs me", so `wait … waiting` sees it.
   Opening a new project by hand once before scripting it saves the wait.
 - A prompt that never becomes a turn of its own — a slash command such as `/clear` — is let go
   after 20 seconds of quiet, and `wait` says so beside its answer.

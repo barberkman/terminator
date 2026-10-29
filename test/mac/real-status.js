@@ -212,24 +212,32 @@ async function claude(name, flags = CHEAP) {
   if (r.code !== 0) throw new Error(`new ${name}: ${r.err}`)
   const id = r.out
   await showPane(name)
-  if (!trusted) {
-    // A folder Claude hasn't seen asks to be trusted first; for a temp folder the
-    // dialog's default is "No, exit".
-    if (await waitFor(async () => /trust/i.test(await screen(name)), 30_000)) {
-      if (/❯\s*\d?\.?\s*No/.test(await screen(name))) {
-        await keys(id, '\x1b[B')
-        await sleep(300)
-      }
-      await keys(id, '\r')
-    }
-    trusted = true
-  }
+  // A folder Claude hasn't seen asks to be trusted first, and for a temp folder the
+  // dialog's default is "No, exit" — so it's answered only once its Yes is drawn,
+  // and every time it shows, not just the first.
+  const trustUp = () => waitFor(async () => /Yes, I trust this folder/.test(await screen(name)), trusted ? 4000 : 30_000)
+  if (await trustUp()) await trustYes(name, id)
+  trusted = true
   // SessionStart: the status reads idle/ready once Claude's hooks have reported in.
   await waitFor(async () => /ready/.test((await row(name)).text), 60_000)
   await sleep(1500)
   return id
 }
 /** `terminator send`, without stopping the recorders while it waits for Claude. */
+/**
+ * Answer Claude's trust question with Yes. The dialog is drawn a moment before it
+ * listens, so the arrow goes again until Yes is the one marked — and Enter only
+ * then, never on "No, exit".
+ */
+async function trustYes(name, id) {
+  const onYes = async () => /❯\s*\d?\.?\s*Yes, I trust/.test(await screen(name))
+  for (let i = 0; i < 20 && !(await onYes()); i++) {
+    await keys(id, i % 2 ? '\x1bOB' : '\x1b[B')
+    await waitFor(onYes, 700)
+  }
+  if (!(await onYes())) throw new Error(`couldn't move ${name}'s trust dialog to Yes`)
+  await keys(id, '\r')
+}
 /** The session as `list --json` has it. */
 const listed = (id) => (JSON.parse(t('list', '--json').out || '{}').sessions ?? []).find((s) => s.id === id)
 /** The model of each answer in a session's transcript, oldest first. */
@@ -605,6 +613,39 @@ const scenarios = {
         ['reply reads the conversation /clear started', /bravo/i.test(reply.out), reply],
         ['the session knows the new conversation', !!conv && conv !== id, conv],
         ['a relaunch resumes the new conversation', /bravo/i.test(after.out), after],
+      ],
+    }
+  },
+
+  async trust(n) {
+    // A folder Claude has never seen: its trust question comes before any hook.
+    const fresh = path.join(work, `fresh-${Date.now()}`)
+    fs.mkdirSync(fresh, { recursive: true })
+    const id = t('new', 'claude', '--project', fresh, '--name', n, ...CHEAP).out
+    await showPane(n)
+    const rec = record(id, n)
+    const asked = await waitFor(async () => /Yes, I trust this folder/.test(await screen(n)), 30_000)
+    const reads = await rec.until('waiting', 5000)
+    const r0 = await row(n)
+    // A send straight away holds until it's answered.
+    let sent = false
+    const sending = send(id, 'Reply with exactly the word pong and nothing else.').then(() => (sent = true))
+    await sleep(2000)
+    const held = !sent && rec.now() === 'waiting'
+    await trustYes(n, id)
+    await sending
+    await rec.leaves('idle', 60_000)
+    const end = await rec.until('idle', 120_000)
+    const reply = t('reply', id).out
+    await rec.stop()
+    return {
+      id,
+      rec,
+      checks: [
+        ['Claude asks whether to trust the folder', !!asked, (await screen(n)).slice(-400)],
+        ['... and it reads waiting, with the needs-me dot', reads && r0.dot === 'waiting' && /trust this folder\?/.test(r0.text), { summary: rec.summary(), row: r0 }],
+        ['a send holds while it is up', held, rec.summary()],
+        ['answered Yes, the prompt goes in and the turn ends idle', end && /pong/i.test(reply), { summary: rec.summary(), reply }],
       ],
     }
   },

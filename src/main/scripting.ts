@@ -35,6 +35,7 @@ import { EFFORT_LEVELS, isProcessless, type Session, type SessionStatus } from '
 import { parseWslUnc, validRuntime } from '../shared/wsl-path'
 import {
   addScriptedPrompt,
+  askingTrust,
   hasScriptedPrompt,
   lastPromptGivenUp,
   onTurnChange,
@@ -362,8 +363,10 @@ async function whenReady(id: string, signal: AbortSignal): Promise<ControlFailur
   for (;;) {
     if (signal.aborted) return fail('cancelled')
     const s = state.getSession(id)
-    // A WSL Claude still asking its distro isn't running yet, but it's on its way.
-    const onItsWay = !!s && s.kind === 'claude' && !s.alive && isStarting(id) && s.status !== 'waiting'
+    // A WSL Claude still asking its distro isn't running yet, but it's on its way —
+    // and so is one asking whether to trust its folder, which reads waiting.
+    const onItsWay =
+      !!s && s.kind === 'claude' && ((!s.alive && isStarting(id) && s.status !== 'waiting') || askingTrust(id))
     const refused = onItsWay ? null : sendRefusal(s)
     if (refused || !s) return fail(refused ?? 'that session is gone')
     if (!reportsStatus(id)) {
@@ -430,7 +433,7 @@ async function switchTo(
   const stopWatching =
     what === 'model'
       ? ptyMgr.onData((pid, data) => {
-          if (pid === s.id) screen = (screen + plainText(data)).slice(-4000)
+          if (pid === s.id) screen = (screen + ptyMgr.plainText(data)).slice(-4000)
         })
       : () => {}
   let confirmed = false
@@ -468,11 +471,6 @@ async function switchTo(
     })
   }
   return { ok: true, message: answer }
-}
-
-/** Terminal output with its escape sequences taken out, for finding words in. */
-function plainText(data: string): string {
-  return data.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b./g, ' ')
 }
 
 /**

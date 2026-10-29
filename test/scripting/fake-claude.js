@@ -17,6 +17,10 @@
 //   • /clear                     — a new conversation under a new session_id, as Claude does
 //   • any other /…               — a slash command: no turn, no hook, no transcript
 //
+// A folder holding a TRUST_ME file is asked about first, as Claude asks about a folder
+// it hasn't seen: "No, exit" is marked, Down moves to "Yes, I trust this folder",
+// Enter answers — before SessionStart, so before any hook.
+//
 // Esc while a turn runs (or a dialog is up) interrupts it as Claude does: a
 // "[Request interrupted by user]" record, and no hook at all — or, for a prompt
 // containing QUIET, no record either, as when Claude hadn't answered anything yet.
@@ -125,12 +129,37 @@ let input = ''
 const queue = []
 
 process.stdout.write('fake claude starting...\r\n')
-setTimeout(() => {
+function start() {
   fire('SessionStart', { source: argv.includes('--resume') ? 'resume' : 'startup' })
   status()
   ready = true
   log('ready')
   process.stdout.write('> ')
+}
+const trustFile = path.join(os.homedir(), 'fake-trusted.json')
+const trustedDirs = () => {
+  try {
+    return JSON.parse(fs.readFileSync(trustFile, 'utf8'))
+  } catch {
+    return []
+  }
+}
+/** The marked option while the trust question is up: 0 "No, exit", 1 "Yes". Null otherwise. */
+let trustChoice = null
+function drawTrust() {
+  const mark = (i) => (trustChoice === i ? '\x1b[36m❯\x1b[0m' : ' ')
+  process.stdout.write(
+    `\r\nQuick safety check: Is this a project you created or one you trust?\r\n ${mark(0)} No, exit\r\n ${mark(1)} Yes, I trust this folder\r\n Enter to confirm · Esc to cancel\r\n`,
+  )
+}
+setTimeout(() => {
+  if (fs.existsSync(path.join(cwd, 'TRUST_ME')) && !trustedDirs().includes(cwd)) {
+    trustChoice = 0
+    log('asking to trust')
+    drawTrust()
+    return
+  }
+  start()
 }, Number(process.env.FAKE_CLAUDE_STARTUP_MS || 1500))
 
 async function submit(text) {
@@ -290,6 +319,18 @@ async function replay(name, text) {
 process.stdin.setRawMode(true)
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', (d) => {
+  if (trustChoice !== null) {
+    if (d.includes('\x1b[B') || d.includes('\x1bOB')) {
+      trustChoice = 1
+      drawTrust()
+    } else if (d === '\r' && trustChoice === 1) {
+      fs.writeFileSync(trustFile, JSON.stringify([...trustedDirs(), cwd]))
+      trustChoice = null
+      log('trusted')
+      start()
+    } else if (d === '\r' || d === '\x1b') process.exit(1)
+    return
+  }
   buf += d
   for (;;) {
     if (pasting) {
