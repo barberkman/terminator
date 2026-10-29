@@ -313,6 +313,15 @@ async function main() {
     check('a lost submit hook: wait still waits for the turn', r.code === 0 && r.out === 'idle' && Date.now() - t0 > 1400, { ...r, ms: Date.now() - t0 })
     check('... and reply is that turn', t('reply', asker).out === fakeReply('NOHOOK turn'))
 
+    // Claude 2.1.310 records a pasted prompt wrapped in <pasted_content> tags.
+    t0 = Date.now()
+    t('send', asker, 'NOHOOK PASTED turn')
+    r = t('wait', asker, 'idle', '--timeout', '1m')
+    check('a pasted prompt is still seen in the transcript', r.code === 0 && r.out === 'idle' && !/never showed up/.test(r.err) && Date.now() - t0 < 19_000, { ...r, ms: Date.now() - t0 })
+    check('... and reply is that turn', t('reply', asker).out === fakeReply('NOHOOK PASTED turn'))
+    const said = await page.evaluate(async (id) => (await window.terminator.readConversation(id, 0)).items.filter((i) => i.kind === 'prompt').map((i) => i.text), asker)
+    check('... and the conversation shows it without the tags', said.includes('NOHOOK PASTED turn'), said)
+
     // A slash command never becomes a turn: let go after 20s of quiet, with a warning.
     t0 = Date.now()
     t('send', asker, '/clear')

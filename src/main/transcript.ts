@@ -23,6 +23,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Session, SessionRuntime, TranscriptPrompt } from '../shared/types'
 import { isWsl, linuxToHost, sessionFolder } from '../shared/wsl-path'
+import { unwrapPasted } from '../shared/conversation-turns'
 import { expandHome } from './pty-manager'
 import { readyProbe } from './wsl'
 
@@ -125,7 +126,7 @@ export function promptText(rec: Record_): string {
   const msg = rec.message as { role?: string; content?: unknown } | undefined
   if (!msg || msg.role !== 'user') return ''
   const c = msg.content
-  if (typeof c === 'string') return c
+  if (typeof c === 'string') return unwrapPasted(c)
   // Content blocks: keep it a prompt only if every block is something a person
   // can send. A `tool_result` isn't, and disqualifies the whole record.
   if (!Array.isArray(c)) return ''
@@ -141,7 +142,7 @@ export function promptText(rec: Record_): string {
     if (b.type !== 'text' || typeof b.text !== 'string') return ''
     texts.push(b.text)
   }
-  return texts.join('\n')
+  return unwrapPasted(texts.join('\n'))
 }
 
 /**

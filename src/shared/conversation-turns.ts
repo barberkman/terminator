@@ -70,7 +70,20 @@ export interface SentPrompt {
  * stops), so insisting on the bytes would leave a prompt pending forever.
  */
 export function norm(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
+  return unwrapPasted(text).replace(/\s+/g, ' ').trim()
+}
+
+const PASTED = /<pasted_content id="([^"]*)">\n?([\s\S]*?)\n?<\/pasted_content(?: id="\1")?>/g
+
+/**
+ * A prompt as typed, without the wrapper Claude (2.1.310 on) records a pasted one
+ * in: `\n\n<pasted_content id="…">\n…\n</pasted_content id="…">\n`. The composer
+ * sends by bracketed paste, so every prompt it sends can come back wrapped — and
+ * wrapped, it neither matches the text we sent nor reads as what you wrote.
+ */
+export function unwrapPasted(text: string): string {
+  const out = text.replace(PASTED, '$2')
+  return out === text ? text : out.trim()
 }
 
 /**

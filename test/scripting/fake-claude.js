@@ -98,7 +98,9 @@ async function submit(text) {
   log(`submit: ${text}`)
   // NOHOOK: the UserPromptSubmit report is lost on its way to the app.
   if (!text.includes('NOHOOK')) fire('UserPromptSubmit', { prompt: text, prompt_id: pid })
-  record({ type: 'user', message: { role: 'user', content: text } })
+  // PASTED: recorded the way claude 2.1.310 records a pasted prompt.
+  const recorded = text.includes('PASTED') ? `\n\n<pasted_content id="2ef3">\n${text}\n</pasted_content id="2ef3">\n` : text
+  record({ type: 'user', message: { role: 'user', content: recorded } })
   process.stdout.write(`\r\n> ${text}\r\n`)
   // Like a real turn, it runs a tool — which moves the status even when the submit report was lost.
   await sleep(200)
