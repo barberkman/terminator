@@ -117,8 +117,9 @@ export function aboutOneSession(c: ConfirmState): c is Extract<ConfirmState, { i
  * the message is shown from the moment it is sent and retired when the real
  * record arrives (ConversationView reconciles the two).
  *
- * Kept in the store rather than in the view because Esc unmounts the view, and a
- * message in flight must not vanish with it.
+ * Kept in the store rather than in the view because going back to the terminal, or
+ * to another session, unmounts the view, and a message in flight must not vanish
+ * with it.
  */
 export interface PendingPrompt {
   /** Ours, never a transcript uuid — these have no id until they land. */
@@ -141,6 +142,36 @@ export interface PendingPrompt {
   quietMs: number
   state: 'pending' | 'unsure'
 }
+
+/**
+ * Where you were reading a session's conversation when its view went away — to
+ * the terminal, to another session, to another split — so coming back puts you
+ * there instead of at the end. No entry means you were following the tail.
+ *
+ * An item and a place inside it rather than a `scrollTop`: the pane may be a
+ * different width when you come back (so everything above has re-wrapped), the
+ * Tools toggle is app-wide and may have been flipped elsewhere, and new messages
+ * may have arrived. A pixel count survives none of that; an item survives all three.
+ */
+export interface ReadingSpot {
+  /** Transcript id of the item at the top edge of the reading area. */
+  itemId: string
+  /** How far that item's top sat above the edge, in px. Negative: below it. */
+  offset: number
+  /** The item's height then, so the offset can be scaled if it has re-wrapped since. */
+  height: number
+  /** The newest item when you left, so coming back can tell whether more arrived. */
+  lastItemId: string | null
+  /** "New messages" was already up: there was something below you hadn't seen. */
+  behind: boolean
+}
+
+/**
+ * A folded row in a conversation that you opened. `full` is open with all of its
+ * output shown. Only one value, because folding a row drops its output block —
+ * "all lines" has never outlived the row being open.
+ */
+export type RowState = 'open' | 'full'
 
 /**
  * A transient message in the bottom-right corner. The only place the app can tell
@@ -285,6 +316,10 @@ interface StoreState {
   pendings: Record<string, PendingPrompt[]>
   /** Files and images attached to the next message, per session. */
   attachments: Record<string, AttachedItem[]>
+  /** Where each conversation was being read when its view went away (see ReadingSpot). */
+  readingSpots: Record<string, ReadingSpot>
+  /** Rows opened in each conversation: session id → transcript item id → state. */
+  rowStates: Record<string, Record<string, RowState>>
   sidebarHidden: boolean
   editingId: string | null
   editingWhere: EditSurface
@@ -337,6 +372,10 @@ interface StoreState {
   setDraft(id: string, text: string): void
   setPendings(id: string, list: PendingPrompt[]): void
   setAttachments(id: string, list: AttachedItem[]): void
+  /** Null forgets it: you were following the tail. */
+  setReadingSpot(id: string, spot: ReadingSpot | null): void
+  /** Null folds the row back up. */
+  setRowState(id: string, itemId: string, state: RowState | null): void
   toggleSidebar(): void
   setConfirm(c: ConfirmState | null): void
   setSettings(s: Settings): void
@@ -454,6 +493,8 @@ export const useStore = create<StoreState>((set, get) => ({
   drafts: {},
   pendings: {},
   attachments: {},
+  readingSpots: {},
+  rowStates: {},
   sidebarHidden: false,
   editingId: null,
   editingWhere: 'pane',
@@ -586,6 +627,10 @@ export const useStore = create<StoreState>((set, get) => ({
       delete pendings[id]
       const attachments = { ...st.attachments }
       delete attachments[id]
+      const readingSpots = { ...st.readingSpots }
+      delete readingSpots[id]
+      const rowStates = { ...st.rowStates }
+      delete rowStates[id]
       return {
         sessions,
         order,
@@ -598,6 +643,8 @@ export const useStore = create<StoreState>((set, get) => ({
         drafts,
         pendings,
         attachments,
+        readingSpots,
+        rowStates,
         focused,
         confirm: retireConfirm(st.confirm, id),
         contextMenu:
@@ -878,6 +925,27 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   setAttachments(id, list) {
     set((st) => ({ attachments: { ...st.attachments, [id]: list } }))
+  },
+  // Both ignore a session that's gone. Removing one deletes its entries and the
+  // commit after that unmounts its view — whose cleanup saves the spot. Without
+  // the check that save would put back what `remove` had just taken out.
+  setReadingSpot(id, spot) {
+    set((st) => {
+      if (!st.sessions[id]) return st
+      const readingSpots = { ...st.readingSpots }
+      if (spot) readingSpots[id] = spot
+      else delete readingSpots[id]
+      return { readingSpots }
+    })
+  },
+  setRowState(id, itemId, state) {
+    set((st) => {
+      if (!st.sessions[id]) return st
+      const rows = { ...st.rowStates[id] }
+      if (state) rows[itemId] = state
+      else delete rows[itemId]
+      return { rowStates: { ...st.rowStates, [id]: rows } }
+    })
   },
   toggleSidebar() {
     set((s) => ({ sidebarHidden: !s.sidebarHidden }))

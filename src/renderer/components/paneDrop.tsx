@@ -86,7 +86,7 @@ export function useFileDrop(session: Session | undefined, index: number, toCompo
       if (toComposer) {
         // No registry.focus here, deliberately: the terminal is covered, and
         // pulling focus onto it would take the caret out of the composer the user
-        // is typing in — and with it the Esc handler's only way home.
+        // is typing in, and send their next keys to a terminal they can't see.
         void attachDropToComposer(sid, e.dataTransfer)
         return
       }

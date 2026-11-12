@@ -208,16 +208,11 @@ export function App(): React.JSX.Element {
       // Esc on the startup prompt means "not now", same as its Cancel: nothing is
       // relaunched, and every session keeps its own Relaunch where it always was.
       else if (st.relaunchOffer) st.setRelaunchOffer(null)
-      // No modal open: Esc inside a pane's conversation goes back to its terminal.
-      // Only when the key came from the conversation itself, so a bare Esc typed
-      // at a terminal (or in vim) still reaches the program, as it always did.
-      else {
-        const from = (e.target as HTMLElement | null)?.closest?.('[data-conversation-for]')
-        const id = from?.getAttribute('data-conversation-for')
-        if (!id) return
-        st.toggleTranscript(id)
-        registry.focus(id)
-      }
+      // No modal open: leave the key alone. A bare Esc typed at a terminal (or in
+      // vim) reaches the program, and in a conversation it does nothing — it used
+      // to drop you back to the terminal, which lost your reading for a stray key.
+      // The header's terminal button and the view's own Terminal button do that.
+      else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onEscape)

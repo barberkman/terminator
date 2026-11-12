@@ -5,14 +5,12 @@
 // without going back to the terminal to reply.
 //
 // Two rules shape it:
-//   • It is never `disabled`. A disabled textarea can't take focus, and focus
-//     inside the view is what the global Esc handler keys off (it looks for
-//     `[data-conversation-for]` above the event target) — disabling the box for a
-//     stopped session would strand the reader in a view whose only exit is the
-//     mouse. What gets disabled is *sending*. It also means you can compose while
-//     Claude sits on a permission dialog, go answer it, come back and press Enter.
+//   • It is never `disabled`. A disabled textarea can't take focus, so a stopped
+//     session would leave the keyboard with nowhere to go in this view. What gets
+//     disabled is *sending*. It also means you can compose while Claude sits on a
+//     permission dialog, go answer it, come back and press Enter.
 //   • It never throws text away. The draft lives in the store, keyed by session,
-//     so Esc to the terminal and back brings it with you, and a refused send
+//     so the trip to the terminal and back brings it with you, and a refused send
 //     hands it back rather than swallowing it.
 
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'

@@ -354,8 +354,12 @@ too — the session is driven from the same place it's read.
   on your behalf. That's the one thing this view can't do for you.
 - **The terminal is still there.** It's an overlay, not a replacement: the pane's terminal stays
   running, the right size, underneath — switching back is instant and the session never notices.
-  **Esc** from the conversation also returns to it, and a half-typed message is still there when
-  you come back.
+  The **Terminal** button (or the pane header's terminal icon) takes you there; **Esc** doesn't, so
+  a stray key never costs you your reading. A half-typed message is still there when you come back.
+- **It keeps your place.** Go to the terminal, another session or another split and come back,
+  and the conversation is where you left it — the same message, the same rows opened — even if
+  the pane is a different width now. If you were at the bottom, you're at the bottom; if messages
+  arrived while you were away, **New messages** says so.
 
 Only Claude sessions have any of this. Plain terminals and editor panes are unchanged.
 
@@ -748,12 +752,11 @@ In a terminal pane:
   project — the next one down in the sidebar, or the one above if it was the last. You land on
   the empty page only once the project has nothing left. In a split, the pane closes instead and
   its neighbour takes the space.
-- **Esc** in a conversation view returns to that pane's live terminal. (Elsewhere a bare Esc
-  still reaches the program in the pane, untouched.)
-- **Ctrl/Cmd+F** in a conversation opens its find box. **Esc** then closes the box rather than
-  the view, so the way out is one more Esc. Everywhere else in a terminal pane Ctrl+F is left
-  alone and still reaches the program running in it — as it does in an editor pane, where it
-  opens the editor's own search.
+- **Esc** in a conversation view does nothing — the way back to the terminal is its **Terminal**
+  button. (Elsewhere a bare Esc still reaches the program in the pane, untouched.)
+- **Ctrl/Cmd+F** in a conversation opens its find box, and **Esc** closes it. Everywhere else in
+  a terminal pane Ctrl+F is left alone and still reaches the program running in it — as it does
+  in an editor pane, where it opens the editor's own search.
 
 In an editor pane: **Ctrl/Cmd+P** opens Quick Open (↑/↓ and Enter pick, Esc closes),
 **double-click** a file in the tree or a tab to keep a preview tab open, and **middle-click** a
