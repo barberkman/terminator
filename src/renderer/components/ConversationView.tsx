@@ -7,7 +7,7 @@ import { languageForTag } from '../editor/language'
 import { quotePaths } from '../../shared/prompt-path'
 import { PENDING_UNSURE_MS, reconcile, replyText, toTurns, type Turn } from '../../shared/conversation-turns'
 import * as registry from '../term/registry'
-import { useStore, type PendingPrompt } from '../state/store'
+import { useStore, type PendingPrompt, type ReadingSpot, type RowState } from '../state/store'
 import { useDomFind, useFindKeys } from '../find'
 import { Composer, blockedReason } from './Composer'
 import { FindBar } from './FindBar'
@@ -29,7 +29,69 @@ const PENDING_TICK_MS = 2_000
 /** A stable empty list: a fresh array out of a selector would loop the store. */
 const NO_PENDING: PendingPrompt[] = []
 
+/** No rows opened yet. Stable, so the memoized rows aren't handed a new one each time. */
+const NO_ROWS: Record<string, RowState> = {}
+
+/** A row was opened, folded, or had its output expanded — remembered per session. */
+type OnRow = (itemId: string, state: RowState | null) => void
+
 let nextPendingKey = 1
+
+/**
+ * Marks each drawn transcript item — prompt, prose, thinking, tool call — on the
+ * item's own root element, so the reading position can be pinned to one. Written
+ * out as `data-cv-item` on those four elements; this is the selectors' spelling.
+ */
+const ITEM_ATTR = 'data-cv-item'
+
+/**
+ * The item at the top edge of the reading area, and where that edge falls inside
+ * it. The items are blocks stacked in document order, so their bottoms only
+ * increase and a binary search finds the first one still showing below the edge.
+ * If none is — the edge is down among the queued prompts or the working row — the
+ * last item stands in: it is the nearest thing above where you are.
+ */
+function topItem(scroller: HTMLElement): Omit<ReadingSpot, 'lastItemId' | 'behind'> | null {
+  const els = scroller.querySelectorAll<HTMLElement>(`[${ITEM_ATTR}]`)
+  if (!els.length) return null
+  const edge = scroller.getBoundingClientRect().top
+  let lo = 0
+  let hi = els.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (els[mid].getBoundingClientRect().bottom > edge) hi = mid
+    else lo = mid + 1
+  }
+  const rect = els[lo].getBoundingClientRect()
+  return { itemId: els[lo].getAttribute(ITEM_ATTR) ?? '', offset: edge - rect.top, height: rect.height }
+}
+
+/**
+ * The `scrollTop` that shows `spot` again, or null when nothing it points at is
+ * drawn. An item can be off the page without being out of the conversation — a
+ * tool call while Tools is off — so the search walks on through `items` to the
+ * first one that is drawn, and lands on its top.
+ */
+function scrollFor(scroller: HTMLElement, spot: ReadingSpot, items: ConversationItem[]): number | null {
+  const at = items.findIndex((i) => i.id === spot.itemId)
+  if (at < 0) return null
+  for (let i = at; i < items.length; i++) {
+    const el = scroller.querySelector<HTMLElement>(`[${ITEM_ATTR}="${CSS.escape(items[i].id)}"]`)
+    if (!el) continue
+    const rect = el.getBoundingClientRect()
+    // Scaled by how much the item's height changed: a long reply re-wrapped to a
+    // narrower pane is still read from the same share of the way through it.
+    // A negative offset is the gap above the first item, and is left as it was.
+    const inside =
+      i !== at
+        ? 0
+        : spot.offset <= 0 || spot.height <= 0
+          ? spot.offset
+          : Math.min((spot.offset * rect.height) / spot.height, Math.max(0, rect.height - 1))
+    return rect.top - scroller.getBoundingClientRect().top + scroller.scrollTop + inside
+  }
+  return null
+}
 
 function clock(iso: string): string {
   if (!iso) return ''
@@ -90,8 +152,18 @@ function ClippedNote({ shown }: { shown: number }): React.JSX.Element {
   )
 }
 
-function ToolOutputBlock({ output, revealed }: { output: ToolOutput; revealed?: boolean }): React.JSX.Element {
-  const [full, setFull] = useState(false)
+function ToolOutputBlock({
+  output,
+  revealed,
+  full,
+  onFull,
+}: {
+  output: ToolOutput
+  revealed?: boolean
+  /** Held by the row, so it is remembered with the row's own open state. */
+  full: boolean
+  onFull: (full: boolean) => void
+}): React.JSX.Element {
   const lines = useMemo(() => output.text.split('\n'), [output.text])
   const long = lines.length > OUTPUT_PREVIEW_LINES
   // `revealed` is the find's override, not a replacement for `full`: the match it
@@ -110,7 +182,7 @@ function ToolOutputBlock({ output, revealed }: { output: ToolOutput; revealed?: 
         </span>
         {long && (
           <button
-            onClick={() => setFull((v) => !v)}
+            onClick={() => onFull(!full)}
             style={{
               padding: 0,
               background: 'transparent',
@@ -157,19 +229,29 @@ const ToolRow = memo(function ToolRow({
   item,
   output,
   revealed,
+  initial,
+  onRow,
 }: {
   item: Extract<ConversationItem, { kind: 'tool' }>
   output?: ToolOutput
   /** The find has a match in here and is holding it open. */
   revealed?: boolean
+  /** How you left it last time this conversation was open. */
+  initial?: RowState
+  onRow: OnRow
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
-  const shown = open || revealed
+  // One value for the row and its output together, as the store keeps it.
+  const [state, setState] = useState<RowState | null>(initial ?? null)
+  const change = (next: RowState | null) => {
+    setState(next)
+    onRow(item.id, next)
+  }
+  const shown = !!state || revealed
   return (
-    <div style={{ margin: '3px 0' }}>
+    <div data-cv-item={item.id} style={{ margin: '3px 0' }}>
       <div
         className="cv-tool"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => change(state ? null : 'open')}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -237,7 +319,12 @@ const ToolRow = memo(function ToolRow({
             </div>
           ))}
           {output ? (
-            <ToolOutputBlock output={output} revealed={revealed} />
+            <ToolOutputBlock
+              output={output}
+              revealed={revealed}
+              full={state === 'full'}
+              onFull={(full) => change(full ? 'full' : 'open')}
+            />
           ) : (
             <div style={{ fontSize: 11.5, color: C.faint2, marginTop: 6 }}>Still running…</div>
           )}
@@ -251,18 +338,26 @@ const ToolRow = memo(function ToolRow({
 const ThinkingRow = memo(function ThinkingRow({
   item,
   revealed,
+  initial,
+  onRow,
 }: {
   item: Extract<ConversationItem, { kind: 'thinking' }>
   /** The find has a match in here and is holding it open. */
   revealed?: boolean
+  /** How you left it last time this conversation was open. */
+  initial?: RowState
+  onRow: OnRow
 }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!!initial)
   const shown = open || revealed
   return (
-    <div style={{ margin: '3px 0' }}>
+    <div data-cv-item={item.id} style={{ margin: '3px 0' }}>
       <div
         className="cv-tool"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen(!open)
+          onRow(item.id, open ? null : 'open')
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -311,6 +406,7 @@ const PromptBlock = memo(function PromptBlock({
 }): React.JSX.Element {
   return (
     <div
+      data-cv-item={item.id}
       style={{
         position: 'relative',
         margin: '4px 0 14px',
@@ -436,7 +532,11 @@ const MessageText = memo(function MessageText({
 }: {
   item: Extract<ConversationItem, { kind: 'text' }>
 }): React.JSX.Element {
-  return <div className="md-body">{renderMarkdown(item.text)}</div>
+  return (
+    <div data-cv-item={item.id} className="md-body">
+      {renderMarkdown(item.text)}
+    </div>
+  )
 })
 
 /**
@@ -666,6 +766,8 @@ function TurnBlock({
   onShowWorking,
   working,
   revealed,
+  rows,
+  onRow,
 }: {
   turn: Turn
   outputs: Record<string, ToolOutput>
@@ -675,6 +777,9 @@ function TurnBlock({
   working: boolean
   /** Items the find is holding open because a match is inside them. */
   revealed: ReadonlySet<string>
+  /** The rows you had opened when this conversation was last on screen. */
+  rows: Record<string, RowState>
+  onRow: OnRow
 }): React.JSX.Element {
   const reply = replyText(turn)
   const body = visibleBody(turn, showTools)
@@ -695,7 +800,15 @@ function TurnBlock({
       {body.map((item) => {
         if (item.kind === 'text') return <MessageText key={item.id} item={item} />
         if (item.kind === 'thinking')
-          return <ThinkingRow key={item.id} item={item} revealed={revealed.has(item.id)} />
+          return (
+            <ThinkingRow
+              key={item.id}
+              item={item}
+              revealed={revealed.has(item.id)}
+              initial={rows[item.id]}
+              onRow={onRow}
+            />
+          )
         if (item.kind === 'tool')
           return (
             <ToolRow
@@ -703,6 +816,8 @@ function TurnBlock({
               item={item}
               output={outputs[item.toolId]}
               revealed={revealed.has(item.id)}
+              initial={rows[item.id]}
+              onRow={onRow}
             />
           )
         return null
@@ -765,7 +880,30 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
   const following = useRef(true)
   /** Set when Relaunch was clicked *here*, so focus comes back when it works. */
   const relaunchedHere = useRef(false)
+  /** Where you were reading last time, until the first load has been placed there. */
+  const resumeAt = useRef<ReadingSpot | null>(null)
+  /**
+   * Whether the first load has been placed — at the bottom, or back where you were.
+   * Until then the view has nothing of its own to remember, and leaving must not
+   * overwrite the spot it was still on its way to.
+   */
+  const settled = useRef(false)
+  /** The newest item's id, so "New messages" means a new message and not a redraw. */
+  const newest = useRef<string | null>(null)
+  /** `behind`, for the cleanup that saves it — which only sees the first render's. */
+  const behindNow = useRef(false)
+  behindNow.current = behind
   const sessionId = session.id
+
+  // The rows you've opened. Each row keeps its own state while it's mounted and
+  // only starts from this, so a row that mounts again — coming back to this
+  // session, or Tools off and on — opens the way you left it. Written on each
+  // click rather than on the way out, so it's always current when read.
+  const rows = useStore((s) => s.rowStates[sessionId]) ?? NO_ROWS
+  const onRow = useCallback<OnRow>(
+    (itemId, state) => useStore.getState().setRowState(sessionId, itemId, state),
+    [sessionId],
+  )
 
   const toggleTranscript = useStore((s) => s.toggleTranscript)
   const showTools = useStore((s) => s.showTools)
@@ -775,8 +913,8 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
   const pendings = useStore((s) => s.pendings[sessionId]) ?? NO_PENDING
 
   // The find bar. Open-ness lives in the store because a window has one find bar,
-  // so opening one in another pane closes this. The query is local: Esc unmounts
-  // this view, and a search you have finished with should not outlive it.
+  // so opening one in another pane closes this. The query is local: leaving
+  // unmounts this view, and a search you have finished with should not outlive it.
   const focusedHere = useStore((s) => s.panes[s.focused] === sessionId)
   const findOpen = useStore((s) => s.findFor === sessionId)
   const setFindFor = useStore((s) => s.setFindFor)
@@ -825,10 +963,19 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
     }
   }, [sessionId])
 
-  // Start over whenever the pane changes session, then keep up by polling.
+  // Read the conversation, then keep up by polling. Once per mount: TerminalPane
+  // keys this view by session, so another session is another instance.
+  //
+  // Where you were reading is picked up here, in an effect, and not during render.
+  // A session dragged to another split is unmounted there and mounted here in one
+  // commit; the old view saves its spot in that commit's layout phase, which runs
+  // after this render but before this effect.
   useEffect(() => {
     offset.current = 0
-    following.current = true
+    resumeAt.current = useStore.getState().readingSpots[sessionId] ?? null
+    following.current = !resumeAt.current
+    settled.current = false
+    newest.current = null
     setItems([])
     setOutputs({})
     setLoaded(false)
@@ -837,7 +984,7 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
     void pull()
     const timer = setInterval(() => void pull(), POLL_MS)
     return () => clearInterval(timer)
-  }, [pull])
+  }, [pull, sessionId])
 
   // A status change means the session just did something — don't wait for the tick.
   useEffect(() => {
@@ -847,8 +994,7 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
   // Take focus off the terminal underneath: it's covered, and typing into a pane
   // you can't see would be worse than the wrapped selections this replaces. The
   // composer takes it rather than the scroller now — and the scroller stays as
-  // the fallback, because focus has to land *somewhere* inside this view or the
-  // global Esc handler can't find it.
+  // the fallback, so the keyboard is never left on the terminal under the view.
   useEffect(() => {
     const el = composer.current ?? scroller.current
     el?.focus({ preventScroll: true })
@@ -874,18 +1020,8 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
     if (el && following.current) el.scrollTop = el.scrollHeight
   }, [])
 
-  // Follow the tail while pinned to the bottom; when you've scrolled up to read,
-  // stay put and offer the jump instead of yanking the page.
-  useLayoutEffect(() => {
-    const el = scroller.current
-    if (!el) return
-    if (following.current) el.scrollTop = el.scrollHeight
-    else if (items.length) setBehind(true)
-    // `session.status` is in here for the working row: it appears and disappears
-    // with the turn, which changes the flow's height without changing `items`.
-  }, [items, pendings, showTools, session.status])
-
-  const onScroll = () => {
+  /** Whether you're at the tail, read off the scroller. The scroll handler, and the restore. */
+  const measure = () => {
     const el = scroller.current
     if (!el) return
     const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
@@ -893,6 +1029,70 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
     setAtBottom(bottom)
     if (bottom) setBehind(false)
   }
+
+  // Follow the tail while pinned to the bottom; when you've scrolled up to read,
+  // stay put and offer the jump instead of yanking the page.
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (!el) return
+    const last = items.length ? items[items.length - 1].id : null
+    const grew = last !== newest.current
+    newest.current = last
+
+    // The first load: put it where you were, or at the tail. Before paint, so the
+    // page never shows one place and then jumps to the other.
+    if (!settled.current) {
+      // Not until there's something to place. An empty slice — a read that failed
+      // this tick — sets `loaded` too, and settling on it would lose your place.
+      if (!loaded || (exists && !items.length)) {
+        if (following.current) el.scrollTop = el.scrollHeight
+        return
+      }
+      settled.current = true
+      const spot = resumeAt.current
+      resumeAt.current = null
+      const top = spot ? scrollFor(el, spot, items) : null
+      if (spot && top !== null) {
+        following.current = false
+        el.scrollTop = top
+        // Now, not from the scroll event: setting scrollTop to where it already
+        // is fires none.
+        measure()
+        // Unread when you left, or arrived since: either way it's still below you.
+        if (!following.current) setBehind(spot.behind || last !== spot.lastItemId)
+        return
+      }
+      // No spot, or nothing it pointed at is still here — `/clear`, or a
+      // transcript that started over. The tail is the honest place to be.
+      following.current = true
+      el.scrollTop = el.scrollHeight
+      return
+    }
+
+    if (following.current) el.scrollTop = el.scrollHeight
+    // Only for a new item. The pending prompts, the Tools toggle and the working
+    // row all change the flow too, and none of them is a message you haven't seen.
+    else if (grew) setBehind(true)
+    // `session.status` is in here for the working row: it appears and disappears
+    // with the turn, which changes the flow's height without changing `items`.
+  }, [items, pendings, showTools, session.status, loaded, exists])
+
+  // Remember where you were as the view goes — to the terminal, to another
+  // session, to another split. A layout cleanup, not a passive one: React runs it
+  // while this view's DOM is still in the page, so there is something to measure,
+  // and before the effects of whatever view mounts in the same commit.
+  useLayoutEffect(() => {
+    const el = scroller.current
+    return () => {
+      if (!settled.current || !el) return
+      const top = following.current ? null : topItem(el)
+      useStore
+        .getState()
+        .setReadingSpot(sessionId, top ? { ...top, lastItemId: newest.current, behind: behindNow.current } : null)
+    }
+  }, [sessionId])
+
+  const onScroll = measure
 
   const toBottom = () => {
     const el = scroller.current
@@ -1021,10 +1221,8 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
     setFindFor(null)
     setFindQuery('')
     setIncludeAsides(false)
-    // Focus has to land back *inside* the view. App.tsx finds the conversation to
-    // leave by walking up from the key event's target, so with focus left on
-    // <body> the next Esc would have nothing to walk from and the way back to the
-    // terminal would quietly stop working.
+    // Back to the box you were writing in, rather than leaving the keyboard on
+    // <body> where nothing you type goes anywhere.
     composer.current?.focus()
   }, [setFindFor])
 
@@ -1203,6 +1401,8 @@ export function ConversationView({ session }: { session: Session }): React.JSX.E
                 // never both claim the hidden count.
                 working={running && turn.key === liveTurn?.key}
                 revealed={revealed}
+                rows={rows}
+                onRow={onRow}
               />
             ))}
           </div>

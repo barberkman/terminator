@@ -226,8 +226,11 @@ export function TerminalPane({
         )}
         {/* Over the terminal, never instead of it: the xterm stays mounted and
             the right size underneath, so switching back costs nothing and a
-            closed session's conversation is still readable. */}
-        {session.kind === 'claude' && showTranscript && <ConversationView session={session} />}
+            closed session's conversation is still readable. Keyed by session
+            because this pane is keyed by position: another session landing here
+            is another conversation, and leaving this one is what saves your
+            place in it (ConversationView). */}
+        {session.kind === 'claude' && showTranscript && <ConversationView key={session.id} session={session} />}
       </div>
     </div>
   )

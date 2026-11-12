@@ -74,11 +74,9 @@ export function FindBar({
               e.preventDefault()
               onPrev()
             } else if (e.key === 'Escape') {
-              // Esc here means "close the bar", never "leave the view". Without
-              // this, App.tsx's Escape chain walks up to [data-conversation-for]
-              // and drops the whole conversation back to its terminal. The
-              // browser pane's address bar makes the same move for the same
-              // reason.
+              // Esc here means "close the bar" and nothing else: it stops here
+              // rather than going on to App.tsx's Escape chain. The browser
+              // pane's address bar makes the same move.
               e.stopPropagation()
               onClose()
             }
